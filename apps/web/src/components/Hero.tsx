@@ -1,6 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 import { Sparkles, Star, Truck, Wand2 } from "lucide-react";
+
+import { HeroSlideshow } from "@/components/HeroSlideshow";
 
 export function Hero() {
   return (
@@ -48,16 +49,7 @@ export function Hero() {
 
         <div className="relative">
           <div className="animate-floaty rounded-4xl border-4 border-white bg-white p-3 shadow-2xl">
-            <div className="relative aspect-[4/5] w-full overflow-hidden rounded-3xl">
-              <Image
-                src="/covers/hero.svg"
-                alt="A child reading a personalized KuttyStory book"
-                fill
-                priority
-                sizes="(max-width: 768px) 100vw, 500px"
-                className="object-cover"
-              />
-            </div>
+            <HeroSlideshow />
           </div>
           <div className="absolute -bottom-5 -left-5 hidden rounded-2xl border-2 border-slate-100 bg-white px-4 py-3 shadow-lg sm:block">
             <p className="text-xs font-semibold text-slate-mutedText">
