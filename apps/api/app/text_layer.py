@@ -9,12 +9,18 @@ from __future__ import annotations
 
 import io
 import os
+import re
 from typing import Optional
 
 import httpx
 from PIL import Image, ImageDraw, ImageFont
 
 from .config import settings
+
+# Sentence end followed by a space: ". " / "! " / "? " — the split point for the
+# text layer's line breaks. Decimals ("4.5") lack the trailing space, so they
+# survive intact.
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
 # Bundled in the api image via apt (fonts-dejavu-core). Override with FONT_PATH.
 FONT_BOLD = os.getenv(
@@ -48,16 +54,25 @@ def _load_image(src: str) -> Image.Image:
 
 
 def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> list[str]:
-    words, lines, cur = text.split(), [], ""
-    for w in words:
-        trial = f"{cur} {w}".strip()
-        if draw.textlength(trial, font=font) <= max_w or not cur:
-            cur = trial
-        else:
+    """Wrap to max_w, starting a new line at each sentence end.
+
+    Sentence-first keeps the block narrow enough to sit inside the authored text
+    panel; a single sentence wider than max_w still wraps on words as before.
+    """
+    lines = []
+    for sentence in _SENTENCE_END.split(text.strip()):
+        if not sentence:
+            continue
+        cur = ""
+        for w in sentence.split():
+            trial = f"{cur} {w}".strip()
+            if draw.textlength(trial, font=font) <= max_w or not cur:
+                cur = trial
+            else:
+                lines.append(cur)
+                cur = w
+        if cur:
             lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
     return lines
 
 
