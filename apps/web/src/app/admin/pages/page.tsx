@@ -14,6 +14,7 @@ const BLANK = (n: number): AdminPage => ({
   faceY: null,
   faceW: null,
   faceH: null,
+  facePath: null,
   scenePrompt: "",
   storyText: "",
   textX: 50,
@@ -34,7 +35,15 @@ export default function AdminPagesEditor() {
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [authoring, setAuthoring] = useState(false);
+  const [faceOutlineOn, setFaceOutlineOn] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    adminApi
+      .getSettings()
+      .then((s) => setFaceOutlineOn(s.faceOutlineEnabled))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     adminApi
@@ -71,6 +80,72 @@ export default function AdminPagesEditor() {
       prev.map((p, i) => (i === active ? { ...p, [field]: value } : p)),
     );
   }
+
+  function patchMany(vals: Partial<AdminPage>) {
+    setPages((prev) => prev.map((p, i) => (i === active ? { ...p, ...vals } : p)));
+  }
+
+  // Freehand LASSO: trace the face outline directly on the preview — no numbers.
+  const previewRef = useRef<HTMLDivElement>(null);
+  const livePathRef = useRef<number[][]>([]);
+  const [tracing, setTracing] = useState(false);
+  const [livePath, setLivePath] = useState<number[][]>([]);
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+
+  function setPts(pts: number[][]) {
+    livePathRef.current = pts;
+    setLivePath(pts);
+  }
+  function pctFromEvent(e: React.MouseEvent) {
+    const r = previewRef.current?.getBoundingClientRect();
+    if (!r) return { x: 0, y: 0 };
+    return {
+      x: Math.max(0, Math.min(100, ((e.clientX - r.left) / r.width) * 100)),
+      y: Math.max(0, Math.min(100, ((e.clientY - r.top) / r.height) * 100)),
+    };
+  }
+  function faceDown(e: React.MouseEvent) {
+    if (!page?.baseImageUrl || !faceOutlineOn) return;
+    const { x, y } = pctFromEvent(e);
+    setTracing(true);
+    setPts([[r1(x), r1(y)]]);
+  }
+  function faceMove(e: React.MouseEvent) {
+    if (!tracing) return;
+    const { x, y } = pctFromEvent(e);
+    const pts = livePathRef.current;
+    const last = pts[pts.length - 1];
+    // Throttle: only add a point after ~0.8% of movement, keeps the path light.
+    if (last && Math.abs(last[0] - x) < 0.8 && Math.abs(last[1] - y) < 0.8) return;
+    setPts([...pts, [r1(x), r1(y)]]);
+  }
+  function faceUp() {
+    if (!tracing) return;
+    setTracing(false);
+    const pts = livePathRef.current;
+    if (pts.length >= 3) {
+      patchMany({
+        facePath: pts,
+        faceX: null,
+        faceY: null,
+        faceW: null,
+        faceH: null,
+      });
+    }
+    setPts([]);
+  }
+  function clearFace() {
+    patchMany({
+      facePath: null,
+      faceX: null,
+      faceY: null,
+      faceW: null,
+      faceH: null,
+    });
+    setPts([]);
+  }
+  // What to render: the live trace while dragging, else the saved outline.
+  const shownPath = tracing ? livePath : page?.facePath ?? [];
 
   async function uploadBaseArt(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -321,22 +396,41 @@ export default function AdminPagesEditor() {
               />
             </Field>
 
-            <Field label="Face region % — X, Y, W, H (leave blank for auto-detect)">
-              <div className="grid grid-cols-4 gap-2">
-                {(["faceX", "faceY", "faceW", "faceH"] as const).map((k, idx) => (
-                  <input
-                    key={k}
-                    type="number"
-                    placeholder={["X", "Y", "W", "H"][idx]}
-                    value={(page[k] as number | null) ?? ""}
-                    onChange={(e) =>
-                      patch(k, e.target.value === "" ? null : Number(e.target.value))
-                    }
-                    className="input"
-                  />
-                ))}
+            {!faceOutlineOn ? (
+              <Field label="Face outline">
+                <p className="rounded-xl border-2 border-dashed border-brand-borderAccent bg-slate-50 p-3 text-xs text-slate-mutedText">
+                  Face-outline tracing is <b>turned off in Settings</b> — the whole
+                  head is swapped (hair changes too). Enable it in{" "}
+                  <b>Settings</b> to keep the template&apos;s hair.
+                </p>
+              </Field>
+            ) : (
+            <Field label="Face outline — TRACE around the face on the preview →">
+              <p className="mb-2 text-xs text-slate-mutedText">
+                Press and drag to <b>trace a free-form outline</b> around the{" "}
+                <b>face only</b> (follow the jaw &amp; hairline, <b>exclude the
+                hair</b>). The swap fills exactly inside your outline, so the
+                template&apos;s hair is kept. Leave blank to swap the whole head.
+              </p>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-semibold text-slate-mutedText">
+                  {page.facePath && page.facePath.length >= 3
+                    ? `Outline set (${page.facePath.length} points) ✓`
+                    : tracing
+                      ? "Tracing…"
+                      : "No outline yet"}
+                </span>
+                {(page.facePath || page.faceX != null) && (
+                  <button
+                    onClick={clearFace}
+                    className="rounded-xl border-2 border-brand-borderAccent px-3 py-1.5 text-xs font-bold text-slate-mutedText hover:border-brand-primary hover:text-brand-primary"
+                  >
+                    Clear outline
+                  </button>
+                )}
               </div>
             </Field>
+            )}
 
             <Field label="Fallback scene prompt (txt2img, only if no base art)">
               <textarea
@@ -414,35 +508,45 @@ export default function AdminPagesEditor() {
           {/* Live placement preview */}
           <div>
             <p className="mb-2 text-sm font-semibold text-slate-mutedText">
-              Live text placement (4:3 canvas)
+              Live preview (square) — {page.baseImageUrl ? "trace the face outline (press & drag)" : "text placement"}
             </p>
-            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl border-2 border-brand-borderAccent bg-gradient-to-br from-brand-magenta via-brand-primary to-brand-purple">
+            <div
+              ref={previewRef}
+              onMouseDown={faceDown}
+              onMouseMove={faceMove}
+              onMouseUp={faceUp}
+              onMouseLeave={faceUp}
+              className={`relative aspect-square w-full select-none overflow-hidden rounded-2xl border-2 border-brand-borderAccent bg-gradient-to-br from-brand-magenta via-brand-primary to-brand-purple ${
+                page.baseImageUrl && faceOutlineOn ? "cursor-crosshair" : ""
+              }`}
+            >
               {page.baseImageUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={page.baseImageUrl}
                   alt="Base illustration"
-                  className="absolute inset-0 h-full w-full object-cover"
+                  draggable={false}
+                  className="pointer-events-none absolute inset-0 h-full w-full object-cover"
                 />
               )}
-              {/* Face inpaint region */}
-              {page.faceX != null && page.faceW != null && (
-                <div
-                  className="absolute border-2 border-dashed border-white/90 bg-white/10"
-                  style={{
-                    left: `${page.faceX}%`,
-                    top: `${page.faceY ?? 0}%`,
-                    width: `${page.faceW}%`,
-                    height: `${page.faceH ?? 0}%`,
-                  }}
+              {/* Free-form face outline (lasso) */}
+              {shownPath.length >= 2 && (
+                <svg
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                  className="pointer-events-none absolute inset-0 h-full w-full"
                 >
-                  <span className="absolute -top-5 left-0 rounded bg-black/60 px-1 text-[10px] font-bold text-white">
-                    face
-                  </span>
-                </div>
+                  <polygon
+                    points={shownPath.map((p) => `${p[0]},${p[1]}`).join(" ")}
+                    fill="rgba(16,185,129,0.22)"
+                    stroke="#34d399"
+                    strokeWidth={0.7}
+                    strokeLinejoin="round"
+                  />
+                </svg>
               )}
               <div
-                className="absolute w-[86%] -translate-x-1/2 -translate-y-1/2 text-center"
+                className="pointer-events-none absolute w-[86%] -translate-x-1/2 -translate-y-1/2 text-center"
                 style={{
                   left: `${page.textX}%`,
                   top: `${page.textY}%`,
@@ -455,7 +559,7 @@ export default function AdminPagesEditor() {
                 {preview || "Your story text appears here"}
               </div>
               <div
-                className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white ring-2 ring-black/40"
+                className="pointer-events-none absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white ring-2 ring-black/40"
                 style={{ left: `${page.textX}%`, top: `${page.textY}%` }}
               />
             </div>

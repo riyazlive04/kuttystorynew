@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import os
 from typing import Any, Optional
 
 import httpx
+from PIL import Image, ImageDraw, ImageFilter
 
 from .config import settings
 
@@ -389,8 +391,69 @@ def _save_bytes(data: bytes, prefix: str = "swap") -> str:
     return f"/uploads/{name}"
 
 
+def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> bytes:
+    """Retain the template's HAIR by pasting only the FACE area from the fully
+    swapped image back onto the original template.
+
+    Segmind swaps the whole head (face + hair). We take just the authored face
+    area from the swap and composite it over the untouched template — so:
+    template hair/body + child's swapped face. `region` is either a freeform
+    polygon {"points": [[x%,y%], ...]} (preferred) or a box {x,y,w,h} in PERCENT.
+    """
+    tmpl = Image.open(io.BytesIO(_image_bytes(template_src))).convert("RGB")
+    swp = Image.open(io.BytesIO(swapped)).convert("RGB")
+    if swp.size != tmpl.size:
+        swp = swp.resize(tmpl.size)
+    cw, ch = tmpl.size
+    mask = Image.new("L", (cw, ch), 0)
+    draw = ImageDraw.Draw(mask)
+
+    points = region.get("points")
+    if points and len(points) >= 3:
+        # Freeform lasso — fill the traced polygon.
+        try:
+            poly = [(float(p[0]) / 100 * cw, float(p[1]) / 100 * ch) for p in points]
+        except (TypeError, ValueError, IndexError):
+            return swapped
+        draw.polygon(poly, fill=255)
+    else:
+        try:
+            x = float(region.get("x"))  # type: ignore[arg-type]
+            y = float(region.get("y"))  # type: ignore[arg-type]
+            w = float(region.get("w"))  # type: ignore[arg-type]
+            h = float(region.get("h"))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return swapped
+        if w <= 0 or h <= 0:
+            return swapped
+        draw.ellipse(
+            [x / 100 * cw, y / 100 * ch, (x + w) / 100 * cw, (y + h) / 100 * ch],
+            fill=255,
+        )
+
+    # Feather the edge so the swapped face blends into the template's hairline.
+    mask = mask.filter(ImageFilter.GaussianBlur(radius=max(3, int(min(cw, ch) * 0.02))))
+    out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
+    buf = io.BytesIO()
+    out.save(buf, format="JPEG", quality=95)
+    return buf.getvalue()
+
+
+def current_segmind_key() -> str:
+    """The active Segmind key: an admin-set encrypted secret if present, else the
+    SEGMIND_API_KEY from the environment."""
+    from .secrets_store import get_secret
+
+    return get_secret("segmind_api_key") or settings.segmind_api_key or ""
+
+
 async def _segmind_faceswap(
-    *, target_src: str, face_src: str, seed: int = 0, attempts: int = 4
+    *,
+    target_src: str,
+    face_src: str,
+    seed: int = 0,
+    attempts: int = 4,
+    face_region: Optional[dict] = None,
 ) -> str:
     """Personalize a real face (`face_src`) onto an ILLUSTRATED base page
     (`target_src`) via Segmind FaceSwap-Comic — purpose-built to blend real faces
@@ -402,13 +465,14 @@ async def _segmind_faceswap(
     Each retry uses a fresh seed — face detection / blending is seed-sensitive, so
     a genuinely different attempt can succeed where an identical repeat would not.
     """
-    if not settings.segmind_api_key:
+    api_key = current_segmind_key()
+    if not api_key:
         raise RuntimeError("SEGMIND_API_KEY not set")
     # Validated against Segmind's faceswap-comic API (base64 images, x-api-key,
     # returns raw image bytes). style_strength keeps the illustration's art look;
     # cfg default is ~1.6 so we stay low to avoid over-cooking the face.
     url = f"https://api.segmind.com/v1/{settings.segmind_faceswap_model}"
-    headers = {"x-api-key": settings.segmind_api_key, "Content-Type": "application/json"}
+    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
     source_b64 = _b64(face_src)     # the real child face
     target_b64 = _b64(target_src)   # the fixed illustrated page
     last_err: Exception | None = None
@@ -428,7 +492,18 @@ async def _segmind_faceswap(
             try:
                 r = await client.post(url, headers=headers, json=payload)
                 r.raise_for_status()
-                return _save_bytes(r.content, prefix="page")
+                content = r.content
+                # Keep the template's hair: paste only the authored face oval from
+                # the full swap back onto the original template. (No face region →
+                # full-head swap as before.)
+                if face_region:
+                    try:
+                        content = _composite_face_region(
+                            target_src, content, face_region
+                        )
+                    except Exception as ce:  # noqa: BLE001
+                        print(f"[segmind] face composite skipped: {ce}", flush=True)
+                return _save_bytes(content, prefix="page")
             except Exception as e:  # noqa: BLE001 — redo the swap on any failure
                 last_err = e
                 body = ""
@@ -683,7 +758,7 @@ async def render_page(
             and face_image_name
         )
         if can_faceswap:
-            if settings.faceswap_provider == "segmind" and settings.segmind_api_key:
+            if settings.faceswap_provider == "segmind" and current_segmind_key():
                 # A page WITH base art must be personalized by the swapper. Retries
                 # happen INSIDE _segmind_faceswap (fresh seed each redo). We do NOT
                 # fall back to txt2img or the unswapped base art here — that would
@@ -693,6 +768,7 @@ async def render_page(
                     target_src=base_image_url,  # type: ignore[arg-type]
                     face_src=face_image_name,
                     seed=seed,
+                    face_region=face_region,
                 )
             if settings.faceswap_provider == "replicate":
                 try:

@@ -8,6 +8,7 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from prisma import Json
 from pydantic import BaseModel
 
 from ..config import settings
@@ -91,6 +92,50 @@ async def admin_delete_order(order_id: str):
         raise HTTPException(status_code=404, detail="Order not found")
     await prisma.order.delete(where={"id": order_id})
     return {"ok": True, "id": order_id}
+
+
+# ----------------------------- Settings -----------------------------------
+
+class SettingsPatch(BaseModel):
+    faceOutlineEnabled: Optional[bool] = None
+    # Write-only. Provide to set a new key; "" clears it; omit to leave unchanged.
+    segmindApiKey: Optional[str] = None
+
+
+def _segmind_status() -> dict:
+    """Non-sensitive status of the effective Segmind key — never the value."""
+    from ..secrets_store import get_secret
+
+    stored = get_secret("segmind_api_key")
+    key = stored or settings.segmind_api_key or ""
+    if not key:
+        return {"set": False, "last4": "", "source": None}
+    return {"set": True, "last4": key[-4:], "source": "admin" if stored else "env"}
+
+
+def _settings_response() -> dict:
+    from ..app_settings import get_settings
+
+    return {**get_settings(), "segmind": _segmind_status()}
+
+
+@router.get("/settings", dependencies=[Depends(require_admin)])
+async def admin_get_settings():
+    return _settings_response()
+
+
+@router.patch("/settings", dependencies=[Depends(require_admin)])
+async def admin_update_settings(body: SettingsPatch):
+    from ..app_settings import update_settings
+    from ..secrets_store import set_secret
+
+    data = body.model_dump()
+    if data.get("faceOutlineEnabled") is not None:
+        update_settings({"faceOutlineEnabled": data["faceOutlineEnabled"]})
+    # Secret handled separately (encrypted at rest, never echoed back).
+    if data.get("segmindApiKey") is not None:
+        set_secret("segmind_api_key", (data["segmindApiKey"] or "").strip())
+    return _settings_response()
 
 
 # --------------------------- Previews (jobs) ------------------------------
@@ -198,27 +243,38 @@ async def admin_toggle_story(slug: str, active: bool):
 
 
 @router.delete("/stories/{slug}", dependencies=[Depends(require_admin)])
-async def admin_delete_story(slug: str):
-    """Permanently delete a book and its page templates.
+async def admin_delete_story(slug: str, force: bool = False):
+    """Permanently delete a book, its page templates, and its preview sessions.
 
-    Refuses if the book has customer preview sessions / orders (Job rows have no
-    cascade and hold real order history) — hide it instead. Page templates are
-    removed automatically (onDelete: Cascade in the schema).
+    By default, books with REAL orders (an ordered line item, or a purchased
+    preview session) are protected → 409, so you don't lose order history by
+    accident. Pass `force=true` to override and delete anyway: the book, its pages
+    and preview sessions are removed. Order records themselves are kept (their
+    story fields are denormalized), just unlinked from the deleted sessions.
     """
     story = await prisma.story.find_unique(where={"slug": slug})
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
-    job_count = await prisma.job.count(where={"storySlug": slug})
-    if job_count:
+
+    ordered_items = await prisma.orderitem.count(where={"storySlug": slug})
+    purchased = await prisma.job.count(
+        where={"storySlug": slug, "isPurchased": True}
+    )
+    blocking = ordered_items + purchased
+    if blocking and not force:
         raise HTTPException(
             status_code=409,
             detail=(
-                f"This book has {job_count} customer session(s)/order(s) and can't "
-                "be deleted. Hide it instead to keep order history intact."
+                f"This book has {blocking} order(s). Delete anyway to remove the "
+                "book (order records are kept, just unlinked)."
             ),
         )
+
+    # Clean up preview sessions (Job rows have no cascade to Story), then delete
+    # the book (pages cascade). Any order still keeps its denormalized story info.
+    await prisma.job.delete_many(where={"storySlug": slug})
     await prisma.story.delete(where={"slug": slug})
-    return {"ok": True, "slug": slug}
+    return {"ok": True, "slug": slug, "forced": bool(blocking)}
 
 
 # ------------------------- Page templates (CMS) ---------------------------
@@ -234,6 +290,7 @@ def _page_dict(p) -> dict:
         "faceY": p.faceY,
         "faceW": p.faceW,
         "faceH": p.faceH,
+        "facePath": p.facePath,
         "scenePrompt": p.scenePrompt,
         "storyText": p.storyText,
         "textX": p.textX,
@@ -251,6 +308,7 @@ class PageUpsert(BaseModel):
     faceY: Optional[float] = None
     faceW: Optional[float] = None
     faceH: Optional[float] = None
+    facePath: Optional[list] = None  # freeform mask polygon [[x%,y%], ...]
     scenePrompt: str = ""
     storyText: str = ""
     textX: float = 50
@@ -276,6 +334,10 @@ async def admin_upsert_page(slug: str, body: PageUpsert):
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     data = {**body.model_dump(), "bookTemplateId": story.id}
+    # facePath is a JSON column. Always store a list (empty = "no outline") — the
+    # Prisma Python client can't set a JSON column to SQL NULL via update, and an
+    # empty polygon is treated as no-mask downstream (len < 3).
+    data["facePath"] = Json(data.get("facePath") or [])
     page = await prisma.pagetemplate.upsert(
         where={
             "bookTemplateId_pageNumber": {

@@ -79,6 +79,11 @@ export interface StoryCreate {
   supportsTamil: boolean;
 }
 
+export interface AdminSettings {
+  faceOutlineEnabled: boolean;
+  segmind: { set: boolean; last4: string; source: "admin" | "env" | null };
+}
+
 export interface AdminJob {
   id: string;
   childName: string;
@@ -105,6 +110,7 @@ export interface AdminPage {
   faceY?: number | null;
   faceW?: number | null;
   faceH?: number | null;
+  facePath?: number[][] | null; // freeform mask polygon [[x%,y%], ...]
   scenePrompt: string;
   storyText: string;
   textX: number;
@@ -128,13 +134,24 @@ export const adminApi = {
     req(
       `/admin/jobs${purchased === undefined ? "" : `?purchased=${purchased}`}`,
     ),
+  getSettings: (): Promise<AdminSettings> => req("/admin/settings"),
+  updateSettings: (patch: {
+    faceOutlineEnabled?: boolean;
+    segmindApiKey?: string;
+  }): Promise<AdminSettings> =>
+    req("/admin/settings", { method: "PATCH", body: JSON.stringify(patch) }),
   stories: (): Promise<AdminStory[]> => req("/admin/stories"),
   createStory: (body: StoryCreate): Promise<AdminStory> =>
     req("/admin/stories", { method: "POST", body: JSON.stringify(body) }),
   toggleStory: (slug: string, active: boolean): Promise<AdminStory> =>
     req(`/admin/stories/${slug}/active?active=${active}`, { method: "PATCH" }),
-  deleteStory: (slug: string): Promise<{ ok: boolean; slug: string }> =>
-    req(`/admin/stories/${slug}`, { method: "DELETE" }),
+  deleteStory: (
+    slug: string,
+    force = false,
+  ): Promise<{ ok: boolean; slug: string; forced?: boolean }> =>
+    req(`/admin/stories/${slug}${force ? "?force=true" : ""}`, {
+      method: "DELETE",
+    }),
   pages: (slug: string): Promise<AdminPage[]> =>
     req(`/admin/stories/${slug}/pages`),
   upsertPage: (slug: string, page: AdminPage): Promise<AdminPage> =>

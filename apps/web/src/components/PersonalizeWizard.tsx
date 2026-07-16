@@ -16,13 +16,14 @@ import {
 } from "lucide-react";
 import type { Personalization, Story } from "@/lib/types";
 import { createJob, uploadPhoto } from "@/lib/api";
-import { languageLabel } from "@/lib/format";
+import { languageLabel, previewPath } from "@/lib/format";
 
 const STEPS = ["Child", "Photo", "Review"] as const;
 
 export function PersonalizeWizard({ story }: { story: Story }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [consent, setConsent] = useState(false);
@@ -82,7 +83,7 @@ export function PersonalizeWizard({ story }: { story: Story }) {
     setSubmitting(true);
     try {
       const job = await createJob(data);
-      router.push(`/preview/${job.id}`);
+      router.push(previewPath(job.id, job.childName, job.storyTitle));
     } catch (e) {
       setSubmitting(false);
       alert("Something went wrong creating your preview. Please try again.");
@@ -208,11 +209,21 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                 </span>
               )}
             </p>
+            {/* Gallery / file picker (mobile also offers camera here) */}
             <input
               ref={fileRef}
               type="file"
               accept="image/*"
               multiple
+              onChange={onFile}
+              className="hidden"
+            />
+            {/* Direct camera capture on mobile (rear camera). */}
+            <input
+              ref={cameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
               onChange={onFile}
               className="hidden"
             />
@@ -225,7 +236,7 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                 <img
                   src={data.photoDataUrl}
                   alt="Uploaded child"
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-contain"
                 />
               ) : (
                 <div className="flex flex-col items-center gap-2 text-slate-400">
@@ -233,20 +244,27 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                     <Camera className="h-6 w-6 text-brand-primary" />
                   </span>
                   <span className="font-semibold text-slate-deep">
-                    Click to upload a photo
+                    Tap to upload or take a photo
                   </span>
                   <span className="text-xs">PNG or JPG, up to 10MB</span>
                 </div>
               )}
             </button>
-            {data.photoDataUrl && (
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => cameraRef.current?.click()}
+                className="inline-flex items-center gap-2 rounded-xl border-2 border-brand-primary px-4 py-2 text-sm font-bold text-brand-primary transition hover:bg-brand-primary/5"
+              >
+                <Camera className="h-4 w-4" /> Take a photo
+              </button>
               <button
                 onClick={() => fileRef.current?.click()}
-                className="inline-flex items-center gap-2 text-sm font-semibold text-brand-primary"
+                className="inline-flex items-center gap-2 rounded-xl border-2 border-brand-borderAccent px-4 py-2 text-sm font-bold text-slate-deep transition hover:border-brand-primary hover:text-brand-primary"
               >
-                <Upload className="h-4 w-4" /> Replace photo
+                <Upload className="h-4 w-4" />{" "}
+                {data.photoDataUrl ? "Replace / upload" : "Upload from gallery"}
               </button>
-            )}
+            </div>
           </div>
         )}
 

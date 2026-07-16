@@ -55,7 +55,7 @@ export function FlipBook({
     <div className="mx-auto w-full max-w-2xl">
       <div className="relative overflow-hidden rounded-3xl border-2 border-brand-borderAccent bg-white shadow-glow">
         <div
-          className={`relative aspect-[4/3] w-full origin-left transition-transform duration-300 ${
+          className={`relative aspect-square w-full origin-left bg-slate-50 transition-transform duration-300 ${
             flip === "next" ? "animate-[flip_0.35s_ease]" : ""
           }`}
         >
@@ -66,7 +66,7 @@ export function FlipBook({
               alt={locked ? `Locked page ${i + 1}` : `Page ${i + 1}`}
               fill
               sizes="(max-width: 768px) 100vw, 672px"
-              className={`object-cover ${locked ? "scale-110 blur-2xl" : ""}`}
+              className={locked ? "scale-110 object-cover blur-2xl" : "object-contain"}
             />
           ) : locked ? (
             // Locked page with no base-art teaser — decorative placeholder.
@@ -81,14 +81,8 @@ export function FlipBook({
             </div>
           )}
 
-          {/* Story text overlay (free pages only) */}
-          {page?.caption && !locked && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-5 pt-12">
-              <p className="text-center text-base font-semibold text-white drop-shadow md:text-lg">
-                {page.caption}
-              </p>
-            </div>
-          )}
+          {/* The story text is already burned into the page image (authored
+              position, matches the print PDF), so no separate caption overlay. */}
         </div>
 
         {/* Locked-page teaser: blurred art shows through; unlock CTA on top. */}

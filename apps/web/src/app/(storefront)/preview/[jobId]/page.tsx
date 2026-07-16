@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, Download, Loader2, Sparkles } from "lucide-react";
 import {
   approveJob,
+  downloadFile,
   getConfig,
   getJob,
   previewPdfUrl,
@@ -13,13 +14,14 @@ import {
 } from "@/lib/api";
 import { getStory } from "@/lib/data";
 import { useCart } from "@/lib/cart";
-import { languageLabel } from "@/lib/format";
+import { jobIdFromParam, languageLabel } from "@/lib/format";
 import type { Format, Job } from "@/lib/types";
 import { FlipBook } from "@/components/FlipBook";
 import { PAYWALL_PDF, PAYWALL_PRINT } from "@/components/Paywall";
 
 export default function PreviewPage({ params }: { params: { jobId: string } }) {
-  const { jobId } = params;
+  // The URL segment is a readable slug ending in the real job id (…-<jobId>).
+  const jobId = jobIdFromParam(params.jobId);
   const router = useRouter();
   const add = useCart((s) => s.add);
 
@@ -31,6 +33,20 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [regeneratingPage, setRegeneratingPage] = useState<number | null>(null);
   const [approving, setApproving] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  async function handleDownloadPreview(id: string, childName: string) {
+    setDownloading(true);
+    const ok = await downloadFile(
+      previewPdfUrl(id),
+      `KuttyStory-preview-${childName || "story"}.pdf`,
+    );
+    setDownloading(false);
+    if (!ok)
+      alert(
+        "The preview PDF isn't ready yet — wait for all pages to finish, then try again.",
+      );
+  }
 
   useEffect(() => {
     getConfig().then((c) => {
@@ -158,14 +174,18 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
           {languageLabel(job.language)} · Read pages 1-{freePages} free
         </p>
         {renderedFree > 0 && (
-          <a
-            href={previewPdfUrl(job.id)}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-4 inline-flex items-center gap-2 rounded-xl border-2 border-brand-primary px-4 py-2 text-sm font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white"
+          <button
+            onClick={() => handleDownloadPreview(job.id, job.childName)}
+            disabled={downloading}
+            className="mt-4 inline-flex items-center gap-2 rounded-xl border-2 border-brand-primary px-4 py-2 text-sm font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white disabled:opacity-60"
           >
-            <Download className="h-4 w-4" /> Download preview (PDF)
-          </a>
+            {downloading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            Download preview (PDF)
+          </button>
         )}
       </div>
 

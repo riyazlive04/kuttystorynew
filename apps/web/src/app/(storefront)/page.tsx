@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Hero } from "@/components/Hero";
+import { SampleCarousel } from "@/components/SampleCarousel";
 import { StoryCard } from "@/components/StoryCard";
 import { PricingTier } from "@/components/PricingTier";
 import { Steps, Reviews } from "@/components/Marketing";
@@ -24,6 +25,8 @@ export default function HomePage() {
       <Hero />
 
       <TrustBar />
+
+      <SampleCarousel />
 
       <Steps />
 

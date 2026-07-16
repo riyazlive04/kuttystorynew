@@ -33,3 +33,9 @@ coverage/
 
 # uploads / generated media (local dev)
 apps/api/storage/
+
+# celery beat runtime schedule (not source)
+apps/api/celerybeat-schedule
+
+# local-only docker overrides (e.g. dev port remaps)
+docker-compose.override.yml

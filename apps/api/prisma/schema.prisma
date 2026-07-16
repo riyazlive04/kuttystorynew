@@ -81,6 +81,9 @@ model PageTemplate {
   faceY         Float?
   faceW         Float?
   faceH         Float?
+  // Optional FREEFORM face mask polygon: [[x%,y%], ...] (0-100). Takes priority
+  // over the faceX/Y/W/H box when present — the swap is composited inside it.
+  facePath      Json?
 
   scenePrompt   String  // fallback txt2img scene description (used if no baseImageUrl)
   storyText     String  @default("")   // narrative line, supports {{name}}

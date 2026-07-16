@@ -62,6 +62,20 @@ async def create_order(payload: OrderIn):
         },
         include={"items": True},
     )
+
+    # Fulfillment: render the FULL 28-page story for every purchased preview
+    # session (both PDF and print orders), then the book PDF is built. Idempotent
+    # enough for our flow — one order → one render kickoff per unique job.
+    job_ids = {i.jobId for i in payload.items if i.jobId}
+    for jid in job_ids:
+        try:
+            from ..tasks import render_remaining
+
+            render_remaining.delay(jid)
+        except Exception:
+            # No broker (pure API demo) — the book can still be built on download.
+            pass
+
     return order_dict(order)
 
 

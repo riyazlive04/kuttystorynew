@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Download, ExternalLink, Loader2 } from "lucide-react";
 import { adminApi, type AdminJob } from "@/lib/admin";
 import { previewPdfUrl } from "@/lib/api";
+import { previewPath } from "@/lib/format";
 
 type Filter = "all" | "purchased";
 
@@ -127,7 +128,7 @@ export default function AdminPreviews() {
                         </span>
                       )}
                       <Link
-                        href={`/preview/${j.id}`}
+                        href={previewPath(j.id, j.childName, j.storyTitle)}
                         target="_blank"
                         title="Open the preview page"
                         className="inline-flex items-center gap-1.5 rounded-lg border border-brand-borderAccent px-2.5 py-1 text-xs font-bold text-slate-mutedText transition hover:border-brand-primary hover:text-brand-primary"

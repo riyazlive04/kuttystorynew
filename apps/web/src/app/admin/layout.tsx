@@ -11,6 +11,7 @@ import {
   LogOut,
   Package,
   PenSquare,
+  Settings,
   ShieldCheck,
 } from "lucide-react";
 import {
@@ -27,6 +28,7 @@ const NAV = [
   { href: "/admin/previews", label: "Previews", icon: Images },
   { href: "/admin/stories", label: "Stories", icon: BookOpen },
   { href: "/admin/pages", label: "Page Editor", icon: PenSquare },
+  { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
 export default function AdminLayout({

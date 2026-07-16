@@ -179,6 +179,36 @@ export function previewPdfUrl(jobId: string): string {
   return API ? `${API}/jobs/${jobId}/preview.pdf` : "#";
 }
 
+/** Direct link to the full personalized book PDF (after purchase). */
+export function bookPdfUrl(jobId: string): string {
+  return API ? `${API}/jobs/${jobId}/book.pdf` : "#";
+}
+
+/**
+ * Reliably download a file cross-origin: fetch as a blob and trigger a save.
+ * Avoids the `target="_blank"` + attachment quirk where the new tab opens blank
+ * and the download silently fails. Returns false on error (e.g. 409 not ready).
+ */
+export async function downloadFile(url: string, filename: string): Promise<boolean> {
+  if (!url || url === "#") return false;
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return false;
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objUrl), 1500);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function getJob(jobId: string): Promise<Job | undefined> {
   if (API) {
     // Distinguish a genuine 404 (job gone → undefined) from a transient failure
@@ -228,12 +258,14 @@ export async function getOrder(id: string): Promise<Order | undefined> {
 export interface RuntimeConfig {
   freePreviewPages: number;
   totalPages: number;
+  faceOutlineEnabled: boolean;
 }
 
 // Fallback used when there's no backend (mock mode) or /config is unreachable.
 const DEFAULT_CONFIG: RuntimeConfig = {
   freePreviewPages: FREE_PREVIEW_PAGES,
   totalPages: 28,
+  faceOutlineEnabled: true,
 };
 
 // Single source of truth for the free-page count / paywall copy: the backend's
@@ -247,6 +279,8 @@ export async function getConfig(): Promise<RuntimeConfig> {
         return {
           freePreviewPages: c.freePreviewPages ?? DEFAULT_CONFIG.freePreviewPages,
           totalPages: c.totalPages ?? DEFAULT_CONFIG.totalPages,
+          faceOutlineEnabled:
+            c.faceOutlineEnabled ?? DEFAULT_CONFIG.faceOutlineEnabled,
         };
       }
     } catch {

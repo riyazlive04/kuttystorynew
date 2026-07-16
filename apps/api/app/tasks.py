@@ -56,14 +56,23 @@ async def _render_one(
     # Diffrun-style: inpaint the child's face into the pre-drawn illustration.
     base_image_url = getattr(template, "baseImageUrl", None) if template else None
     style_prompt = getattr(template, "stylePrompt", None) if template else None
+    # Freeform polygon mask takes priority over the box; either constrains the
+    # swap to the face so the template's hair is kept. Skipped entirely when the
+    # admin has turned the face-outline feature OFF in Settings (full-head swap).
+    from .app_settings import face_outline_enabled
+
     face_region = None
-    if template and template.faceX is not None and template.faceW is not None:
-        face_region = {
-            "x": template.faceX,
-            "y": template.faceY,
-            "w": template.faceW,
-            "h": template.faceH,
-        }
+    if face_outline_enabled():
+        face_path = getattr(template, "facePath", None) if template else None
+        if face_path and len(face_path) >= 3:
+            face_region = {"points": face_path}
+        elif template and template.faceX is not None and template.faceW is not None:
+            face_region = {
+                "x": template.faceX,
+                "y": template.faceY,
+                "w": template.faceW,
+                "h": template.faceH,
+            }
 
     image_url = await render_page(
         scene_prompt=scene,
@@ -78,7 +87,13 @@ async def _render_one(
 
     # Real raster output -> burn text with PIL and persist a composed JPEG.
     # (http = hosted model output; /uploads = a swapped page saved locally.)
-    if (image_url.startswith("http") or image_url.startswith("/uploads/")) and template is not None:
+    # Skip when there's no story text (e.g. templates that already have the text
+    # baked in) — otherwise we'd double up the text on the page.
+    if (
+        (image_url.startswith("http") or image_url.startswith("/uploads/"))
+        and template is not None
+        and (story_text or "").strip()
+    ):
         from .text_layer import compose_to_bytes
 
         try:

@@ -64,8 +64,9 @@ export default function AdminStories() {
   async function remove(story: AdminStory) {
     if (
       !confirm(
-        `Delete "${story.title}" permanently? This removes the book and all its ` +
-          `authored pages and cannot be undone.`,
+        `Delete "${story.title}" permanently? This removes the book, its authored ` +
+          `pages, and any free (non-purchased) preview sessions. Books with real ` +
+          `orders can't be deleted. This cannot be undone.`,
       )
     )
       return;
@@ -74,8 +75,25 @@ export default function AdminStories() {
       await adminApi.deleteStory(story.slug);
       setStories((prev) => prev.filter((s) => s.slug !== story.slug));
     } catch (e) {
-      // e.g. 409 when the book has customer orders — show the backend reason.
-      alert(e instanceof Error ? e.message : "Failed to delete story");
+      const msg = e instanceof Error ? e.message : "Failed to delete story";
+      // Blocked because the book has orders — offer an explicit force delete.
+      if (/order/i.test(msg)) {
+        if (
+          confirm(
+            `${msg}\n\nForce delete "${story.title}"? The book, its pages and ` +
+              `preview sessions are removed. Order records are kept (just unlinked).`,
+          )
+        ) {
+          try {
+            await adminApi.deleteStory(story.slug, true);
+            setStories((prev) => prev.filter((s) => s.slug !== story.slug));
+          } catch (e2) {
+            alert(e2 instanceof Error ? e2.message : "Force delete failed");
+          }
+        }
+      } else {
+        alert(msg);
+      }
     } finally {
       setBusy(null);
     }

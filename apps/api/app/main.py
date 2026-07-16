@@ -67,9 +67,12 @@ async def public_config():
     """Public runtime config — the single source of truth for the frontend.
     Aligns the flip-book free-page count / paywall copy with the backend renderer
     (which only renders FREE_PREVIEW_PAGES preview pages)."""
+    from .app_settings import face_outline_enabled
+
     return {
         "freePreviewPages": settings.free_preview_pages,
         "totalPages": settings.total_pages,
+        "faceOutlineEnabled": face_outline_enabled(),
     }
 
 

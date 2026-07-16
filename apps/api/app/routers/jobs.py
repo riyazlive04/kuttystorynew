@@ -104,6 +104,30 @@ async def download_preview(job_id: str):
     )
 
 
+@router.get("/{job_id}/book.pdf")
+async def download_book(job_id: str):
+    """Download the full personalized book as a PDF (after purchase). Stitches all
+    pages currently in the job; unrendered pages fall back to their base art."""
+    job = await prisma.job.find_unique(where={"id": job_id})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    from ..pdf_service import build_book_pdf
+
+    try:
+        url = await asyncio.to_thread(build_book_pdf, job)
+    except Exception as e:
+        raise HTTPException(status_code=409, detail=f"Book not ready: {e}")
+    path = os.path.join(settings.storage_dir, url.split("/uploads/", 1)[1])
+    safe_name = "".join(
+        c for c in (job.childName or "story") if c.isalnum() or c in " -_"
+    ).strip() or "story"
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=f"KuttyStory-{safe_name}.pdf",
+    )
+
+
 @router.post("/{job_id}/pages/{page_number}/regenerate")
 async def regenerate_page(job_id: str, page_number: int):
     """Diffrun 'fine-tune face' step: re-roll one page's face with a fresh seed.

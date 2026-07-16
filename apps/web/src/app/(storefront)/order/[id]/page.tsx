@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CheckCircle2, Download, Loader2, Package } from "lucide-react";
-import { getOrder } from "@/lib/api";
+import { bookPdfUrl, downloadFile, getOrder } from "@/lib/api";
+import { useCart } from "@/lib/cart";
 import { inr } from "@/lib/format";
+import { PAYWALL_PRINT } from "@/components/Paywall";
 import type { Order } from "@/lib/types";
 
 export default function OrderPage({
@@ -13,7 +16,10 @@ export default function OrderPage({
   params: { id: string };
 }) {
   const { id } = params;
+  const router = useRouter();
+  const addToCart = useCart((s) => s.add);
   const [order, setOrder] = useState<Order | null | undefined>(undefined);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     getOrder(id).then((o) => setOrder(o ?? null));
@@ -40,6 +46,40 @@ export default function OrderPage({
 
   const hasPdf = order.items.some((i) => i.format === "pdf");
   const hasPrint = order.items.some((i) => i.format === "print");
+  const jobId = order.items.find((i) => i.jobId)?.jobId || "";
+  // Any item works as the source for the print upsell (same book/child).
+  const src = order.items[0];
+
+  async function downloadBook() {
+    if (!jobId) return;
+    setDownloading(true);
+    const ok = await downloadFile(
+      bookPdfUrl(jobId),
+      `KuttyStory-${src?.childName || "story"}.pdf`,
+    );
+    setDownloading(false);
+    if (!ok)
+      alert(
+        "Your book is still being prepared (all 28 pages are rendering). Please try again in a couple of minutes.",
+      );
+  }
+
+  function orderPrintedBook() {
+    if (!src) return;
+    addToCart({
+      id: `${src.jobId || src.storySlug}-print`,
+      jobId: src.jobId,
+      storySlug: src.storySlug,
+      storyTitle: src.storyTitle,
+      childName: src.childName,
+      format: "print",
+      language: src.language,
+      coverImage: src.coverImage,
+      unitPrice: PAYWALL_PRINT,
+      quantity: 1,
+    });
+    router.push("/checkout");
+  }
 
   return (
     <div className="container-x max-w-2xl py-16">
@@ -78,20 +118,39 @@ export default function OrderPage({
         </div>
       </div>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+      <p className="mt-6 text-center text-sm text-slate-mutedText">
+        We&apos;re now generating all the personalized pages of your book. The
+        full PDF becomes downloadable once it&apos;s ready (usually a couple of
+        minutes).
+      </p>
+
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
         {hasPdf && (
           <div className="card p-6 text-center">
             <Download className="mx-auto h-8 w-8 text-brand-primary" />
-            <h3 className="mt-3 font-bold text-slate-deep">Your PDF is ready</h3>
+            <h3 className="mt-3 font-bold text-slate-deep">Your PDF</h3>
             <p className="mt-1 text-sm text-slate-mutedText">
-              High-resolution, print-ready download.
+              High-resolution, all 28 pages.
             </p>
-            <button className="btn-outline mt-4 w-full !py-2.5 text-sm">
-              Download PDF
+            <button
+              onClick={downloadBook}
+              disabled={downloading || !jobId}
+              className="btn-outline mt-4 inline-flex w-full items-center justify-center gap-2 !py-2.5 text-sm disabled:opacity-60"
+            >
+              {downloading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Preparing…
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" /> Download PDF
+                </>
+              )}
             </button>
           </div>
         )}
-        {hasPrint && (
+
+        {hasPrint ? (
           <div className="card p-6 text-center">
             <Package className="mx-auto h-8 w-8 text-emerald-500" />
             <h3 className="mt-3 font-bold text-slate-deep">Print in production</h3>
@@ -101,6 +160,22 @@ export default function OrderPage({
             <span className="mt-4 inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
               Status: In production
             </span>
+          </div>
+        ) : (
+          // PDF-only order → upsell a printed hardcover of the same book.
+          <div className="card border-2 border-brand-primary p-6 text-center">
+            <Package className="mx-auto h-8 w-8 text-brand-primary" />
+            <h3 className="mt-3 font-bold text-slate-deep">Want it in print?</h3>
+            <p className="mt-1 text-sm text-slate-mutedText">
+              Get {src?.childName || "your child"}&apos;s book as a premium
+              hardcover, delivered across India.
+            </p>
+            <button
+              onClick={orderPrintedBook}
+              className="btn-primary mt-4 inline-flex w-full items-center justify-center gap-2 !py-2.5 text-sm"
+            >
+              <Package className="h-4 w-4" /> Order printed book · {inr(PAYWALL_PRINT)}
+            </button>
           </div>
         )}
       </div>
