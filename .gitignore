@@ -1,0 +1,35 @@
+# deps
+node_modules/
+.pnp
+.pnp.js
+
+# next
+apps/web/.next/
+apps/web/out/
+apps/web/build/
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# prisma
+apps/api/.prisma/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# misc
+.DS_Store
+*.log
+npm-debug.log*
+.vercel
+coverage/
+
+# uploads / generated media (local dev)
+apps/api/storage/

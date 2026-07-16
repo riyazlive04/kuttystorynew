@@ -1,0 +1,262 @@
+import { STORIES, getStory } from "./data";
+import type {
+  Job,
+  JobStatus,
+  Order,
+  OrderInput,
+  Personalization,
+  PreviewPage,
+  Story,
+} from "./types";
+
+const API = process.env.NEXT_PUBLIC_API_URL;
+const JOB_KEY = "kutty:jobs";
+const ORDER_KEY = "kutty:orders";
+
+// How long the mock "GPU render" takes end to end (ms).
+const MOCK_RENDER_MS = 9000;
+const FREE_PREVIEW_PAGES = 13; // pages 1-13 free; paywall at page 14
+
+/* ------------------------------------------------------------------ */
+/*  Local persistence helpers (used only in mock / no-backend mode)    */
+/* ------------------------------------------------------------------ */
+
+function readMap<T>(key: string): Record<string, T> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(localStorage.getItem(key) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function writeMap<T>(key: string, map: Record<string, T>) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(key, JSON.stringify(map));
+}
+
+function rid(prefix: string): string {
+  const rand = Math.random().toString(36).slice(2, 8);
+  const stamp = Date.now().toString(36).slice(-4);
+  return `${prefix}_${stamp}${rand}`;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Preview page synthesis (mock ComfyUI output)                       */
+/* ------------------------------------------------------------------ */
+
+function buildPages(story: Story, childName: string): PreviewPage[] {
+  const captions = [
+    `Once upon a time there was a wonderful child named ${childName}.`,
+    `${childName} woke up ready for an amazing adventure.`,
+    `"Today," said ${childName}, "anything is possible!"`,
+    `Along the way, ${childName} made a brand new friend.`,
+    `Together they discovered a secret hidden in plain sight.`,
+    `${childName} was brave, even when things felt a little scary.`,
+    `With a big smile, ${childName} solved the puzzle.`,
+    `Everyone cheered for ${childName}!`,
+  ];
+  return Array.from({ length: story.pages }, (_, i) => ({
+    index: i,
+    imageUrl: story.gallery[i % story.gallery.length] || story.coverImage,
+    caption:
+      captions[i % captions.length] ||
+      `${childName}'s story continues on page ${i + 1}...`,
+    locked: i >= FREE_PREVIEW_PAGES,
+  }));
+}
+
+function deriveMockJob(raw: any): Job {
+  // Progress is time-based so it advances across navigations without timers.
+  const elapsed = Date.now() - new Date(raw.createdAt).getTime();
+  const pct = Math.min(100, Math.round((elapsed / MOCK_RENDER_MS) * 100));
+  let status: JobStatus = "queued";
+  if (pct >= 100) status = "completed";
+  else if (pct >= 60) status = "rendering";
+  else if (pct >= 15) status = "processing";
+  return { ...raw, progress: pct, status };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Public API                                                         */
+/* ------------------------------------------------------------------ */
+
+export async function uploadPhoto(file: File): Promise<string | undefined> {
+  // Uploads the child's photo to the backend; returns the rawPhotoUrl.
+  // In no-backend mode there's nothing to upload to, so returns undefined.
+  if (!API) return undefined;
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(`${API}/upload`, { method: "POST", body: fd });
+  if (!res.ok) return undefined;
+  const json = await res.json();
+  return `${API}${json.url}`;
+}
+
+// Diffrun-style: re-roll a single page's face with a fresh seed ("fine-tune").
+export async function regeneratePage(
+  jobId: string,
+  pageNumber: number,
+): Promise<boolean> {
+  if (!API) return false;
+  const res = await fetch(`${API}/jobs/${jobId}/pages/${pageNumber}/regenerate`, {
+    method: "POST",
+  });
+  return res.ok;
+}
+
+// Approve the finished book for print (required before production).
+export async function approveJob(jobId: string): Promise<boolean> {
+  if (!API) return false;
+  const res = await fetch(`${API}/jobs/${jobId}/approve`, { method: "POST" });
+  return res.ok;
+}
+
+export async function listStories(): Promise<Story[]> {
+  if (API) {
+    const res = await fetch(`${API}/stories`, { cache: "no-store" });
+    if (res.ok) return res.json();
+  }
+  return STORIES;
+}
+
+export async function fetchStory(slug: string): Promise<Story | undefined> {
+  if (API) {
+    const res = await fetch(`${API}/stories/${slug}`, { cache: "no-store" });
+    if (res.ok) return res.json();
+  }
+  return getStory(slug);
+}
+
+export async function createJob(p: Personalization): Promise<Job> {
+  if (API) {
+    const res = await fetch(`${API}/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(p),
+    });
+    if (!res.ok) throw new Error("Failed to create job");
+    return res.json();
+  }
+
+  const story = getStory(p.storySlug);
+  if (!story) throw new Error("Unknown story");
+  const job: Job = {
+    id: rid("job"),
+    storySlug: p.storySlug,
+    storyTitle: story.title,
+    childName: p.childName,
+    language: p.language,
+    status: "queued",
+    progress: 0,
+    pages: buildPages(story, p.childName),
+    createdAt: new Date().toISOString(),
+  };
+  const jobs = readMap<Job>(JOB_KEY);
+  jobs[job.id] = job;
+  writeMap(JOB_KEY, jobs);
+  return job;
+}
+
+// Worker-composed preview pages are stored as relative "/uploads/..." (served by
+// the API host). Absolutize them to the browser-facing API origin so <img> loads
+// them directly (a Next rewrite can't — rewrites run server-side in the web
+// container where localhost:8000 isn't the API).
+function absolutizePages(job: Job): Job {
+  if (!API || !job?.pages) return job;
+  return {
+    ...job,
+    pages: job.pages.map((p) =>
+      p.imageUrl && p.imageUrl.startsWith("/uploads/")
+        ? { ...p, imageUrl: `${API}${p.imageUrl}` }
+        : p,
+    ),
+  };
+}
+
+/** Direct link to the generated free-preview PDF (customer + admin download). */
+export function previewPdfUrl(jobId: string): string {
+  return API ? `${API}/jobs/${jobId}/preview.pdf` : "#";
+}
+
+export async function getJob(jobId: string): Promise<Job | undefined> {
+  if (API) {
+    // Distinguish a genuine 404 (job gone → undefined) from a transient failure
+    // (network blip / API restart / 5xx). Transient errors THROW so the poller
+    // can retry instead of wrongly declaring the preview "not found".
+    const res = await fetch(`${API}/jobs/${jobId}`, { cache: "no-store" });
+    if (res.ok) return absolutizePages(await res.json());
+    if (res.status === 404) return undefined;
+    throw new Error(`getJob transient failure: ${res.status}`);
+  }
+  const jobs = readMap<Job>(JOB_KEY);
+  const raw = jobs[jobId];
+  return raw ? deriveMockJob(raw) : undefined;
+}
+
+export async function createOrder(input: OrderInput): Promise<Order> {
+  if (API) {
+    const res = await fetch(`${API}/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) throw new Error("Failed to create order");
+    return res.json();
+  }
+  const order: Order = {
+    ...input,
+    id: rid("ord").toUpperCase(),
+    status: "paid",
+    createdAt: new Date().toISOString(),
+  };
+  const orders = readMap<Order>(ORDER_KEY);
+  orders[order.id] = order;
+  writeMap(ORDER_KEY, orders);
+  return order;
+}
+
+export async function getOrder(id: string): Promise<Order | undefined> {
+  if (API) {
+    const res = await fetch(`${API}/orders/${id}`, { cache: "no-store" });
+    if (res.ok) return res.json();
+    return undefined;
+  }
+  return readMap<Order>(ORDER_KEY)[id];
+}
+
+export interface RuntimeConfig {
+  freePreviewPages: number;
+  totalPages: number;
+}
+
+// Fallback used when there's no backend (mock mode) or /config is unreachable.
+const DEFAULT_CONFIG: RuntimeConfig = {
+  freePreviewPages: FREE_PREVIEW_PAGES,
+  totalPages: 28,
+};
+
+// Single source of truth for the free-page count / paywall copy: the backend's
+// FREE_PREVIEW_PAGES (it only renders that many preview pages). Read at runtime.
+export async function getConfig(): Promise<RuntimeConfig> {
+  if (API) {
+    try {
+      const res = await fetch(`${API}/config`, { cache: "no-store" });
+      if (res.ok) {
+        const c = await res.json();
+        return {
+          freePreviewPages: c.freePreviewPages ?? DEFAULT_CONFIG.freePreviewPages,
+          totalPages: c.totalPages ?? DEFAULT_CONFIG.totalPages,
+        };
+      }
+    } catch {
+      /* fall through to default */
+    }
+  }
+  return DEFAULT_CONFIG;
+}
+
+export const config = {
+  usingBackend: Boolean(API),
+  freePreviewPages: FREE_PREVIEW_PAGES,
+};

@@ -1,0 +1,259 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { CheckCircle2, Download, Loader2, Sparkles } from "lucide-react";
+import {
+  approveJob,
+  getConfig,
+  getJob,
+  previewPdfUrl,
+  regeneratePage,
+} from "@/lib/api";
+import { getStory } from "@/lib/data";
+import { useCart } from "@/lib/cart";
+import { languageLabel } from "@/lib/format";
+import type { Format, Job } from "@/lib/types";
+import { FlipBook } from "@/components/FlipBook";
+import { PAYWALL_PDF, PAYWALL_PRINT } from "@/components/Paywall";
+
+export default function PreviewPage({ params }: { params: { jobId: string } }) {
+  const { jobId } = params;
+  const router = useRouter();
+  const add = useCart((s) => s.add);
+
+  const [job, setJob] = useState<Job | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  // Free-page count comes from the backend (/config) — single source of truth.
+  const [freePages, setFreePages] = useState(13);
+  const [totalPages, setTotalPages] = useState(28);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [regeneratingPage, setRegeneratingPage] = useState<number | null>(null);
+  const [approving, setApproving] = useState(false);
+
+  useEffect(() => {
+    getConfig().then((c) => {
+      setFreePages(c.freePreviewPages);
+      setTotalPages(c.totalPages);
+    });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    // Tolerate transient API failures (network blip / API restart) — keep polling
+    // and only declare "not found" after sustained failure (~1 min) or a real 404.
+    let failures = 0;
+    const MAX_FAILURES = 30;
+    async function tick() {
+      try {
+        const j = await getJob(jobId);
+        if (cancelled) return;
+        if (j === undefined) {
+          setNotFound(true); // genuine 404 — the job no longer exists
+          return;
+        }
+        failures = 0;
+        setJob(j);
+        if (j.status !== "completed") timer = setTimeout(tick, 1000);
+        else setRegeneratingPage(null); // render settled — clear refine spinner
+      } catch {
+        // Transient (fetch failed / 5xx while the API restarts). Back off & retry
+        // so a brief blip doesn't freeze the progress bar mid-generation.
+        if (cancelled) return;
+        failures += 1;
+        if (failures >= MAX_FAILURES) {
+          setNotFound(true);
+          return;
+        }
+        timer = setTimeout(tick, 2000);
+      }
+    }
+    tick();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [jobId, reloadKey]);
+
+  async function handleRegenerate(pageNumber: number) {
+    setRegeneratingPage(pageNumber);
+    const ok = await regeneratePage(jobId, pageNumber);
+    if (!ok) {
+      setRegeneratingPage(null);
+      alert("Couldn't regenerate this page. Please try again.");
+      return;
+    }
+    setReloadKey((k) => k + 1); // resume polling until the re-roll finishes
+  }
+
+  async function handleApprove() {
+    setApproving(true);
+    const ok = await approveJob(jobId);
+    setApproving(false);
+    if (ok) setReloadKey((k) => k + 1);
+    else alert("Couldn't approve for print. Please try again.");
+  }
+
+  if (notFound) {
+    return (
+      <div className="container-x py-24 text-center">
+        <h1 className="text-2xl font-bold text-slate-deep">Preview not found</h1>
+        <p className="mt-2 text-slate-mutedText">
+          This preview may have expired. Let&apos;s create a new one.
+        </p>
+        <Link href="/stories" className="btn-primary mt-6 inline-flex">
+          Browse stories
+        </Link>
+      </div>
+    );
+  }
+
+  if (!job) {
+    return (
+      <div className="container-x grid place-items-center py-32">
+        <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
+      </div>
+    );
+  }
+
+  const story = getStory(job.storySlug);
+  const rendering = job.status !== "completed";
+  // Page-by-page progress (Diffrun-style): count free pages already rendered so
+  // we can show "Creating page N of M" — more tangible than an abstract %.
+  const renderedFree = job.pages
+    .slice(0, freePages)
+    .filter((p) => p.imageUrl).length;
+  const currentPage = Math.min(renderedFree + 1, freePages);
+
+  function handleSelect(format: Format) {
+    if (!job) return;
+    add({
+      id: `${job.id}-${format}`,
+      jobId: job.id,
+      storySlug: job.storySlug,
+      storyTitle: job.storyTitle,
+      childName: job.childName,
+      format,
+      language: job.language,
+      coverImage: story?.coverImage || job.pages[0]?.imageUrl || "",
+      unitPrice: format === "pdf" ? PAYWALL_PDF : PAYWALL_PRINT,
+      quantity: 1,
+    });
+    router.push("/checkout");
+  }
+
+  return (
+    <div className="container-x py-10">
+      <div className="mb-8 text-center">
+        <span className="chip bg-brand-borderAccent text-brand-primaryDark">
+          <Sparkles className="h-3.5 w-3.5" /> Free preview
+        </span>
+        <h1 className="mt-3 text-3xl font-bold text-slate-deep md:text-4xl">
+          {job.childName}&apos;s{" "}
+          <span className="text-brand-primary">{job.storyTitle}</span>
+        </h1>
+        <p className="mt-2 text-sm text-slate-mutedText">
+          {languageLabel(job.language)} · Read pages 1-{freePages} free
+        </p>
+        {renderedFree > 0 && (
+          <a
+            href={previewPdfUrl(job.id)}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-4 inline-flex items-center gap-2 rounded-xl border-2 border-brand-primary px-4 py-2 text-sm font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white"
+          >
+            <Download className="h-4 w-4" /> Download preview (PDF)
+          </a>
+        )}
+      </div>
+
+      {rendering && (
+        <div className="mx-auto mb-8 max-w-md text-center">
+          <div className="mb-3 flex items-center justify-center gap-2 text-sm font-semibold text-slate-deep">
+            <Loader2 className="h-4 w-4 animate-spin text-brand-primary" />
+            {job.status === "queued" && "Warming up the studio…"}
+            {job.status === "processing" && "Bringing your hero to life…"}
+            {job.status === "rendering" &&
+              `Creating page ${currentPage} of ${freePages}…`}
+          </div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-brand-borderAccent">
+            <div
+              className="h-full rounded-full bg-brand-gradient transition-all duration-700"
+              style={{ width: `${job.progress}%` }}
+            />
+          </div>
+          <p className="mt-2 text-xs text-slate-400">{job.progress}%</p>
+        </div>
+      )}
+
+      <FlipBook
+        pages={job.pages}
+        freeCount={job.isPurchased ? job.pages.length : freePages}
+        totalPages={totalPages}
+        onSelect={handleSelect}
+        onRegenerate={job.status === "completed" ? handleRegenerate : undefined}
+        regeneratingPage={regeneratingPage}
+      />
+
+      {/* Purchased: approve-for-print gate (Diffrun). */}
+      {job.isPurchased && (
+        <div className="mx-auto mt-8 max-w-lg rounded-3xl border-2 border-brand-borderAccent bg-white p-6 text-center shadow-sm">
+          {job.printApproved ? (
+            <div className="flex flex-col items-center gap-2">
+              <CheckCircle2 className="h-9 w-9 text-emerald-500" />
+              <h3 className="text-lg font-bold text-slate-deep">
+                Approved for print 🎉
+              </h3>
+              <p className="text-sm text-slate-mutedText">
+                Your book is in the production queue. We&apos;ll email you tracking
+                once it ships.
+              </p>
+              {job.pdfDownloadUrl && (
+                <a
+                  href={job.pdfDownloadUrl}
+                  className="btn-primary mt-2 inline-flex"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Download PDF
+                </a>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3">
+              <h3 className="text-lg font-bold text-slate-deep">
+                Happy with every page?
+              </h3>
+              <p className="text-sm text-slate-mutedText">
+                Use <span className="font-semibold">Regenerate</span> on any page
+                you want to refine. When it&apos;s perfect, approve it for print.
+              </p>
+              <button
+                onClick={handleApprove}
+                disabled={approving || job.status !== "completed"}
+                className="btn-primary inline-flex disabled:opacity-60"
+              >
+                {approving ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-5 w-5" /> Approve for print
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!job.isPurchased && (
+        <p className="mx-auto mt-6 max-w-md text-center text-xs text-slate-mutedText">
+          Turn the pages to read the first {freePages} for free. Unlock all{" "}
+          {totalPages} to download the PDF or order a printed hardcover.
+        </p>
+      )}
+    </div>
+  );
+}

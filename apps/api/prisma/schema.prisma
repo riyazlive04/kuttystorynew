@@ -1,0 +1,169 @@
+// KuttyStory data model - PostgreSQL via Prisma (Python client).
+// Generate: prisma generate   Apply:  prisma db push
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+}
+
+enum Category {
+  LEARNING
+  IMAGINATION
+  ADVENTURE
+  BEDTIME
+}
+
+enum JobStatus {
+  queued
+  processing
+  rendering
+  completed
+  failed
+}
+
+enum OrderStatus {
+  pending
+  paid
+  in_production
+  shipped
+  delivered
+  cancelled
+}
+
+// BookTemplate in the blueprint.
+model Story {
+  id            String   @id @default(cuid())
+  slug          String   @unique
+  title         String
+  tagline       String
+  description   String
+  categoryTag   Category
+  ageRange      String
+  minAge        Int      @default(2)
+  maxAge        Int      @default(8)
+  pdfPrice      Int
+  printPrice    Int
+  bilingualAddon Int     @default(200)
+  pages         Int      @default(28)
+  coverImage    String
+  gallery       String[]
+  themeColor    String   @default("#9333EA")
+  supportsTamil Boolean  @default(true)
+  highlights    String[]
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  pageTemplates PageTemplate[]
+  jobs          Job[]
+}
+
+// Per-page authoring: the AI scene prompt, story line (with {{name}}), and the
+// exact text-box placement used by the PIL text layer.
+model PageTemplate {
+  id            String  @id @default(cuid())
+  book          Story   @relation(fields: [bookTemplateId], references: [id], onDelete: Cascade)
+  bookTemplateId String
+  pageNumber    Int
+
+  // --- Diffrun-style inpaint-over-template ---
+  // The pre-drawn illustrated scene (fixed style + character body). The child's
+  // face is inpainted into it, so the whole scene stays consistent page to page.
+  baseImageUrl  String?
+  stylePrompt   String  @default("children's storybook illustration, soft colours, consistent character, clean line art")
+  // Optional manual face region (% of canvas). If null, the face is auto-detected.
+  faceX         Float?
+  faceY         Float?
+  faceW         Float?
+  faceH         Float?
+
+  scenePrompt   String  // fallback txt2img scene description (used if no baseImageUrl)
+  storyText     String  @default("")   // narrative line, supports {{name}}
+  textX         Float   @default(50)    // % of width  (0-100)
+  textY         Float   @default(82)    // % of height (0-100)
+  fontSize      Int     @default(42)
+  fontColor     String  @default("#FFFFFF")
+
+  @@unique([bookTemplateId, pageNumber])
+}
+
+// UserPreviewSession in the blueprint.
+model Job {
+  id          String    @id @default(cuid())
+  story       Story     @relation(fields: [storySlug], references: [slug])
+  storySlug   String
+  storyTitle  String
+  childName   String
+  gender      String    @default("neutral")
+  ageYears    Int       @default(4)
+  language    String    @default("en")
+  skinTone    String    @default("medium")
+  dedication  String?
+  photoUrl    String?   // rawPhotoUrl (primary)
+  photoUrls   String[]  @default([])  // Diffrun-style: a few photos for stronger identity
+  identityVectors Json?  // face embedding extracted ONCE, reused per page
+  status      JobStatus @default(queued)
+  progress    Int       @default(0)
+  pages       Json      // PreviewPage[] (generatedUrls + captions)
+  isPurchased Boolean   @default(false)
+  printApproved Boolean @default(false)  // customer approved the book for print
+  approvedAt  DateTime?
+  pdfDownloadUrl String?
+  expiresAt   DateTime? // preview + raw photo purged 48h after this (non-purchased)
+  preservedUntil DateTime? // purchased/approved books kept until this (30 days)
+  purged      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  orders      Order[]
+  orderItems  OrderItem[]
+}
+
+model Order {
+  id                String      @id @default(cuid())
+  status            OrderStatus @default(pending)
+  previewSession    Job?        @relation(fields: [previewSessionId], references: [id])
+  previewSessionId  String?
+  format            String?     // "pdf" | "print"
+  customerName      String
+  customerEmail     String
+  customerPhone     String
+  address1          String?
+  address2          String?
+  city              String?
+  state             String?
+  pincode           String?
+  shippingDetails   Json?
+  subtotal          Int
+  discount          Int         @default(0)
+  promoCode         String?
+  shipping          Int         @default(0)
+  total             Int
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  pdfDownloadUrl    String?
+  createdAt         DateTime    @default(now())
+
+  items             OrderItem[]
+}
+
+model OrderItem {
+  id         String  @id @default(cuid())
+  order      Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId    String
+  job        Job?    @relation(fields: [jobId], references: [id])
+  jobId      String?
+  storySlug  String
+  storyTitle String
+  childName  String
+  format     String  // "pdf" | "print"
+  language   String
+  coverImage String
+  unitPrice  Int
+  quantity   Int     @default(1)
+}

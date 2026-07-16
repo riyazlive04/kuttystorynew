@@ -1,0 +1,452 @@
+"""Admin API — order fulfillment + story CMS.
+
+Auth: send `Authorization: Bearer <ADMIN_TOKEN>` (or `X-Admin-Token`).
+Kept intentionally simple; swap for real user auth / RBAC in production.
+"""
+import os
+import uuid
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException
+from pydantic import BaseModel
+
+from ..config import settings
+from ..db import prisma
+from ..serializers import order_dict, story_dict
+
+router = APIRouter(prefix="/admin", tags=["admin"])
+
+ORDER_STATUSES = [
+    "pending",
+    "paid",
+    "in_production",
+    "shipped",
+    "delivered",
+    "cancelled",
+]
+
+
+async def require_admin(
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+):
+    token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+    token = token or x_admin_token
+    if token != settings.admin_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return True
+
+
+# ----------------------------- Orders -------------------------------------
+
+@router.get("/orders", dependencies=[Depends(require_admin)])
+async def admin_orders(status: Optional[str] = None):
+    where = {"status": status} if status in ORDER_STATUSES else {}
+    orders = await prisma.order.find_many(
+        where=where, include={"items": True}, order={"createdAt": "desc"}
+    )
+    return [order_dict(o) for o in orders]
+
+
+class StatusUpdate(BaseModel):
+    status: str
+
+
+@router.patch("/orders/{order_id}/status", dependencies=[Depends(require_admin)])
+async def update_order_status(order_id: str, body: StatusUpdate):
+    if body.status not in ORDER_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    # Print-approval gate (Diffrun): a book must be customer-approved before it
+    # can enter production/shipping.
+    if body.status in ("in_production", "shipped", "delivered"):
+        order = await prisma.order.find_unique(
+            where={"id": order_id}, include={"previewSession": True}
+        )
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        session = order.previewSession
+        if session and not session.printApproved:
+            raise HTTPException(
+                status_code=409,
+                detail="Book not approved for print yet (customer must approve).",
+            )
+    order = await prisma.order.update(
+        where={"id": order_id},
+        data={"status": body.status},
+        include={"items": True},
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return order_dict(order)
+
+
+@router.delete("/orders/{order_id}", dependencies=[Depends(require_admin)])
+async def admin_delete_order(order_id: str):
+    """Permanently delete an order. Its line items are removed automatically
+    (OrderItem.onDelete: Cascade). The linked preview session/job is left intact."""
+    order = await prisma.order.find_unique(where={"id": order_id})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    await prisma.order.delete(where={"id": order_id})
+    return {"ok": True, "id": order_id}
+
+
+# --------------------------- Previews (jobs) ------------------------------
+
+@router.get("/jobs", dependencies=[Depends(require_admin)])
+async def admin_list_jobs(limit: int = 200, purchased: Optional[bool] = None):
+    """List generated preview sessions (newest first) so admin can review and
+    download any preview — not just the ones that became orders."""
+    where: dict = {}
+    if purchased is not None:
+        where["isPurchased"] = purchased
+    jobs = await prisma.job.find_many(
+        where=where or None, order={"createdAt": "desc"}, take=limit
+    )
+    free = settings.free_preview_pages
+    out = []
+    for j in jobs:
+        pages = list(j.pages) if j.pages else []
+        rendered_free = sum(
+            1
+            for i, p in enumerate(pages)
+            if i < free and (p or {}).get("imageUrl") and not (p or {}).get("locked")
+        )
+        out.append(
+            {
+                "id": j.id,
+                "childName": j.childName,
+                "storyTitle": j.storyTitle,
+                "storySlug": j.storySlug,
+                "language": j.language,
+                "status": j.status,
+                "progress": j.progress,
+                "isPurchased": j.isPurchased,
+                "printApproved": j.printApproved,
+                "purged": j.purged,
+                "renderedFreePages": rendered_free,
+                "previewReady": rendered_free > 0,
+                "createdAt": j.createdAt.isoformat(),
+            }
+        )
+    return out
+
+
+# ----------------------------- Stats --------------------------------------
+
+@router.get("/stats", dependencies=[Depends(require_admin)])
+async def admin_stats():
+    orders = await prisma.order.find_many()
+    paid = [o for o in orders if o.status != "pending" and o.status != "cancelled"]
+    revenue = sum(o.total for o in paid)
+    return {
+        "orders": len(orders),
+        "paidOrders": len(paid),
+        "revenue": revenue,
+        "jobs": await prisma.job.count(),
+        "stories": await prisma.story.count(),
+    }
+
+
+# --------------------------- Stories CMS ----------------------------------
+
+class StoryUpsert(BaseModel):
+    slug: str
+    title: str
+    tagline: str
+    description: str
+    categoryTag: str
+    ageRange: str
+    minAge: int = 2
+    maxAge: int = 8
+    pdfPrice: int
+    printPrice: int
+    bilingualAddon: int = 200
+    pages: int = 28
+    coverImage: str
+    gallery: list[str] = []
+    themeColor: str = "#9333EA"
+    supportsTamil: bool = True
+    highlights: list[str] = []
+    active: bool = True
+
+
+@router.get("/stories", dependencies=[Depends(require_admin)])
+async def admin_list_stories():
+    stories = await prisma.story.find_many(order={"createdAt": "asc"})
+    return [{**story_dict(s), "active": s.active} for s in stories]
+
+
+@router.post("/stories", dependencies=[Depends(require_admin)])
+async def admin_upsert_story(body: StoryUpsert):
+    data = body.model_dump()
+    story = await prisma.story.upsert(
+        where={"slug": body.slug},
+        data={"create": data, "update": data},
+    )
+    return {**story_dict(story), "active": story.active}
+
+
+@router.patch("/stories/{slug}/active", dependencies=[Depends(require_admin)])
+async def admin_toggle_story(slug: str, active: bool):
+    story = await prisma.story.update(where={"slug": slug}, data={"active": active})
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    return {**story_dict(story), "active": story.active}
+
+
+@router.delete("/stories/{slug}", dependencies=[Depends(require_admin)])
+async def admin_delete_story(slug: str):
+    """Permanently delete a book and its page templates.
+
+    Refuses if the book has customer preview sessions / orders (Job rows have no
+    cascade and hold real order history) — hide it instead. Page templates are
+    removed automatically (onDelete: Cascade in the schema).
+    """
+    story = await prisma.story.find_unique(where={"slug": slug})
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    job_count = await prisma.job.count(where={"storySlug": slug})
+    if job_count:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This book has {job_count} customer session(s)/order(s) and can't "
+                "be deleted. Hide it instead to keep order history intact."
+            ),
+        )
+    await prisma.story.delete(where={"slug": slug})
+    return {"ok": True, "slug": slug}
+
+
+# ------------------------- Page templates (CMS) ---------------------------
+
+def _page_dict(p) -> dict:
+    return {
+        "id": p.id,
+        "bookTemplateId": p.bookTemplateId,
+        "pageNumber": p.pageNumber,
+        "baseImageUrl": p.baseImageUrl,
+        "stylePrompt": p.stylePrompt,
+        "faceX": p.faceX,
+        "faceY": p.faceY,
+        "faceW": p.faceW,
+        "faceH": p.faceH,
+        "scenePrompt": p.scenePrompt,
+        "storyText": p.storyText,
+        "textX": p.textX,
+        "textY": p.textY,
+        "fontSize": p.fontSize,
+        "fontColor": p.fontColor,
+    }
+
+
+class PageUpsert(BaseModel):
+    pageNumber: int
+    baseImageUrl: Optional[str] = None
+    stylePrompt: str = "children's storybook illustration, soft colours, consistent character, clean line art"
+    faceX: Optional[float] = None
+    faceY: Optional[float] = None
+    faceW: Optional[float] = None
+    faceH: Optional[float] = None
+    scenePrompt: str = ""
+    storyText: str = ""
+    textX: float = 50
+    textY: float = 82
+    fontSize: int = 42
+    fontColor: str = "#FFFFFF"
+
+
+@router.get("/stories/{slug}/pages", dependencies=[Depends(require_admin)])
+async def admin_list_pages(slug: str):
+    story = await prisma.story.find_unique(where={"slug": slug})
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    pages = await prisma.pagetemplate.find_many(
+        where={"bookTemplateId": story.id}, order={"pageNumber": "asc"}
+    )
+    return [_page_dict(p) for p in pages]
+
+
+@router.post("/stories/{slug}/pages", dependencies=[Depends(require_admin)])
+async def admin_upsert_page(slug: str, body: PageUpsert):
+    story = await prisma.story.find_unique(where={"slug": slug})
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    data = {**body.model_dump(), "bookTemplateId": story.id}
+    page = await prisma.pagetemplate.upsert(
+        where={
+            "bookTemplateId_pageNumber": {
+                "bookTemplateId": story.id,
+                "pageNumber": body.pageNumber,
+            }
+        },
+        data={"create": data, "update": data},
+    )
+    return _page_dict(page)
+
+
+@router.delete("/stories/{slug}/pages/{page_number}", dependencies=[Depends(require_admin)])
+async def admin_delete_page(slug: str, page_number: int):
+    story = await prisma.story.find_unique(where={"slug": slug})
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    await prisma.pagetemplate.delete_many(
+        where={"bookTemplateId": story.id, "pageNumber": page_number}
+    )
+    return {"ok": True}
+
+
+class GenerateBaseBody(BaseModel):
+    # Optional override; defaults to the page's scenePrompt (+ stylePrompt).
+    prompt: Optional[str] = None
+
+
+@router.post(
+    "/stories/{slug}/pages/{page_number}/generate-base",
+    dependencies=[Depends(require_admin)],
+)
+async def admin_generate_base_art(slug: str, page_number: int, body: GenerateBaseBody):
+    """Generate a page's GENERIC base illustration ONCE via flux txt2img and save
+    it as PageTemplate.baseImageUrl. Costs one Replicate render. The base art
+    shows a generic child character; each customer's face is later swapped in."""
+    story = await prisma.story.find_unique(where={"slug": slug})
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    page = await prisma.pagetemplate.find_first(
+        where={"bookTemplateId": story.id, "pageNumber": page_number}
+    )
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found — save the page first")
+
+    scene = (body.prompt or page.scenePrompt or "").strip()
+    if not scene:
+        raise HTTPException(
+            status_code=400, detail="Set a scene prompt on the page before generating"
+        )
+    style = (page.stylePrompt or "").strip()
+    # A generic child (no specific identity) so a real face can be swapped in later.
+    prompt = ", ".join(
+        p for p in [scene, style, "a single generic child character, no text"] if p
+    )
+
+    from ..generation_engine import generate_base_art
+
+    try:
+        data = await generate_base_art(scene_prompt=prompt, seed=page_number * 7)
+    except Exception as e:  # surface the failure to the admin UI
+        raise HTTPException(status_code=502, detail=f"Base-art generation failed: {e}")
+
+    name = f"base_{story.id}_p{page_number}_{uuid.uuid4().hex[:8]}.webp"
+    os.makedirs(settings.storage_dir, exist_ok=True)
+    with open(os.path.join(settings.storage_dir, name), "wb") as f:
+        f.write(data)
+    url = f"/uploads/{name}"
+
+    page = await prisma.pagetemplate.update(
+        where={"id": page.id}, data={"baseImageUrl": url}
+    )
+    return _page_dict(page)
+
+
+DEFAULT_STYLE_PROMPT = (
+    "children's storybook illustration, soft warm colours, consistent character, "
+    "clean line art, whimsical, gentle lighting"
+)
+
+
+class GenerateStoryBody(BaseModel):
+    numPages: int = 13
+    premise: Optional[str] = None
+    gender: str = "neutral"
+    stylePrompt: Optional[str] = None
+    replace: bool = True  # overwrite the book's existing pages
+
+
+@router.post(
+    "/stories/{slug}/generate-story", dependencies=[Depends(require_admin)]
+)
+async def admin_generate_story(slug: str, body: GenerateStoryBody):
+    """Author a full, coherent, personalized story for the book via an LLM and
+    save it as PageTemplates (per-page narrative with {{name}} + scene prompt +
+    a consistent style). Diffrun-style: authored once, name-swapped per child."""
+    story = await prisma.story.find_unique(where={"slug": slug})
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    from ..story_generator import active_provider, generate_story_pages
+
+    n = max(1, min(28, body.numPages))
+    try:
+        pages = await generate_story_pages(
+            title=story.title,
+            premise=body.premise or story.description or story.tagline,
+            num_pages=n,
+            min_age=story.minAge,
+            max_age=story.maxAge,
+            gender=body.gender,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Story generation failed: {e}")
+
+    style = (body.stylePrompt or "").strip() or DEFAULT_STYLE_PROMPT
+    if body.replace:
+        await prisma.pagetemplate.delete_many(where={"bookTemplateId": story.id})
+
+    out = []
+    for p in pages:
+        fields = {
+            "scenePrompt": p["scenePrompt"],
+            "storyText": p["storyText"],
+            "stylePrompt": style,
+            "textX": 50.0,
+            "textY": 85.0,
+            "fontSize": 42,
+            "fontColor": "#FFFFFF",
+        }
+        page = await prisma.pagetemplate.upsert(
+            where={
+                "bookTemplateId_pageNumber": {
+                    "bookTemplateId": story.id,
+                    "pageNumber": p["pageNumber"],
+                }
+            },
+            data={
+                "create": {
+                    "bookTemplateId": story.id,
+                    "pageNumber": p["pageNumber"],
+                    **fields,
+                },
+                "update": fields,
+            },
+        )
+        out.append(_page_dict(page))
+    return {"provider": active_provider(), "count": len(out), "pages": out}
+
+
+class GenerateBaseArtBody(BaseModel):
+    overwrite: bool = False
+
+
+@router.post(
+    "/stories/{slug}/generate-base-art", dependencies=[Depends(require_admin)]
+)
+async def admin_generate_book_base_art(slug: str, body: GenerateBaseArtBody):
+    """Generate the FIXED base illustration for every page of the book (one-time),
+    so the fixed-template + face-personalization pipeline has consistent art.
+    Runs in the background (many renders)."""
+    story = await prisma.story.find_unique(where={"slug": slug})
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    count = await prisma.pagetemplate.count(where={"bookTemplateId": story.id})
+    if not count:
+        raise HTTPException(status_code=400, detail="Author the story pages first")
+    try:
+        from ..tasks import generate_book_base_art
+
+        generate_book_base_art.delay(story.id, body.overwrite)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Render queue unavailable")
+    return {"ok": True, "pages": count, "status": "generating"}

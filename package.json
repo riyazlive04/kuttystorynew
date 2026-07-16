@@ -1,0 +1,22 @@
+{
+  "name": "kuttystory",
+  "version": "1.0.0",
+  "private": true,
+  "description": "KuttyStory — personalized AI storybooks for kids (Diffrun-style rebuild)",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace apps/web",
+    "start": "npm run start --workspace apps/web",
+    "lint": "npm run lint --workspace apps/web",
+    "api:dev": "cd apps/api && uvicorn app.main:app --reload --port 8000",
+    "api:worker": "cd apps/api && celery -A app.worker.celery_app worker --loglevel=info -P solo",
+    "stack:up": "docker compose up --build",
+    "stack:down": "docker compose down -v"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

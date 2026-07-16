@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand-primary: #9d7bc7;
+  --brand-cream: #fbf7fe;
+}
+
+.text-gradient-brand {
+  background: linear-gradient(120deg, #c026d3 0%, #9333ea 55%, #7c3aed 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@layer base {
+  body {
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3,
+  .kids {
+    font-family: var(--font-fredoka), "Quicksand", sans-serif;
+  }
+  ::selection {
+    background: rgba(157, 123, 199, 0.28);
+  }
+}
+
+@layer components {
+  .container-x {
+    @apply mx-auto w-full max-w-6xl px-5 md:px-8;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-gradient px-6 py-3.5 font-bold text-white shadow-glow transition hover:brightness-105 active:scale-95;
+  }
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-slate-800 px-6 py-3.5 font-bold text-slate-800 transition hover:bg-slate-50 active:scale-95;
+  }
+  .card {
+    @apply rounded-3xl border-2 border-slate-100 bg-white shadow-sm;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider;
+  }
+}
+
+/* Custom scrollbar for the preview strip */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Skeleton shimmer used while a job renders */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+  background: #f1f5f9;
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.6),
+    transparent
+  );
+  animation: shimmer 1.6s infinite;
+}
