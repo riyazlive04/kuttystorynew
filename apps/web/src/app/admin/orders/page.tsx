@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Trash2 } from "lucide-react";
+import { BookDown, Loader2, Trash2 } from "lucide-react";
 import { adminApi, ORDER_STATUSES } from "@/lib/admin";
+import { bookPdfUrl, downloadFile } from "@/lib/api";
 import { inr } from "@/lib/format";
 import type { Order } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -12,6 +13,23 @@ export default function AdminOrders() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("");
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  async function downloadBook(o: Order) {
+    const jobId = o.items.find((i) => i.jobId)?.jobId;
+    if (!jobId) {
+      alert("No preview session linked to this order.");
+      return;
+    }
+    setDownloadingId(o.id);
+    const child = o.items[0]?.childName || "story";
+    const ok = await downloadFile(bookPdfUrl(jobId), `KuttyStory-${child}.pdf`);
+    setDownloadingId(null);
+    if (!ok)
+      alert(
+        "The full book isn't ready yet (all 28 pages may still be rendering). Try again shortly.",
+      );
+  }
 
   function load(status?: string) {
     setLoading(true);
@@ -138,11 +156,24 @@ export default function AdminOrders() {
                   </button>
                 ))}
                 <button
+                  onClick={() => downloadBook(o)}
+                  disabled={downloadingId === o.id || !o.items.some((i) => i.jobId)}
+                  title="Download the full personalized book PDF (all pages)"
+                  className="ml-auto inline-flex items-center gap-1.5 rounded-lg border-2 border-brand-primary px-2.5 py-1 text-xs font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white disabled:opacity-50"
+                >
+                  {downloadingId === o.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <BookDown className="h-3.5 w-3.5" />
+                  )}
+                  Book PDF
+                </button>
+                <button
                   onClick={() => removeOrder(o.id)}
                   disabled={savingId === o.id}
                   title="Delete order permanently"
                   aria-label={`Delete order ${o.id}`}
-                  className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-2.5 py-1 text-xs font-bold text-red-500 transition hover:border-red-500 hover:bg-red-500 hover:text-white disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-2.5 py-1 text-xs font-bold text-red-500 transition hover:border-red-500 hover:bg-red-500 hover:text-white disabled:opacity-50"
                 >
                   <Trash2 className="h-3.5 w-3.5" /> Delete
                 </button>
