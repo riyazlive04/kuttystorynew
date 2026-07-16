@@ -1,0 +1,57 @@
+# Production overlay for KuttyStory on the Hostinger VPS.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# TLS and :80/:443 are owned by the HOST nginx, not by the `nginx` service in
+# the base file — do not pass `--profile prod`. Host nginx proxies to the
+# loopback ports published below.
+#
+# Requires POSTGRES_PASSWORD in the shell env or /opt/kuttystory/.env.
+services:
+  db:
+    # Never publish the database on a public IP.
+    ports: !override []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    restart: unless-stopped
+
+  redis:
+    ports: !override []
+    restart: unless-stopped
+
+  api:
+    environment:
+      DATABASE_URL: postgresql://kutty:${POSTGRES_PASSWORD}@db:5432/kuttystory
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: production
+      CORS_ORIGINS: https://kuttystory.co.in,https://www.kuttystory.co.in
+    # Drop the source bind-mount: the image content is what runs in prod.
+    volumes: !override
+      - api_storage:/app/storage
+    # No --reload. Fail loudly if the schema push fails rather than `|| true`.
+    command: >
+      sh -c "prisma db push --skip-generate &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports: !override
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+
+  worker:
+    environment:
+      DATABASE_URL: postgresql://kutty:${POSTGRES_PASSWORD}@db:5432/kuttystory
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: production
+    volumes: !override
+      - api_storage:/app/storage
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        # Baked in at build time — must be the public origin, not localhost,
+        # because this URL is fetched by the visitor's browser.
+        NEXT_PUBLIC_API_URL: https://kuttystory.co.in/api
+    ports: !override
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
