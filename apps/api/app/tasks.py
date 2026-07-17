@@ -7,9 +7,10 @@ Progress is written to Postgres after every page so the frontend can long-poll
 or read the WebSocket stream.
 """
 import asyncio
+import contextlib
 import glob
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from prisma import Prisma, Json
 
@@ -20,6 +21,20 @@ from .worker import celery_app
 
 FREE = settings.free_preview_pages
 TOTAL = settings.total_pages
+
+# Prisma's disconnect() defaults to timeout=None. On Linux that sends SIGINT to
+# the query engine and then waits with no deadline — the SIGKILL escalation only
+# fires on TimeoutExpired, which can never happen without a timeout. An engine
+# that ignores SIGINT therefore blocks the task forever, holding its Celery pool
+# slot long after the job row says "completed". Always pass a timeout.
+_DISCONNECT_TIMEOUT = timedelta(seconds=5)
+
+
+async def _disconnect(db: Prisma) -> None:
+    """Tear down a task's Prisma client without ever wedging the pool slot."""
+    with contextlib.suppress(Exception):
+        await db.disconnect(timeout=_DISCONNECT_TIMEOUT)
+
 
 _DEFAULT_CAPTIONS = [
     "Once upon a time there was a wonderful child named {{name}}.",
@@ -201,7 +216,7 @@ async def _run_preview(job_id: str) -> None:
         await db.job.update(where={"id": job_id}, data={"status": "failed"})
         raise
     finally:
-        await db.disconnect()
+        await _disconnect(db)
 
 
 async def _run_remaining(job_id: str) -> None:
@@ -257,7 +272,7 @@ async def _run_remaining(job_id: str) -> None:
         pdf_url = build_book_pdf(job)
         await db.job.update(where={"id": job_id}, data={"pdfDownloadUrl": pdf_url})
     finally:
-        await db.disconnect()
+        await _disconnect(db)
 
 
 @celery_app.task(name="app.tasks.generate_book", bind=True, max_retries=2)
@@ -309,7 +324,7 @@ async def _regenerate_page(job_id: str, page_number: int) -> None:
         pages[page_number - 1] = page
         await db.job.update(where={"id": job_id}, data={"pages": Json(pages)})
     finally:
-        await db.disconnect()
+        await _disconnect(db)
 
 
 @celery_app.task(name="app.tasks.regenerate_page", bind=True, max_retries=2)
@@ -366,7 +381,7 @@ async def _generate_book_base_art(story_id: str, overwrite: bool) -> dict:
 
         await asyncio.gather(*(_one(p) for p in pages))
     finally:
-        await db.disconnect()
+        await _disconnect(db)
     return {"made": made, "skipped": skipped, "failed": failed}
 
 
@@ -415,7 +430,7 @@ async def _purge() -> int:
             )
             purged += 1
     finally:
-        await db.disconnect()
+        await _disconnect(db)
     return purged
 
 

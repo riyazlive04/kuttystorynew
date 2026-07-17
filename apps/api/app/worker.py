@@ -14,6 +14,11 @@ celery_app.conf.update(
     accept_content=["json"],
     task_track_started=True,
     worker_prefetch_multiplier=1,
+    # Ack a render only once it finishes, so a worker restart or crash redelivers
+    # it instead of silently dropping a paying customer's book. Renders are the
+    # only tasks here and they re-run from the top safely.
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
     # Real GPU rendering of a full preview (many pages, each a hosted model call,
     # plus rate-limit backoff) can take a while — allow generous headroom. The
     # soft limit lets a task clean up before the hard kill.
