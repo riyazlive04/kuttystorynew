@@ -91,6 +91,9 @@ model PageTemplate {
   textY         Float   @default(82)    // % of height (0-100)
   fontSize      Int     @default(42)
   fontColor     String  @default("#FFFFFF")
+  fontFamily    String  @default("sans")   // key from text_layer.FONT_FAMILIES
+  letterSpacing Float   @default(0)        // px @1024 canvas, may be negative
+  softLineBreak Boolean @default(true)     // start a new line at each sentence end
 
   @@unique([bookTemplateId, pageNumber])
 }

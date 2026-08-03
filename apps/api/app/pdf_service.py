@@ -47,16 +47,34 @@ def _placeholder(caption: str, idx: int) -> Image.Image:
     return img
 
 
+def _fit_square(img: Image.Image) -> Image.Image:
+    """Scale onto the square print canvas WITHOUT distorting.
+
+    A straight resize((PAGE_PX, PAGE_PX)) squashes any non-square page — which
+    shows up as compressed, stretched-looking text. Scale to fit and letterbox
+    onto white instead, so the burned-in type keeps its proportions.
+    """
+    img = img.convert("RGB")
+    if img.size == (PAGE_PX, PAGE_PX):
+        return img
+    w, h = img.size
+    scale = min(PAGE_PX / w, PAGE_PX / h)
+    fitted = img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+    canvas = Image.new("RGB", (PAGE_PX, PAGE_PX), (255, 255, 255))
+    canvas.paste(fitted, ((PAGE_PX - fitted.width) // 2, (PAGE_PX - fitted.height) // 2))
+    return canvas
+
+
 def _page_image(page: dict, child_name: str, idx: int) -> Image.Image:
     url = (page or {}).get("imageUrl", "")
     caption = (page or {}).get("caption", "")
     try:
         if url.startswith("/uploads/"):
             path = os.path.join(settings.storage_dir, url.split("/uploads/")[1])
-            return Image.open(path).convert("RGB").resize((PAGE_PX, PAGE_PX))
+            return _fit_square(Image.open(path))
         if url.startswith("http"):
             data = httpx.get(url, timeout=60).content
-            return Image.open(io.BytesIO(data)).convert("RGB").resize((PAGE_PX, PAGE_PX))
+            return _fit_square(Image.open(io.BytesIO(data)))
     except Exception:
         pass
     return _placeholder(personalize(caption, child_name), idx)

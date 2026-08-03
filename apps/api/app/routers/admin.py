@@ -234,6 +234,25 @@ async def admin_upsert_story(body: StoryUpsert):
     return {**story_dict(story), "active": story.active}
 
 
+class CoverPatch(BaseModel):
+    coverImage: str
+
+
+@router.patch("/stories/{slug}/cover", dependencies=[Depends(require_admin)])
+async def admin_update_cover(slug: str, body: CoverPatch):
+    """Swap a book's cover image without re-sending the whole story record —
+    what the Page Editor's cover uploader calls."""
+    cover = (body.coverImage or "").strip()
+    if not cover:
+        raise HTTPException(status_code=400, detail="coverImage is required")
+    story = await prisma.story.update(
+        where={"slug": slug}, data={"coverImage": cover}
+    )
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    return {**story_dict(story), "active": story.active}
+
+
 @router.patch("/stories/{slug}/active", dependencies=[Depends(require_admin)])
 async def admin_toggle_story(slug: str, active: bool):
     story = await prisma.story.update(where={"slug": slug}, data={"active": active})
@@ -297,7 +316,19 @@ def _page_dict(p) -> dict:
         "textY": p.textY,
         "fontSize": p.fontSize,
         "fontColor": p.fontColor,
+        "fontFamily": getattr(p, "fontFamily", None) or "sans",
+        "letterSpacing": getattr(p, "letterSpacing", 0) or 0,
+        "softLineBreak": getattr(p, "softLineBreak", True),
     }
+
+
+@router.get("/fonts", dependencies=[Depends(require_admin)])
+async def admin_fonts():
+    """Font families the text layer can burn in, with the CSS stack the editor
+    should preview them with and whether the file is installed in this image."""
+    from ..text_layer import available_families
+
+    return available_families()
 
 
 class PageUpsert(BaseModel):
@@ -315,6 +346,9 @@ class PageUpsert(BaseModel):
     textY: float = 82
     fontSize: int = 42
     fontColor: str = "#FFFFFF"
+    fontFamily: str = "sans"
+    letterSpacing: float = 0
+    softLineBreak: bool = True
 
 
 @router.get("/stories/{slug}/pages", dependencies=[Depends(require_admin)])

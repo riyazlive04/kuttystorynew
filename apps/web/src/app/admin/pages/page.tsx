@@ -3,7 +3,26 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { BookOpen, ImagePlus, Loader2, Plus, Save, Sparkles, Trash2 } from "lucide-react";
-import { adminApi, type AdminPage, type AdminStory } from "@/lib/admin";
+import {
+  adminApi,
+  type AdminFont,
+  type AdminPage,
+  type AdminStory,
+} from "@/lib/admin";
+
+// The canvas width the stored fontSize/letterSpacing are authored against — the
+// text layer scales both by (imageWidth / 1024) when it burns the text in.
+const DESIGN_W = 1024;
+
+// Shown until GET /admin/fonts answers; keys match text_layer.FONT_FAMILIES.
+const FALLBACK_FONTS: AdminFont[] = [
+  {
+    key: "sans",
+    label: "Sans (DejaVu Bold)",
+    css: "'DejaVu Sans', 'Segoe UI', system-ui, sans-serif",
+    installed: true,
+  },
+];
 
 const BLANK = (n: number): AdminPage => ({
   pageNumber: n,
@@ -21,6 +40,9 @@ const BLANK = (n: number): AdminPage => ({
   textY: 82,
   fontSize: 42,
   fontColor: "#FFFFFF",
+  fontFamily: "sans",
+  letterSpacing: 0,
+  softLineBreak: true,
 });
 
 export default function AdminPagesEditor() {
@@ -36,12 +58,19 @@ export default function AdminPagesEditor() {
   const [generating, setGenerating] = useState(false);
   const [authoring, setAuthoring] = useState(false);
   const [faceOutlineOn, setFaceOutlineOn] = useState(true);
+  const [fonts, setFonts] = useState<AdminFont[]>(FALLBACK_FONTS);
+  const [coverBusy, setCoverBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const coverRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     adminApi
       .getSettings()
       .then((s) => setFaceOutlineOn(s.faceOutlineEnabled))
+      .catch(() => {});
+    adminApi
+      .fonts()
+      .then((f) => f.length && setFonts(f))
       .catch(() => {});
   }, []);
 
@@ -70,12 +99,18 @@ export default function AdminPagesEditor() {
   }, [slug]);
 
   const page = pages[active];
-  const preview = useMemo(
-    () => (page?.storyText || "").replace(/\{\{name\}\}/gi, "Aarav"),
-    [page?.storyText],
-  );
+  const softBreak = page?.softLineBreak ?? true;
+  // Same split the text layer uses: sentence end followed by whitespace.
+  const previewLines = useMemo(() => {
+    const text = (page?.storyText || "").replace(/\{\{name\}\}/gi, "Aarav").trim();
+    if (!text) return [];
+    return softBreak ? text.split(/(?<=[.!?])\s+/).filter(Boolean) : [text];
+  }, [page?.storyText, softBreak]);
 
-  function patch(field: keyof AdminPage, value: string | number | null) {
+  function patch(
+    field: keyof AdminPage,
+    value: string | number | boolean | null,
+  ) {
     setPages((prev) =>
       prev.map((p, i) => (i === active ? { ...p, [field]: value } : p)),
     );
@@ -88,6 +123,23 @@ export default function AdminPagesEditor() {
   // Freehand LASSO: trace the face outline directly on the preview — no numbers.
   const previewRef = useRef<HTMLDivElement>(null);
   const livePathRef = useRef<number[][]>([]);
+
+  // Track the preview box's real pixel width so the text can be scaled by
+  // (boxWidth / 1024) — exactly what the PIL text layer does with the rendered
+  // image width. Sizing it off the viewport (vw) instead made the type resize
+  // with the window and never matched the burned-in result.
+  const [boxW, setBoxW] = useState(0);
+  useEffect(() => {
+    const el = previewRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) =>
+      setBoxW(entry.contentRect.width),
+    );
+    ro.observe(el);
+    setBoxW(el.getBoundingClientRect().width);
+    return () => ro.disconnect();
+  }, []);
+  const pxScale = (boxW || DESIGN_W) / DESIGN_W;
   const [tracing, setTracing] = useState(false);
   const [livePath, setLivePath] = useState<number[][]>([]);
   const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -146,6 +198,28 @@ export default function AdminPagesEditor() {
   }
   // What to render: the live trace while dragging, else the saved outline.
   const shownPath = tracing ? livePath : page?.facePath ?? [];
+
+  // The book's catalog cover — the image shown on the storefront card, the
+  // cart and checkout. Separate from page 1's base illustration.
+  const story = stories.find((s) => s.slug === slug);
+
+  async function uploadCover(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file || !slug) return;
+    setCoverBusy(true);
+    try {
+      const { url } = await adminApi.upload(file);
+      const updated = await adminApi.setCover(slug, url);
+      setStories((prev) =>
+        prev.map((s) => (s.slug === slug ? { ...s, coverImage: updated.coverImage } : s)),
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Cover upload failed");
+    } finally {
+      setCoverBusy(false);
+    }
+  }
 
   async function uploadBaseArt(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -306,6 +380,54 @@ export default function AdminPagesEditor() {
             ))}
           </select>
         </div>
+      </div>
+
+      {/* Book cover — the catalog image, NOT a story page */}
+      <div className="card mb-5 flex flex-wrap items-center gap-4 p-4">
+        <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl border-2 border-brand-borderAccent bg-slate-50">
+          {story?.coverImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={story.coverImage}
+              alt={`${story.title} cover`}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="grid h-full w-full place-items-center text-xs text-slate-400">
+              No cover
+            </div>
+          )}
+        </div>
+        <div className="min-w-[14rem] flex-1">
+          <p className="text-sm font-bold text-slate-deep">Cover page</p>
+          <p className="text-xs text-slate-mutedText">
+            Shown on the storefront card, cart and checkout. This is the book&apos;s
+            cover — the story pages below are the inside pages.
+          </p>
+          {story?.coverImage && (
+            <p className="mt-1 truncate text-xs text-slate-400">{story.coverImage}</p>
+          )}
+        </div>
+        <input
+          ref={coverRef}
+          type="file"
+          accept="image/*"
+          onChange={uploadCover}
+          className="hidden"
+        />
+        <button
+          type="button"
+          onClick={() => coverRef.current?.click()}
+          disabled={coverBusy || !slug}
+          className="inline-flex items-center gap-2 rounded-xl border-2 border-brand-primary px-4 py-2 text-sm font-bold text-brand-primary transition hover:bg-brand-primary/5 disabled:opacity-50"
+        >
+          {coverBusy ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <ImagePlus className="h-4 w-4" />
+          )}
+          {story?.coverImage ? "Replace cover" : "Upload cover"}
+        </button>
       </div>
 
       {/* Page tabs */}
@@ -484,7 +606,46 @@ export default function AdminPagesEditor() {
                   className="h-10 w-full rounded-xl border-2 border-brand-borderAccent"
                 />
               </Field>
+              <Field label="Font">
+                <select
+                  value={page.fontFamily || "sans"}
+                  onChange={(e) => patch("fontFamily", e.target.value)}
+                  className="input"
+                >
+                  {fonts.map((f) => (
+                    <option key={f.key} value={f.key}>
+                      {f.label}
+                      {f.installed ? "" : " (not installed — falls back)"}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Letter spacing (px @1024)">
+                <input
+                  type="number"
+                  step="0.5"
+                  value={page.letterSpacing ?? 0}
+                  onChange={(e) => patch("letterSpacing", Number(e.target.value))}
+                  className="input"
+                />
+              </Field>
             </div>
+
+            <label className="flex items-start gap-3 rounded-xl border-2 border-brand-borderAccent p-3">
+              <input
+                type="checkbox"
+                checked={softBreak}
+                onChange={(e) => patch("softLineBreak", e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-brand-primary"
+              />
+              <span className="text-sm">
+                <b className="text-slate-deep">Soft line break</b>
+                <span className="block text-xs text-slate-mutedText">
+                  Start a new line at the end of every sentence. Turn off to let
+                  the text flow and wrap only when it runs out of width.
+                </span>
+              </span>
+            </label>
 
             <div className="flex gap-3 pt-2">
               <button onClick={save} disabled={saving} className="btn-primary flex-1">
@@ -551,12 +712,23 @@ export default function AdminPagesEditor() {
                   left: `${page.textX}%`,
                   top: `${page.textY}%`,
                   color: page.fontColor,
-                  fontSize: `clamp(12px, ${page.fontSize / 12}vw, 34px)`,
+                  // Scaled the same way the renderer does — no viewport units,
+                  // so the preview no longer resizes with the browser window.
+                  fontSize: `${Math.max(6, page.fontSize * pxScale)}px`,
+                  letterSpacing: `${(page.letterSpacing ?? 0) * pxScale}px`,
+                  lineHeight: 1.25,
+                  fontFamily:
+                    fonts.find((f) => f.key === (page.fontFamily || "sans"))?.css ||
+                    "system-ui, sans-serif",
                   textShadow: "0 2px 6px rgba(0,0,0,0.6)",
                   fontWeight: 700,
                 }}
               >
-                {preview || "Your story text appears here"}
+                {previewLines.length ? (
+                  previewLines.map((line, i) => <div key={i}>{line}</div>)
+                ) : (
+                  <span>Your story text appears here</span>
+                )}
               </div>
               <div
                 className="pointer-events-none absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white ring-2 ring-black/40"

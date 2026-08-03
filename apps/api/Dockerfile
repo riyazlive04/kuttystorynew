@@ -13,6 +13,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# Extra families offered by the page editor's font picker. Optional on purpose:
+# if a package is unavailable the text layer just falls back to DejaVu.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-liberation fonts-comic-neue \
+    ; rm -rf /var/lib/apt/lists/*
+
 # Use the system Node instead of downloading a nodeenv at generate time.
 ENV PRISMA_USE_GLOBAL_NODE=true
 

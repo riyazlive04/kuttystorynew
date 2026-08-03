@@ -117,6 +117,17 @@ export interface AdminPage {
   textY: number;
   fontSize: number;
   fontColor: string;
+  fontFamily: string;
+  letterSpacing: number;
+  softLineBreak: boolean;
+}
+
+// A font the PIL text layer can burn in (GET /admin/fonts).
+export interface AdminFont {
+  key: string;
+  label: string;
+  css: string;
+  installed: boolean;
 }
 
 export const adminApi = {
@@ -143,6 +154,11 @@ export const adminApi = {
   stories: (): Promise<AdminStory[]> => req("/admin/stories"),
   createStory: (body: StoryCreate): Promise<AdminStory> =>
     req("/admin/stories", { method: "POST", body: JSON.stringify(body) }),
+  setCover: (slug: string, coverImage: string): Promise<AdminStory> =>
+    req(`/admin/stories/${slug}/cover`, {
+      method: "PATCH",
+      body: JSON.stringify({ coverImage }),
+    }),
   toggleStory: (slug: string, active: boolean): Promise<AdminStory> =>
     req(`/admin/stories/${slug}/active?active=${active}`, { method: "PATCH" }),
   deleteStory: (
@@ -152,6 +168,7 @@ export const adminApi = {
     req(`/admin/stories/${slug}${force ? "?force=true" : ""}`, {
       method: "DELETE",
     }),
+  fonts: (): Promise<AdminFont[]> => req("/admin/fonts"),
   pages: (slug: string): Promise<AdminPage[]> =>
     req(`/admin/stories/${slug}/pages`),
   upsertPage: (slug: string, page: AdminPage): Promise<AdminPage> =>

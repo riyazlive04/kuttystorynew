@@ -2,8 +2,9 @@
 
 Renders the AI image as a clean layer, then burns the personalised story line on
 top using the placement stored in PageTemplate (textX/textY as % of canvas,
-fontSize, fontColor). Substitutes {{name}} and adds a soft outline + drop-shadow
-so text stays legible over any illustration.
+fontSize, fontColor, fontFamily, letterSpacing, softLineBreak). Substitutes
+{{name}} and adds a soft outline + drop-shadow so text stays legible over any
+illustration.
 """
 from __future__ import annotations
 
@@ -27,13 +28,81 @@ FONT_BOLD = os.getenv(
     "FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 )
 
+_DEJAVU = "/usr/share/fonts/truetype/dejavu"
+_LIBERATION = "/usr/share/fonts/truetype/liberation"
+_COMIC = "/usr/share/fonts/truetype/comic-neue"
+
+# Selectable families for the page editor. Each entry lists candidate files in
+# preference order; the first one present in the image wins, and a family whose
+# fonts aren't installed falls back to the default sans. Keep the keys stable —
+# they're stored in PageTemplate.fontFamily.
+FONT_FAMILIES: dict[str, dict] = {
+    "sans": {
+        "label": "Sans (DejaVu Bold)",
+        "css": "'DejaVu Sans', 'Segoe UI', system-ui, sans-serif",
+        "files": [FONT_BOLD, f"{_DEJAVU}/DejaVuSans-Bold.ttf"],
+    },
+    "sans-regular": {
+        "label": "Sans (DejaVu Regular)",
+        "css": "'DejaVu Sans', 'Segoe UI', system-ui, sans-serif",
+        "files": [f"{_DEJAVU}/DejaVuSans.ttf"],
+    },
+    "serif": {
+        "label": "Serif (DejaVu Bold)",
+        "css": "'DejaVu Serif', Georgia, 'Times New Roman', serif",
+        "files": [f"{_DEJAVU}/DejaVuSerif-Bold.ttf"],
+    },
+    "rounded": {
+        "label": "Rounded / storybook (Comic Neue Bold)",
+        "css": "'Comic Neue', 'Comic Sans MS', 'Segoe UI', cursive",
+        "files": [f"{_COMIC}/ComicNeue-Bold.ttf", f"{_COMIC}/ComicNeue-Regular.ttf"],
+    },
+    "liberation-sans": {
+        "label": "Liberation Sans Bold (Arial-like)",
+        "css": "'Liberation Sans', Arial, Helvetica, sans-serif",
+        "files": [f"{_LIBERATION}/LiberationSans-Bold.ttf"],
+    },
+    "liberation-serif": {
+        "label": "Liberation Serif Bold (Times-like)",
+        "css": "'Liberation Serif', 'Times New Roman', serif",
+        "files": [f"{_LIBERATION}/LiberationSerif-Bold.ttf"],
+    },
+    "mono": {
+        "label": "Mono (DejaVu Sans Mono Bold)",
+        "css": "'DejaVu Sans Mono', ui-monospace, monospace",
+        "files": [f"{_DEJAVU}/DejaVuSansMono-Bold.ttf"],
+    },
+}
+
+DEFAULT_FAMILY = "sans"
+
+
+def available_families() -> list[dict]:
+    """Family list for the admin UI, flagging which ones are actually installed."""
+    return [
+        {
+            "key": key,
+            "label": spec["label"],
+            "css": spec["css"],
+            "installed": any(os.path.exists(p) for p in spec["files"]),
+        }
+        for key, spec in FONT_FAMILIES.items()
+    ]
+
 
 def personalize(text: str, child_name: str) -> str:
     return (text or "").replace("{{name}}", child_name).replace("{{Name}}", child_name)
 
 
-def _load_font(size: int) -> ImageFont.FreeTypeFont:
-    for path in (FONT_BOLD, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+def _load_font(size: int, family: str = DEFAULT_FAMILY) -> ImageFont.FreeTypeFont:
+    spec = FONT_FAMILIES.get(family or DEFAULT_FAMILY, FONT_FAMILIES[DEFAULT_FAMILY])
+    candidates = [
+        *spec["files"],
+        # Fall back to the default family, then to any DejaVu that exists.
+        *FONT_FAMILIES[DEFAULT_FAMILY]["files"],
+        f"{_DEJAVU}/DejaVuSans.ttf",
+    ]
+    for path in candidates:
         try:
             return ImageFont.truetype(path, size)
         except Exception:
@@ -53,20 +122,52 @@ def _load_image(src: str) -> Image.Image:
     return Image.open(src).convert("RGB")
 
 
-def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> list[str]:
-    """Wrap to max_w, starting a new line at each sentence end.
+def _text_w(draw: ImageDraw.ImageDraw, text: str, font, tracking: float) -> float:
+    """Advance width of `text` including per-character letter spacing."""
+    w = draw.textlength(text, font=font)
+    if tracking and text:
+        # Tracking is applied between glyphs, not after the last one.
+        w += tracking * (len(text) - 1)
+    return w
 
-    Sentence-first keeps the block narrow enough to sit inside the authored text
-    panel; a single sentence wider than max_w still wraps on words as before.
+
+def _draw_tracked(
+    draw: ImageDraw.ImageDraw, xy: tuple[float, float], text: str, font, fill, tracking: float
+) -> None:
+    """draw.text() with letter spacing (glyph-by-glyph when tracking != 0)."""
+    if not tracking:
+        draw.text(xy, text, font=font, fill=fill)
+        return
+    x, y = xy
+    for ch in text:
+        draw.text((x, y), ch, font=font, fill=fill)
+        x += draw.textlength(ch, font=font) + tracking
+
+
+def _wrap(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font,
+    max_w: int,
+    tracking: float = 0.0,
+    soft_line_break: bool = True,
+) -> list[str]:
+    """Wrap to max_w.
+
+    With soft_line_break on (the default) each sentence also starts a new line,
+    which keeps the block narrow enough to sit inside the authored text panel; a
+    single sentence wider than max_w still wraps on words. With it off, the whole
+    line flows and only wraps when it runs out of width.
     """
-    lines = []
-    for sentence in _SENTENCE_END.split(text.strip()):
-        if not sentence:
+    chunks = _SENTENCE_END.split(text.strip()) if soft_line_break else [text.strip()]
+    lines: list[str] = []
+    for chunk in chunks:
+        if not chunk:
             continue
         cur = ""
-        for w in sentence.split():
+        for w in chunk.split():
             trial = f"{cur} {w}".strip()
-            if draw.textlength(trial, font=font) <= max_w or not cur:
+            if _text_w(draw, trial, font, tracking) <= max_w or not cur:
                 cur = trial
             else:
                 lines.append(cur)
@@ -85,6 +186,9 @@ def compose_page(
     text_y_pct: float,
     font_size: int,
     font_color: str = "#FFFFFF",
+    font_family: str = DEFAULT_FAMILY,
+    letter_spacing: float = 0.0,
+    soft_line_break: bool = True,
 ) -> Image.Image:
     """Return a PIL image with the personalised story line burned in."""
     img = _load_image(image_src)
@@ -96,11 +200,13 @@ def compose_page(
         return img
 
     # Scale font relative to canvas so % coords behave consistently across sizes.
-    size = max(12, int(font_size * (W / 1024)))
-    font = _load_font(size)
+    scale = W / 1024
+    size = max(12, int(font_size * scale))
+    font = _load_font(size, font_family)
+    tracking = (letter_spacing or 0.0) * scale
 
     max_w = int(W * 0.86)
-    lines = _wrap(draw, text, font, max_w)
+    lines = _wrap(draw, text, font, max_w, tracking, soft_line_break)
     line_h = int(size * 1.25)
     block_h = line_h * len(lines)
 
@@ -109,17 +215,17 @@ def compose_page(
 
     shadow = (0, 0, 0, 180)
     for i, line in enumerate(lines):
-        lw = draw.textlength(line, font=font)
+        lw = _text_w(draw, line, font, tracking)
         x = cx - lw / 2
         y = top + i * line_h
         # soft outline
         for dx in (-2, -1, 0, 1, 2):
             for dy in (-2, -1, 0, 1, 2):
                 if dx or dy:
-                    draw.text((x + dx, y + dy), line, font=font, fill=shadow)
+                    _draw_tracked(draw, (x + dx, y + dy), line, font, shadow, tracking)
         # drop shadow
-        draw.text((x + 3, y + 4), line, font=font, fill=(0, 0, 0))
-        draw.text((x, y), line, font=font, fill=font_color)
+        _draw_tracked(draw, (x + 3, y + 4), line, font, (0, 0, 0), tracking)
+        _draw_tracked(draw, (x, y), line, font, font_color, tracking)
     return img
 
 
