@@ -26,6 +26,23 @@ async def lifespan(app: FastAPI):
                 )
     except Exception as e:  # pragma: no cover
         print(f"[startup] seed skipped: {e}")
+    # A book's shop image is its front cover's base art — there's no separately
+    # authored catalog cover. Reconcile books whose front cover was drawn before
+    # that became automatic (idempotent: only writes when they differ).
+    try:
+        from .pages_layout import FRONT_COVER
+
+        fronts = await prisma.pagetemplate.find_many(
+            where={"pageNumber": FRONT_COVER}, include={"book": True}
+        )
+        for f in fronts:
+            if f.baseImageUrl and f.book and f.book.coverImage != f.baseImageUrl:
+                await prisma.story.update(
+                    where={"id": f.bookTemplateId},
+                    data={"coverImage": f.baseImageUrl},
+                )
+    except Exception as e:  # pragma: no cover
+        print(f"[startup] cover sync skipped: {e}")
     yield
     await disconnect()
 

@@ -23,7 +23,7 @@ from prisma import Prisma, Json
 from .config import settings
 from .generation_engine import extract_identity, render_page
 from .pages_layout import (
-    BACK_COVER,
+    FRONT_COVER,
     is_free,
     kind_of,
     reading_order,
@@ -456,9 +456,15 @@ async def _generate_book_base_art(story_id: str, overwrite: bool) -> dict:
                 name = f"base_{story_id}_p{p.pageNumber}.jpg"
                 with open(os.path.join(settings.storage_dir, name), "wb") as f:
                     f.write(data)
+                url = f"/uploads/{name}"
                 await db.pagetemplate.update(
-                    where={"id": p.id}, data={"baseImageUrl": f"/uploads/{name}"}
+                    where={"id": p.id}, data={"baseImageUrl": url}
                 )
+                # The front cover's art doubles as the book's shop image.
+                if p.pageNumber == FRONT_COVER:
+                    await db.story.update(
+                        where={"id": story_id}, data={"coverImage": url}
+                    )
                 made += 1
             except Exception:
                 failed += 1

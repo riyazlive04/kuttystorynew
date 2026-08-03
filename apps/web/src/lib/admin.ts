@@ -161,11 +161,6 @@ export const adminApi = {
   stories: (): Promise<AdminStory[]> => req("/admin/stories"),
   createStory: (body: StoryCreate): Promise<AdminStory> =>
     req("/admin/stories", { method: "POST", body: JSON.stringify(body) }),
-  setCover: (slug: string, coverImage: string): Promise<AdminStory> =>
-    req(`/admin/stories/${slug}/cover`, {
-      method: "PATCH",
-      body: JSON.stringify({ coverImage }),
-    }),
   toggleStory: (slug: string, active: boolean): Promise<AdminStory> =>
     req(`/admin/stories/${slug}/active?active=${active}`, { method: "PATCH" }),
   deleteStory: (

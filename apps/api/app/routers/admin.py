@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from ..config import settings
 from ..db import prisma
-from ..pages_layout import kind_of, label_of, sort_key
+from ..pages_layout import FRONT_COVER, kind_of, label_of, sort_key
 from ..serializers import order_dict, story_dict
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -236,25 +236,6 @@ async def admin_upsert_story(body: StoryUpsert):
     return {**story_dict(story), "active": story.active}
 
 
-class CoverPatch(BaseModel):
-    coverImage: str
-
-
-@router.patch("/stories/{slug}/cover", dependencies=[Depends(require_admin)])
-async def admin_update_cover(slug: str, body: CoverPatch):
-    """Swap a book's cover image without re-sending the whole story record —
-    what the Page Editor's cover uploader calls."""
-    cover = (body.coverImage or "").strip()
-    if not cover:
-        raise HTTPException(status_code=400, detail="coverImage is required")
-    story = await prisma.story.update(
-        where={"slug": slug}, data={"coverImage": cover}
-    )
-    if not story:
-        raise HTTPException(status_code=404, detail="Story not found")
-    return {**story_dict(story), "active": story.active}
-
-
 @router.patch("/stories/{slug}/active", dependencies=[Depends(require_admin)])
 async def admin_toggle_story(slug: str, active: bool):
     story = await prisma.story.update(where={"slug": slug}, data={"active": active})
@@ -299,6 +280,23 @@ async def admin_delete_story(slug: str, force: bool = False):
 
 
 # ------------------------- Page templates (CMS) ---------------------------
+
+async def _sync_catalog_cover(story_id: str, page_number: int, base_image: str | None):
+    """The front cover's base art IS the book's shop image.
+
+    Story.coverImage still exists because the storefront, the cart and past
+    order records all need an image when there's no child and no render yet —
+    but it's never authored by hand: saving or generating the front cover's base
+    art writes it here, so there is only ever one cover to maintain.
+    """
+    if page_number != FRONT_COVER or not base_image:
+        return
+    story = await prisma.story.find_unique(where={"id": story_id})
+    if story and story.coverImage != base_image:
+        await prisma.story.update(
+            where={"id": story_id}, data={"coverImage": base_image}
+        )
+
 
 def _page_dict(p) -> dict:
     return {
@@ -388,6 +386,7 @@ async def admin_upsert_page(slug: str, body: PageUpsert):
         },
         data={"create": data, "update": data},
     )
+    await _sync_catalog_cover(story.id, page.pageNumber, page.baseImageUrl)
     return _page_dict(page)
 
 
@@ -451,6 +450,7 @@ async def admin_generate_base_art(slug: str, page_number: int, body: GenerateBas
     page = await prisma.pagetemplate.update(
         where={"id": page.id}, data={"baseImageUrl": url}
     )
+    await _sync_catalog_cover(story.id, page.pageNumber, page.baseImageUrl)
     return _page_dict(page)
 
 

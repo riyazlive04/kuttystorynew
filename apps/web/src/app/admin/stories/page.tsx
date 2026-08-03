@@ -208,25 +208,10 @@ function CreateBookModal({
   const [form, setForm] = useState<StoryCreate>(BLANK_BOOK);
   const [slugTouched, setSlugTouched] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function set<K extends keyof StoryCreate>(k: K, v: StoryCreate[K]) {
     setForm((f) => ({ ...f, [k]: v }));
-  }
-
-  async function uploadCover(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const { url } = await adminApi.upload(file);
-      set("coverImage", url);
-    } catch {
-      setError("Cover upload failed");
-    } finally {
-      setUploading(false);
-    }
   }
 
   async function submit() {
@@ -240,8 +225,9 @@ function CreateBookModal({
       ...form,
       slug,
       ageRange: form.ageRange || `Ages ${form.minAge}-${form.maxAge}`,
-      // Backend requires a cover; use a neutral placeholder if none uploaded yet.
-      coverImage: form.coverImage || "/covers/journey-to-the-stars.svg",
+      // Placeholder until the book's Front cover is authored — saving that page
+      // overwrites this with its base art.
+      coverImage: "/covers/journey-to-the-stars.svg",
       tagline: form.tagline || form.title,
       description: form.description || form.tagline || form.title,
     };
@@ -350,31 +336,13 @@ function CreateBookModal({
               placeholder="Blast off on a cosmic mission across the galaxy."
             />
           </Field>
-          <Field label="Cover image" className="sm:col-span-2">
-            <div className="flex items-center gap-3">
-              <label className="flex cursor-pointer items-center gap-2 rounded-xl border-2 border-dashed border-brand-primary px-4 py-2 text-sm font-semibold text-brand-primary hover:bg-brand-primary/5">
-                {uploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Plus className="h-4 w-4" />
-                )}
-                {form.coverImage ? "Replace cover" : "Upload cover"}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={uploadCover}
-                />
-              </label>
-              {form.coverImage && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={form.coverImage}
-                  alt="cover"
-                  className="h-12 w-16 rounded-lg object-cover"
-                />
-              )}
-            </div>
+          <Field label="Cover" className="sm:col-span-2">
+            <p className="rounded-xl border-2 border-dashed border-brand-borderAccent bg-slate-50 p-3 text-xs text-slate-mutedText">
+              Nothing to upload here. A book&apos;s cover is the{" "}
+              <b>Front cover</b> page you author next — its base art is what the
+              storefront card, cart and checkout show. A placeholder stands in
+              until then.
+            </p>
           </Field>
         </div>
 

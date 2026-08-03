@@ -81,9 +81,7 @@ export default function AdminPagesEditor() {
   const [authoring, setAuthoring] = useState(false);
   const [faceOutlineOn, setFaceOutlineOn] = useState(true);
   const [fonts, setFonts] = useState<AdminFont[]>(FALLBACK_FONTS);
-  const [coverBusy, setCoverBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const coverRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     adminApi
@@ -220,28 +218,6 @@ export default function AdminPagesEditor() {
   }
   // What to render: the live trace while dragging, else the saved outline.
   const shownPath = tracing ? livePath : page?.facePath ?? [];
-
-  // The book's catalog cover — the image shown on the storefront card, the
-  // cart and checkout. Separate from page 1's base illustration.
-  const story = stories.find((s) => s.slug === slug);
-
-  async function uploadCover(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-picking the same file
-    if (!file || !slug) return;
-    setCoverBusy(true);
-    try {
-      const { url } = await adminApi.upload(file);
-      const updated = await adminApi.setCover(slug, url);
-      setStories((prev) =>
-        prev.map((s) => (s.slug === slug ? { ...s, coverImage: updated.coverImage } : s)),
-      );
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Cover upload failed");
-    } finally {
-      setCoverBusy(false);
-    }
-  }
 
   async function uploadBaseArt(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -422,55 +398,6 @@ export default function AdminPagesEditor() {
         </div>
       </div>
 
-      {/* Book cover — the catalog image, NOT a story page */}
-      <div className="card mb-5 flex flex-wrap items-center gap-4 p-4">
-        <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl border-2 border-brand-borderAccent bg-slate-50">
-          {story?.coverImage ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={story.coverImage}
-              alt={`${story.title} cover`}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="grid h-full w-full place-items-center text-xs text-slate-400">
-              No cover
-            </div>
-          )}
-        </div>
-        <div className="min-w-[14rem] flex-1">
-          <p className="text-sm font-bold text-slate-deep">Catalog cover</p>
-          <p className="text-xs text-slate-mutedText">
-            The marketing image on the storefront card, cart and checkout. Not part
-            of the book — for the printed cover the child is on, use the{" "}
-            <b>Front</b> / <b>Back</b> cover tabs below.
-          </p>
-          {story?.coverImage && (
-            <p className="mt-1 truncate text-xs text-slate-400">{story.coverImage}</p>
-          )}
-        </div>
-        <input
-          ref={coverRef}
-          type="file"
-          accept="image/*"
-          onChange={uploadCover}
-          className="hidden"
-        />
-        <button
-          type="button"
-          onClick={() => coverRef.current?.click()}
-          disabled={coverBusy || !slug}
-          className="inline-flex items-center gap-2 rounded-xl border-2 border-brand-primary px-4 py-2 text-sm font-bold text-brand-primary transition hover:bg-brand-primary/5 disabled:opacity-50"
-        >
-          {coverBusy ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <ImagePlus className="h-4 w-4" />
-          )}
-          {story?.coverImage ? "Replace cover" : "Upload cover"}
-        </button>
-      </div>
-
       {/* Page tabs — front cover, story pages, back cover (reading order) */}
       <div className="mb-5 flex flex-wrap items-center gap-2">
         {pages.map((p, i) => (
@@ -535,6 +462,12 @@ export default function AdminPagesEditor() {
                     ? "It reads first and is part of the free preview."
                     : "It reads last and unlocks after purchase."}
                 </p>
+                {page.pageNumber === FRONT_COVER && (
+                  <p className="mt-1.5 text-xs font-semibold text-brand-primary">
+                    Its base art is also the book&apos;s shop image — saving it
+                    updates the storefront card, cart and checkout.
+                  </p>
+                )}
               </div>
             ) : (
               <Field label="Page number">
