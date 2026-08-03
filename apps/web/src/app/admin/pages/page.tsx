@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { BookOpen, ImagePlus, Loader2, Plus, Save, Sparkles, Trash2 } from "lucide-react";
 import {
   adminApi,
+  BACK_COVER,
+  FRONT_COVER,
   type AdminFont,
   type AdminPage,
   type AdminStory,
@@ -44,6 +46,26 @@ const BLANK = (n: number): AdminPage => ({
   letterSpacing: 0,
   softLineBreak: true,
 });
+
+// A cover is an ordinary page template at a reserved number — same base art,
+// face outline, face swap and text layer as any story page.
+const BLANK_COVER = (n: number): AdminPage => ({
+  ...BLANK(n),
+  kind: n === FRONT_COVER ? "front_cover" : "back_cover",
+  storyText: n === FRONT_COVER ? "{{name}}" : "",
+  textY: n === FRONT_COVER ? 88 : 50,
+  fontSize: n === FRONT_COVER ? 64 : 36,
+});
+
+function tabLabel(p: AdminPage): string {
+  if (p.pageNumber === FRONT_COVER) return "Front";
+  if (p.pageNumber === BACK_COVER) return "Back";
+  return String(p.pageNumber);
+}
+
+function isCover(p: AdminPage | undefined): boolean {
+  return p?.pageNumber === FRONT_COVER || p?.pageNumber === BACK_COVER;
+}
 
 export default function AdminPagesEditor() {
   const searchParams = useSearchParams();
@@ -275,10 +297,28 @@ export default function AdminPagesEditor() {
     }
   }
 
+  const hasFront = pages.some((p) => p.pageNumber === FRONT_COVER);
+  const hasBack = pages.some((p) => p.pageNumber === BACK_COVER);
+
   function addPage() {
-    const next = (pages[pages.length - 1]?.pageNumber || 0) + 1;
-    setPages((prev) => [...prev, BLANK(next)]);
-    setActive(pages.length);
+    const storyNums = pages
+      .filter((p) => p.pageNumber >= 1)
+      .map((p) => p.pageNumber);
+    const next = (storyNums.length ? Math.max(...storyNums) : 0) + 1;
+    // Keep reading order: a new story page goes before the back cover.
+    const at = hasBack ? pages.length - 1 : pages.length;
+    setPages((prev) => [...prev.slice(0, at), BLANK(next), ...prev.slice(at)]);
+    setActive(at);
+  }
+
+  function addCover(n: number) {
+    if (n === FRONT_COVER) {
+      setPages((prev) => [BLANK_COVER(n), ...prev]);
+      setActive(0);
+    } else {
+      setActive(pages.length);
+      setPages((prev) => [...prev, BLANK_COVER(n)]);
+    }
   }
 
   // Author a full, coherent, personalized story for the whole book via an LLM.
@@ -399,10 +439,11 @@ export default function AdminPagesEditor() {
           )}
         </div>
         <div className="min-w-[14rem] flex-1">
-          <p className="text-sm font-bold text-slate-deep">Cover page</p>
+          <p className="text-sm font-bold text-slate-deep">Catalog cover</p>
           <p className="text-xs text-slate-mutedText">
-            Shown on the storefront card, cart and checkout. This is the book&apos;s
-            cover — the story pages below are the inside pages.
+            The marketing image on the storefront card, cart and checkout. Not part
+            of the book — for the printed cover the child is on, use the{" "}
+            <b>Front</b> / <b>Back</b> cover tabs below.
           </p>
           {story?.coverImage && (
             <p className="mt-1 truncate text-xs text-slate-400">{story.coverImage}</p>
@@ -430,41 +471,81 @@ export default function AdminPagesEditor() {
         </button>
       </div>
 
-      {/* Page tabs */}
-      <div className="mb-5 flex flex-wrap gap-2">
+      {/* Page tabs — front cover, story pages, back cover (reading order) */}
+      <div className="mb-5 flex flex-wrap items-center gap-2">
         {pages.map((p, i) => (
           <button
             key={i}
             onClick={() => setActive(i)}
-            className={`h-9 w-9 rounded-lg text-sm font-bold transition ${
+            title={p.label || `Page ${p.pageNumber}`}
+            className={`h-9 rounded-lg text-sm font-bold transition ${
+              isCover(p) ? "px-3" : "w-9"
+            } ${
               i === active
                 ? "bg-brand-primary text-white"
-                : "border-2 border-brand-borderAccent text-slate-mutedText hover:border-brand-primary"
+                : isCover(p)
+                  ? "border-2 border-brand-primary/60 text-brand-primary hover:border-brand-primary"
+                  : "border-2 border-brand-borderAccent text-slate-mutedText hover:border-brand-primary"
             }`}
           >
-            {p.pageNumber}
+            {tabLabel(p)}
           </button>
         ))}
         <button
           onClick={addPage}
+          title="Add a story page"
           className="grid h-9 w-9 place-items-center rounded-lg border-2 border-dashed border-brand-primary text-brand-primary"
         >
           <Plus className="h-4 w-4" />
         </button>
+        {!hasFront && (
+          <button
+            onClick={() => addCover(FRONT_COVER)}
+            title="Add a personalized front cover — face-swapped and named like any page"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border-2 border-dashed border-brand-primary px-3 text-xs font-bold text-brand-primary"
+          >
+            <Plus className="h-3.5 w-3.5" /> Front cover
+          </button>
+        )}
+        {!hasBack && (
+          <button
+            onClick={() => addCover(BACK_COVER)}
+            title="Add a personalized back cover"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border-2 border-dashed border-brand-primary px-3 text-xs font-bold text-brand-primary"
+          >
+            <Plus className="h-3.5 w-3.5" /> Back cover
+          </button>
+        )}
       </div>
 
       {page && (
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Form */}
           <div className="card space-y-4 p-6">
-            <Field label="Page number">
-              <input
-                type="number"
-                value={page.pageNumber}
-                onChange={(e) => patch("pageNumber", Number(e.target.value))}
-                className="input"
-              />
-            </Field>
+            {isCover(page) ? (
+              <div className="rounded-xl border-2 border-brand-primary/40 bg-brand-primary/5 p-3">
+                <p className="text-sm font-bold text-brand-primary">
+                  {page.pageNumber === FRONT_COVER ? "Front cover" : "Back cover"}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-mutedText">
+                  A real page in the book: the child&apos;s face is swapped into the
+                  base art below and the text is burned in, exactly like a story
+                  page.{" "}
+                  {page.pageNumber === FRONT_COVER
+                    ? "It reads first and is part of the free preview."
+                    : "It reads last and unlocks after purchase."}
+                </p>
+              </div>
+            ) : (
+              <Field label="Page number">
+                <input
+                  type="number"
+                  value={page.pageNumber}
+                  onChange={(e) => patch("pageNumber", Number(e.target.value))}
+                  className="input"
+                />
+              </Field>
+            )}
 
             {/* Base illustration (inpaint-over-template) */}
             <Field label="Base illustration (the fixed scene; child's face is inpainted in)">

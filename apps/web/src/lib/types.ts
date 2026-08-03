@@ -43,8 +43,12 @@ export type JobStatus =
   | "completed"
   | "failed";
 
+export type PageKind = "story" | "front_cover" | "back_cover";
+
 export interface PreviewPage {
-  index: number;
+  index: number; // slot in reading order — NOT the page number once covers exist
+  pageNumber?: number; // 0 = front cover, -1 = back cover, 1..n = story page
+  kind?: PageKind;
   imageUrl: string;
   caption: string;
   locked: boolean;

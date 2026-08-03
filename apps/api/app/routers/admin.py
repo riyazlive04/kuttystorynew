@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from ..config import settings
 from ..db import prisma
+from ..pages_layout import kind_of, label_of, sort_key
 from ..serializers import order_dict, story_dict
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -150,14 +151,15 @@ async def admin_list_jobs(limit: int = 200, purchased: Optional[bool] = None):
     jobs = await prisma.job.find_many(
         where=where or None, order={"createdAt": "desc"}, take=limit
     )
-    free = settings.free_preview_pages
     out = []
     for j in jobs:
         pages = list(j.pages) if j.pages else []
+        # Count by the page's own locked flag rather than its position: with a
+        # front cover in the list, slot number no longer equals page number.
         rendered_free = sum(
             1
-            for i, p in enumerate(pages)
-            if i < free and (p or {}).get("imageUrl") and not (p or {}).get("locked")
+            for p in pages
+            if (p or {}).get("imageUrl") and not (p or {}).get("locked")
         )
         out.append(
             {
@@ -319,6 +321,9 @@ def _page_dict(p) -> dict:
         "fontFamily": getattr(p, "fontFamily", None) or "sans",
         "letterSpacing": getattr(p, "letterSpacing", 0) or 0,
         "softLineBreak": getattr(p, "softLineBreak", True),
+        # Derived from the reserved page numbers — the editor labels tabs with it.
+        "kind": kind_of(p.pageNumber),
+        "label": label_of(p.pageNumber),
     }
 
 
@@ -359,6 +364,8 @@ async def admin_list_pages(slug: str):
     pages = await prisma.pagetemplate.find_many(
         where={"bookTemplateId": story.id}, order={"pageNumber": "asc"}
     )
+    # Reading order, not numeric order: front cover (0), story pages, back cover (-1).
+    pages = sorted(pages, key=lambda p: sort_key(p.pageNumber))
     return [_page_dict(p) for p in pages]
 
 
@@ -489,7 +496,11 @@ async def admin_generate_story(slug: str, body: GenerateStoryBody):
 
     style = (body.stylePrompt or "").strip() or DEFAULT_STYLE_PROMPT
     if body.replace:
-        await prisma.pagetemplate.delete_many(where={"bookTemplateId": story.id})
+        # Story pages only — the authored covers (page 0 / -1) are not part of the
+        # narrative and must survive a re-author.
+        await prisma.pagetemplate.delete_many(
+            where={"bookTemplateId": story.id, "pageNumber": {"gte": 1}}
+        )
 
     out = []
     for p in pages:

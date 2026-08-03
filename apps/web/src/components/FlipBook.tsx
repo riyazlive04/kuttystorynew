@@ -31,9 +31,21 @@ export function FlipBook({
   const [i, setI] = useState(0);
   const [flip, setFlip] = useState<"none" | "next" | "prev">("none");
   const lastIndex = pages.length - 1;
-  const total = totalPages ?? pages.length;
-  const locked = i >= freeCount; // current page behind the paywall?
   const page = pages[i];
+  // Covers are real pages in the list, so a slot is no longer its page number.
+  const covers = pages.filter((p) => p.kind && p.kind !== "story").length;
+  const total = (totalPages ?? pages.length) + covers;
+  // freeCount still wins (the preview passes pages.length once purchased); past
+  // it, trust the page's own flag, falling back to slot math for older jobs.
+  const isLocked = (p: PreviewPage | undefined, idx: number) =>
+    idx < freeCount ? false : p?.kind ? !!p.locked : idx >= freeCount;
+  const locked = isLocked(page, i);
+  const label =
+    page?.kind === "front_cover"
+      ? "Front cover"
+      : page?.kind === "back_cover"
+        ? "Back cover"
+        : `Page ${page?.pageNumber ?? i + 1} of ${total - covers}`;
 
   function go(dir: 1 | -1) {
     setI((v) => Math.max(0, Math.min(lastIndex, v + dir)));
@@ -63,7 +75,7 @@ export function FlipBook({
             <Image
               key={page.imageUrl}
               src={page.imageUrl}
-              alt={locked ? `Locked page ${i + 1}` : `Page ${i + 1}`}
+              alt={locked ? `Locked — ${label}` : label}
               fill
               sizes="(max-width: 768px) 100vw, 672px"
               className={locked ? "scale-110 object-cover blur-2xl" : "object-contain"}
@@ -116,12 +128,12 @@ export function FlipBook({
         {/* Refine: re-roll this page's face (Diffrun "fine-tune") — free pages. */}
         {onRegenerate && !locked && page?.imageUrl && (
           <button
-            onClick={() => onRegenerate(i + 1)}
+            onClick={() => onRegenerate(page.pageNumber ?? i + 1)}
             disabled={regeneratingPage != null}
             title="Not quite right? Regenerate this page"
             className="absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-bold text-slate-deep shadow-md transition hover:bg-white disabled:opacity-60"
           >
-            {regeneratingPage === i + 1 ? (
+            {regeneratingPage === (page.pageNumber ?? i + 1) ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <RefreshCw className="h-3.5 w-3.5" />
@@ -151,9 +163,7 @@ export function FlipBook({
 
       {/* Counter + free/locked dots */}
       <div className="mt-4 flex items-center justify-center gap-2 text-sm font-semibold text-slate-mutedText">
-        <span>
-          Page {i + 1} of {total}
-        </span>
+        <span>{label}</span>
         {locked && (
           <span className="inline-flex items-center gap-1 text-brand-primary">
             <Lock className="h-3.5 w-3.5" /> Locked
@@ -165,11 +175,17 @@ export function FlipBook({
           <button
             key={idx}
             onClick={() => setI(idx)}
-            aria-label={`Go to page ${idx + 1}`}
+            aria-label={
+              p.kind === "front_cover"
+                ? "Go to front cover"
+                : p.kind === "back_cover"
+                  ? "Go to back cover"
+                  : `Go to page ${p.pageNumber ?? idx + 1}`
+            }
             className={`h-1.5 rounded-full transition-all ${
               idx === i
                 ? "w-5 bg-brand-primary"
-                : idx >= freeCount
+                : isLocked(p, idx)
                   ? "w-1.5 bg-slate-300"
                   : "w-1.5 bg-brand-borderAccent"
             }`}

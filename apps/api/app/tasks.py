@@ -1,7 +1,13 @@
 """Celery tasks - the async personalization pipeline.
 
-Preview flow:  extract identity ONCE -> render pages 1..FREE (13) -> completed.
-Purchase flow: render locked pages 14..28 -> stitch print-ready PDF.
+Preview flow:  extract identity ONCE -> render the front cover + pages 1..FREE
+               (13) -> completed.
+Purchase flow: render locked pages 14..28 + the back cover -> stitch the
+               print-ready PDF.
+
+Covers are ordinary page templates at reserved numbers (see pages_layout), so a
+book's page list is [front cover] + 1..TOTAL + [back cover] and a slot index is
+NOT a page number.
 
 Progress is written to Postgres after every page so the frontend can long-poll
 or read the WebSocket stream.
@@ -16,6 +22,13 @@ from prisma import Prisma, Json
 
 from .config import settings
 from .generation_engine import extract_identity, render_page
+from .pages_layout import (
+    BACK_COVER,
+    is_free,
+    kind_of,
+    reading_order,
+    render_seed,
+)
 from .text_layer import personalize
 from .worker import celery_app
 
@@ -51,6 +64,47 @@ _DEFAULT_CAPTIONS = [
 async def _templates(db: Prisma, story_id: str) -> dict[int, object]:
     rows = await db.pagetemplate.find_many(where={"bookTemplateId": story_id})
     return {r.pageNumber: r for r in rows}
+
+
+def _base_art(gallery: list, page_number: int) -> str:
+    """Fallback illustration when a page has no authored base art. Indexed on
+    abs() so the reserved cover numbers (0, -1) don't wrap to the tail."""
+    if not gallery:
+        return ""
+    return gallery[abs(page_number) % len(gallery)]
+
+
+def _blank(page_number: int, index: int, locked: bool, teaser: str = "") -> dict:
+    return {
+        "index": index,
+        "pageNumber": page_number,
+        "kind": kind_of(page_number),
+        "imageUrl": teaser,
+        "caption": "",
+        "locked": locked,
+    }
+
+
+def _relayout(stored: list, order: list[int]) -> list[dict]:
+    """Re-seat an existing job's pages onto the book's reading order.
+
+    Keeps already-rendered pages by their page number, so a job created before
+    its book had covers (entries carry no pageNumber — fall back to position)
+    picks up the cover slots without losing a single render.
+    """
+    by_number: dict[int, dict] = {}
+    for i, p in enumerate(stored or []):
+        if not isinstance(p, dict):
+            continue
+        by_number[p.get("pageNumber", i + 1)] = p
+    out = []
+    for index, n in enumerate(order):
+        prev = by_number.get(n)
+        if prev is None:
+            out.append(_blank(n, index, locked=not is_free(n, FREE)))
+        else:
+            out.append({**prev, "index": index, "pageNumber": n, "kind": kind_of(n)})
+    return out
 
 
 async def _render_one(
@@ -97,7 +151,7 @@ async def _render_one(
         base_image_url=base_image_url,
         style_prompt=style_prompt,
         face_region=face_region,
-        seed=page_number * 7 if seed is None else seed,
+        seed=render_seed(page_number) if seed is None else seed,
     )
 
     # Real raster output -> burn text with PIL and persist a composed JPEG.
@@ -132,11 +186,15 @@ async def _render_one(
         except Exception:
             pass  # fall back to the raw AI image if compositing fails
 
+    # `index` is the slot in the book's reading order — the caller owns it,
+    # since covers shift every story page along.
     return {
         "index": page_number - 1,
+        "pageNumber": page_number,
+        "kind": kind_of(page_number),
         "imageUrl": image_url,
         "caption": personalize(story_text, job.childName),
-        "locked": page_number > FREE,
+        "locked": not is_free(page_number, FREE),
     }
 
 
@@ -176,14 +234,20 @@ async def _run_preview(job_id: str) -> None:
             t = templates.get(n)
             return (getattr(t, "baseImageUrl", "") or "") if t else ""
 
+        # Reading order — the authored covers bracket the story pages, so a slot
+        # is no longer the same thing as a page number.
+        order = reading_order(templates.keys(), TOTAL)
+        slot = {n: i for i, n in enumerate(order)}
+        free_numbers = [n for n in order if is_free(n, FREE)]
+
         pages: list[dict] = [
-            {
-                "index": n - 1,
-                "imageUrl": _teaser(n) if n > FREE else "",
-                "caption": "",
-                "locked": n > FREE,
-            }
-            for n in range(1, TOTAL + 1)
+            _blank(
+                n,
+                i,
+                locked=not is_free(n, FREE),
+                teaser="" if is_free(n, FREE) else _teaser(n),
+            )
+            for i, n in enumerate(order)
         ]
         await db.job.update(
             where={"id": job_id},
@@ -196,20 +260,20 @@ async def _run_preview(job_id: str) -> None:
 
         async def _one(n: int) -> None:
             nonlocal done
-            base = gallery[(n - 1) % len(gallery)] if gallery else ""
+            base = _base_art(gallery, n)
             async with sem:
                 page = await _render_one(job, templates.get(n), n, base)
             async with lock:
                 nonlocal pages
-                pages[n - 1] = page
+                pages[slot[n]] = {**page, "index": slot[n]}
                 done += 1
-                progress = 12 + int(done / FREE * 86)
+                progress = 12 + int(done / max(1, len(free_numbers)) * 86)
                 await db.job.update(
                     where={"id": job_id},
                     data={"progress": progress, "pages": Json(pages)},
                 )
 
-        await asyncio.gather(*(_one(n) for n in range(1, FREE + 1)))
+        await asyncio.gather(*(_one(n) for n in free_numbers))
 
         await db.job.update(
             where={"id": job_id},
@@ -223,7 +287,11 @@ async def _run_preview(job_id: str) -> None:
 
 
 async def _run_remaining(job_id: str) -> None:
-    """Render locked pages FREE+1..TOTAL after purchase, then build the PDF."""
+    """Render everything still locked after purchase, then build the PDF.
+
+    That's story pages FREE+1..TOTAL, the back cover, and any free slot whose
+    render never landed (including a cover authored after the preview ran).
+    """
     db = Prisma()
     await db.connect()
     try:
@@ -234,24 +302,32 @@ async def _run_remaining(job_id: str) -> None:
         gallery = (story.gallery if story else []) or []
         templates = await _templates(db, story.id) if story else {}
 
-        pages = list(job.pages) if job.pages else []
-        # Ensure list has TOTAL slots.
-        while len(pages) < TOTAL:
-            pages.append({"index": len(pages), "imageUrl": "", "caption": "", "locked": True})
+        # Re-seat onto the current reading order: a job queued before its book
+        # got covers still gets them rendered here, keeping its free pages.
+        order = reading_order(templates.keys(), TOTAL)
+        slot = {n: i for i, n in enumerate(order)}
+        pages = _relayout(job.pages, order)
+        # Everything still behind the paywall, plus any slot with nothing in it —
+        # that's how a cover authored after the preview ran still gets rendered.
+        locked_numbers = [
+            n
+            for n in order
+            if not is_free(n, FREE) or not pages[slot[n]].get("imageUrl")
+        ]
 
         sem = asyncio.Semaphore(settings.render_concurrency)
         lock = asyncio.Lock()
 
         async def _one(n: int) -> None:
-            base = gallery[(n - 1) % len(gallery)] if gallery else ""
+            base = _base_art(gallery, n)
             async with sem:
                 page = await _render_one(job, templates.get(n), n, base)
             page["locked"] = False
             async with lock:
-                pages[n - 1] = page
+                pages[slot[n]] = {**page, "index": slot[n]}
                 await db.job.update(where={"id": job_id}, data={"pages": Json(pages)})
 
-        await asyncio.gather(*(_one(n) for n in range(FREE + 1, TOTAL + 1)))
+        await asyncio.gather(*(_one(n) for n in locked_numbers))
 
         # Purchased books are preserved for 30 days (Diffrun-style), not the 48h
         # preview window — so the customer can re-download / re-print.
@@ -312,19 +388,22 @@ async def _regenerate_page(job_id: str, page_number: int) -> None:
         story = await db.story.find_unique(where={"slug": job.storySlug})
         templates = await _templates(db, story.id) if story else {}
         gallery = (story.gallery if story else []) or []
-        base = gallery[(page_number - 1) % len(gallery)] if gallery else ""
+        base = _base_art(gallery, page_number)
+
+        order = reading_order(templates.keys(), TOTAL)
+        if page_number not in order:
+            return  # asked to refine a page this book doesn't have
 
         # Fresh seed so the re-roll differs from the previous render.
         page = await _render_one(
             job, templates.get(page_number), page_number, base,
             seed=random.randint(1, 10_000_000),
         )
-        pages = list(job.pages) if job.pages else []
-        while len(pages) < page_number:
-            pages.append({"index": len(pages), "imageUrl": "", "caption": "", "locked": True})
+        pages = _relayout(job.pages, order)
+        index = order.index(page_number)
         # Preserve the page's locked state (free pages stay unlocked).
-        page["locked"] = page_number > FREE and not job.isPurchased
-        pages[page_number - 1] = page
+        page["locked"] = not is_free(page_number, FREE) and not job.isPurchased
+        pages[index] = {**page, "index": index}
         await db.job.update(where={"id": job_id}, data={"pages": Json(pages)})
     finally:
         await _disconnect(db)
@@ -370,7 +449,9 @@ async def _generate_book_base_art(story_id: str, overwrite: bool) -> dict:
             )
             try:
                 async with sem:
-                    data = await generate_base_art(scene_prompt=prompt, seed=p.pageNumber * 7)
+                    data = await generate_base_art(
+                        scene_prompt=prompt, seed=render_seed(p.pageNumber)
+                    )
                 os.makedirs(settings.storage_dir, exist_ok=True)
                 name = f"base_{story_id}_p{p.pageNumber}.jpg"
                 with open(os.path.join(settings.storage_dir, name), "wb") as f:

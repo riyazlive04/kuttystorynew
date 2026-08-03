@@ -1,6 +1,6 @@
 "use client";
 
-import type { Order } from "./types";
+import type { Order, PageKind } from "./types";
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 const TOKEN_KEY = "kutty:adminToken";
@@ -120,7 +120,14 @@ export interface AdminPage {
   fontFamily: string;
   letterSpacing: number;
   softLineBreak: boolean;
+  kind?: PageKind; // derived server-side from the reserved page numbers
+  label?: string;
 }
+
+// Reserved page numbers: the covers are ordinary page templates that render
+// through the same face-swap + text pipeline as a story page.
+export const FRONT_COVER = 0;
+export const BACK_COVER = -1;
 
 // A font the PIL text layer can burn in (GET /admin/fonts).
 export interface AdminFont {

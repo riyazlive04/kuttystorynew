@@ -9,6 +9,7 @@ from prisma import Json
 from ..config import settings
 from ..db import prisma
 from ..comfyui import build_pages
+from ..pages_layout import COVER_NUMBERS, is_free, label_of
 from ..schemas import PersonalizationIn
 from ..serializers import job_dict
 
@@ -23,11 +24,17 @@ async def create_job(payload: PersonalizationIn):
 
     # Initial placeholder pages so the preview shows even before the worker runs
     # (the Celery worker overwrites these with identity-consistent renders).
+    # Include the authored covers so the page list has its final shape from the
+    # start and the flip-book doesn't reflow when the first render lands.
+    cover_rows = await prisma.pagetemplate.find_many(
+        where={"bookTemplateId": story.id, "pageNumber": {"in": list(COVER_NUMBERS)}}
+    )
     pages = build_pages(
         child_name=payload.childName,
         total=story.pages,
         cover=story.coverImage,
         gallery=story.gallery,
+        cover_art={r.pageNumber: (r.baseImageUrl or "") for r in cover_rows},
     )
     expires_at = datetime.now(timezone.utc) + timedelta(
         hours=settings.data_retention_hours
@@ -135,8 +142,13 @@ async def regenerate_page(job_id: str, page_number: int):
     job = await prisma.job.find_unique(where={"id": job_id})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    if page_number > settings.free_preview_pages and not job.isPurchased:
-        raise HTTPException(status_code=403, detail="Purchase to refine locked pages")
+    # The back cover is locked like any post-paywall page, even though its
+    # reserved number (-1) sorts below the free-page threshold.
+    if not is_free(page_number, settings.free_preview_pages) and not job.isPurchased:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Purchase to refine {label_of(page_number).lower()}",
+        )
     await prisma.job.update(
         where={"id": job_id}, data={"status": "rendering"}
     )

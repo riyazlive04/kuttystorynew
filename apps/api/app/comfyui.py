@@ -33,18 +33,36 @@ _CAPTIONS = [
 ]
 
 
-def build_pages(child_name: str, total: int, cover: str, gallery: list[str]) -> list[dict]:
-    """Synthesize the preview page list (unlocked free preview + locked rest)."""
+def build_pages(
+    child_name: str,
+    total: int,
+    cover: str,
+    gallery: list[str],
+    cover_art: dict[int, str] | None = None,
+) -> list[dict]:
+    """Synthesize the preview page list (unlocked free preview + locked rest).
+
+    `cover_art` maps a reserved cover page number to its authored base art; the
+    covers bracket the story pages in reading order, matching what the worker
+    writes once it takes over.
+    """
+    from .pages_layout import is_free, kind_of, reading_order
+
     art = gallery or _MOCK_ART or [cover]
+    cover_art = cover_art or {}
+    order = reading_order(cover_art.keys(), total)
+    free = settings.free_preview_pages
     pages: list[dict] = []
-    for i in range(total):
-        caption_tpl = _CAPTIONS[i % len(_CAPTIONS)]
+    for i, n in enumerate(order):
+        caption_tpl = _CAPTIONS[abs(n) % len(_CAPTIONS)]
         pages.append(
             {
                 "index": i,
-                "imageUrl": art[i % len(art)] or cover,
-                "caption": caption_tpl.format(name=child_name),
-                "locked": i >= settings.free_preview_pages,
+                "pageNumber": n,
+                "kind": kind_of(n),
+                "imageUrl": cover_art.get(n) or art[abs(n) % len(art)] or cover,
+                "caption": "" if n in cover_art else caption_tpl.format(name=child_name),
+                "locked": not is_free(n, free),
             }
         )
     return pages
