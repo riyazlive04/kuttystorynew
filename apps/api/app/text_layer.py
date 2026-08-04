@@ -14,7 +14,7 @@ import re
 from typing import Optional
 
 import httpx
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from .config import settings
 
@@ -76,6 +76,10 @@ FONT_FAMILIES: dict[str, dict] = {
 
 DEFAULT_FAMILY = "sans"
 
+# Outline thickness in px at the 1024 design width; 0 = no outline (use that
+# when the base art already has a light panel behind the text).
+DEFAULT_OUTLINE = 3
+
 
 def available_families() -> list[dict]:
     """Family list for the admin UI, flagging which ones are actually installed."""
@@ -132,15 +136,30 @@ def _text_w(draw: ImageDraw.ImageDraw, text: str, font, tracking: float) -> floa
 
 
 def _draw_tracked(
-    draw: ImageDraw.ImageDraw, xy: tuple[float, float], text: str, font, fill, tracking: float
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[float, float],
+    text: str,
+    font,
+    fill,
+    tracking: float,
+    stroke_width: int = 0,
+    stroke_fill=None,
 ) -> None:
-    """draw.text() with letter spacing (glyph-by-glyph when tracking != 0)."""
+    """draw.text() with letter spacing (glyph-by-glyph when tracking != 0).
+
+    Outlining goes through Pillow's own stroke_width, which renders a real
+    anti-aliased outline in one pass.
+    """
+    kw = {"font": font, "fill": fill}
+    if stroke_width:
+        kw["stroke_width"] = stroke_width
+        kw["stroke_fill"] = stroke_fill
     if not tracking:
-        draw.text(xy, text, font=font, fill=fill)
+        draw.text(xy, text, **kw)
         return
     x, y = xy
     for ch in text:
-        draw.text((x, y), ch, font=font, fill=fill)
+        draw.text((x, y), ch, **kw)
         x += draw.textlength(ch, font=font) + tracking
 
 
@@ -189,6 +208,7 @@ def compose_page(
     font_family: str = DEFAULT_FAMILY,
     letter_spacing: float = 0.0,
     soft_line_break: bool = True,
+    outline_width: int = DEFAULT_OUTLINE,
 ) -> Image.Image:
     """Return a PIL image with the personalised story line burned in."""
     img = _load_image(image_src)
@@ -213,19 +233,37 @@ def compose_page(
     cx = W * (text_x_pct / 100.0)
     top = H * (text_y_pct / 100.0) - block_h / 2
 
-    shadow = (0, 0, 0, 180)
+    placed = []
     for i, line in enumerate(lines):
         lw = _text_w(draw, line, font, tracking)
-        x = cx - lw / 2
-        y = top + i * line_h
-        # soft outline
-        for dx in (-2, -1, 0, 1, 2):
-            for dy in (-2, -1, 0, 1, 2):
-                if dx or dy:
-                    _draw_tracked(draw, (x + dx, y + dy), line, font, shadow, tracking)
-        # drop shadow
-        _draw_tracked(draw, (x + 3, y + 4), line, font, (0, 0, 0), tracking)
-        _draw_tracked(draw, (x, y), line, font, font_color, tracking)
+        placed.append((line, cx - lw / 2, top + i * line_h))
+
+    # Outline width is authored at the 1024 design width and scales with the
+    # canvas, so it stays proportional to the type instead of being a fixed 2px
+    # that swallows small text. 0 turns it off — the right choice when the art
+    # already has a light text panel behind the words.
+    stroke = max(0, round((outline_width or 0) * scale))
+
+    if stroke:
+        # A real drop shadow: drawn into an RGBA layer, blurred, then composited.
+        # (Passing an RGBA fill straight to an RGB canvas silently discards the
+        # alpha, which is what turned this shadow into solid black before.)
+        shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        sdraw = ImageDraw.Draw(shadow)
+        offset = max(1, round(size * 0.06))
+        for line, x, y in placed:
+            _draw_tracked(
+                sdraw, (x + offset, y + offset), line, font, (0, 0, 0, 120), tracking
+            )
+        shadow = shadow.filter(ImageFilter.GaussianBlur(max(1, stroke)))
+        img = Image.alpha_composite(img.convert("RGBA"), shadow).convert("RGB")
+        draw = ImageDraw.Draw(img)
+
+    for line, x, y in placed:
+        _draw_tracked(
+            draw, (x, y), line, font, font_color, tracking,
+            stroke_width=stroke, stroke_fill=(0, 0, 0),
+        )
     return img
 
 

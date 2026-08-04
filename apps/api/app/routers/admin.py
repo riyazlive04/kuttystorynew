@@ -319,6 +319,7 @@ def _page_dict(p) -> dict:
         "fontFamily": getattr(p, "fontFamily", None) or "sans",
         "letterSpacing": getattr(p, "letterSpacing", 0) or 0,
         "softLineBreak": getattr(p, "softLineBreak", True),
+        "outlineWidth": getattr(p, "outlineWidth", 3),
         # Derived from the reserved page numbers — the editor labels tabs with it.
         "kind": kind_of(p.pageNumber),
         "label": label_of(p.pageNumber),
@@ -352,6 +353,7 @@ class PageUpsert(BaseModel):
     fontFamily: str = "sans"
     letterSpacing: float = 0
     softLineBreak: bool = True
+    outlineWidth: int = 3
 
 
 @router.get("/stories/{slug}/pages", dependencies=[Depends(require_admin)])

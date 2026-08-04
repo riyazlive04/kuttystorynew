@@ -45,6 +45,7 @@ const BLANK = (n: number): AdminPage => ({
   fontFamily: "sans",
   letterSpacing: 0,
   softLineBreak: true,
+  outlineWidth: 3,
 });
 
 // A cover is an ordinary page template at a reserved number — same base art,
@@ -160,6 +161,7 @@ export default function AdminPagesEditor() {
     return () => ro.disconnect();
   }, []);
   const pxScale = (boxW || DESIGN_W) / DESIGN_W;
+  const outlinePx = Math.round((page?.outlineWidth ?? 3) * pxScale);
   const [tracing, setTracing] = useState(false);
   const [livePath, setLivePath] = useState<number[][]>([]);
   const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -643,7 +645,25 @@ export default function AdminPagesEditor() {
                   className="input"
                 />
               </Field>
+              <Field label="Outline (px @1024 — 0 = none)">
+                <input
+                  type="number"
+                  min="0"
+                  value={page.outlineWidth ?? 3}
+                  onChange={(e) =>
+                    patch("outlineWidth", Math.max(0, Number(e.target.value)))
+                  }
+                  className="input"
+                />
+              </Field>
             </div>
+            {(page.outlineWidth ?? 3) > 0 && (
+              <p className="-mt-2 text-xs text-slate-mutedText">
+                The outline and drop shadow keep light text readable over
+                artwork. If this page has a light panel behind the text, set the
+                outline to <b>0</b> and pick a dark font colour instead.
+              </p>
+            )}
 
             <label className="flex items-start gap-3 rounded-xl border-2 border-brand-borderAccent p-3">
               <input
@@ -734,7 +754,17 @@ export default function AdminPagesEditor() {
                   fontFamily:
                     fonts.find((f) => f.key === (page.fontFamily || "sans"))?.css ||
                     "system-ui, sans-serif",
-                  textShadow: "0 2px 6px rgba(0,0,0,0.6)",
+                  // Mirror the render: an outline ring + soft shadow, or
+                  // nothing at all when the outline is turned off.
+                  textShadow: outlinePx
+                    ? [
+                        `-${outlinePx}px -${outlinePx}px 0 #000`,
+                        `${outlinePx}px -${outlinePx}px 0 #000`,
+                        `-${outlinePx}px ${outlinePx}px 0 #000`,
+                        `${outlinePx}px ${outlinePx}px 0 #000`,
+                        `0 ${outlinePx * 1.5}px ${outlinePx * 2}px rgba(0,0,0,0.45)`,
+                      ].join(", ")
+                    : "none",
                   fontWeight: 700,
                 }}
               >

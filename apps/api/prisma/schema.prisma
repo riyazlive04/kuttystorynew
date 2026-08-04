@@ -94,6 +94,7 @@ model PageTemplate {
   fontFamily    String  @default("sans")   // key from text_layer.FONT_FAMILIES
   letterSpacing Float   @default(0)        // px @1024 canvas, may be negative
   softLineBreak Boolean @default(true)     // start a new line at each sentence end
+  outlineWidth  Int     @default(3)        // px @1024; 0 = none (light text panels)
 
   @@unique([bookTemplateId, pageNumber])
 }

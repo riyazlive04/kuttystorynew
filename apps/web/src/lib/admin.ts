@@ -120,6 +120,7 @@ export interface AdminPage {
   fontFamily: string;
   letterSpacing: number;
   softLineBreak: boolean;
+  outlineWidth: number; // px @1024; 0 = no outline
   kind?: PageKind; // derived server-side from the reserved page numbers
   label?: string;
 }

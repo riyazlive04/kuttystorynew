@@ -177,6 +177,7 @@ async def _render_one(
                 font_family=getattr(template, "fontFamily", None) or "sans",
                 letter_spacing=getattr(template, "letterSpacing", 0) or 0,
                 soft_line_break=getattr(template, "softLineBreak", True),
+                outline_width=getattr(template, "outlineWidth", None) or 0,
             )
             os.makedirs(settings.storage_dir, exist_ok=True)
             fname = f"{job.id}_p{page_number}.jpg"
