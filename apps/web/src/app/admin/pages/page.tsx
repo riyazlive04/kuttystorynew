@@ -7,9 +7,11 @@ import {
   adminApi,
   BACK_COVER,
   FRONT_COVER,
+  VARIANTS,
   type AdminFont,
   type AdminPage,
   type AdminStory,
+  type Variant,
 } from "@/lib/admin";
 
 // The canvas width the stored fontSize/letterSpacing are authored against — the
@@ -73,6 +75,7 @@ export default function AdminPagesEditor() {
   const initialSlug = searchParams.get("slug") || "";
   const [stories, setStories] = useState<AdminStory[]>([]);
   const [slug, setSlug] = useState<string>(initialSlug);
+  const [variant, setVariant] = useState<Variant>("boy");
   const [pages, setPages] = useState<AdminPage[]>([]);
   const [active, setActive] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -113,11 +116,11 @@ export default function AdminPagesEditor() {
 
   useEffect(() => {
     if (!slug) return;
-    adminApi.pages(slug).then((p) => {
+    adminApi.pages(slug, variant).then((p) => {
       setPages(p.length ? p : [BLANK(1)]);
       setActive(0);
     });
-  }, [slug]);
+  }, [slug, variant]);
 
   const page = pages[active];
   const softBreak = page?.softLineBreak ?? true;
@@ -221,6 +224,26 @@ export default function AdminPagesEditor() {
   // What to render: the live trace while dragging, else the saved outline.
   const shownPath = tracing ? livePath : page?.facePath ?? [];
 
+  const story = stories.find((x) => x.slug === slug);
+  const lock = story?.genderLock ?? null;
+
+  // Two checkboxes, one underlying value: ticking one unticks the other, and
+  // neither ticked means the book is offered for any child.
+  async function setLock(next: Variant | null) {
+    if (!slug) return;
+    setStories((prev) =>
+      prev.map((x) => (x.slug === slug ? { ...x, genderLock: next } : x)),
+    );
+    try {
+      await adminApi.setGenderLock(slug, next);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not save that");
+      setStories((prev) =>
+        prev.map((x) => (x.slug === slug ? { ...x, genderLock: lock } : x)),
+      );
+    }
+  }
+
   async function uploadBaseArt(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -239,7 +262,7 @@ export default function AdminPagesEditor() {
     if (!page) return;
     setSaving(true);
     try {
-      const saved = await adminApi.upsertPage(slug, page);
+      const saved = await adminApi.upsertPage(slug, page, variant);
       setPages((prev) => prev.map((p, i) => (i === active ? saved : p)));
       return saved;
     } catch {
@@ -265,8 +288,8 @@ export default function AdminPagesEditor() {
       return;
     setGenerating(true);
     try {
-      await adminApi.upsertPage(slug, page); // ensure the page exists server-side
-      const updated = await adminApi.generateBase(slug, page.pageNumber);
+      await adminApi.upsertPage(slug, page, variant); // ensure it exists server-side
+      const updated = await adminApi.generateBase(slug, page.pageNumber, variant);
       setPages((prev) => prev.map((p, i) => (i === active ? updated : p)));
     } catch (e) {
       alert(e instanceof Error ? e.message : "Base-art generation failed");
@@ -312,7 +335,7 @@ export default function AdminPagesEditor() {
     );
     if (
       !confirm(
-        `Generate a full ${numPages}-page story with AI? This overwrites this book's pages (1 LLM call, ~a few cents).`,
+        `Generate a full ${numPages}-page story with AI? This overwrites this book's ${variant} pages (1 LLM call, ~a few cents).`,
       )
     )
       return;
@@ -321,6 +344,7 @@ export default function AdminPagesEditor() {
       const res = await adminApi.generateStory(slug, {
         numPages,
         premise: premise || undefined,
+        variant,
       });
       setPages(res.pages);
       setActive(0);
@@ -334,7 +358,8 @@ export default function AdminPagesEditor() {
 
   async function removePage() {
     if (!page) return;
-    if (page.id) await adminApi.deletePage(slug, page.pageNumber).catch(() => {});
+    if (page.id)
+      await adminApi.deletePage(slug, page.pageNumber, variant).catch(() => {});
     setPages((prev) => prev.filter((_, i) => i !== active));
     setActive((a) => Math.max(0, a - 1));
   }
@@ -363,18 +388,18 @@ export default function AdminPagesEditor() {
             ) : (
               <BookOpen className="h-4 w-4" />
             )}
-            Generate full story (AI)
+            Generate full story (AI) — {variant}
           </button>
           <button
             onClick={async () => {
               if (
                 !confirm(
-                  "Generate FIXED base illustrations for every page? This makes the child render consistently onto the same art each page (Diffrun-exact). Costs one render per page.",
+                  `Generate FIXED base illustrations for every ${variant} page? This makes the child render consistently onto the same art each page (Diffrun-exact). Costs one render per page.`,
                 )
               )
                 return;
               try {
-                const r = await adminApi.generateBaseArt(slug);
+                const r = await adminApi.generateBaseArt(slug, variant);
                 alert(`Generating base art for ${r.pages} pages in the background. Refresh in a minute.`);
               } catch (e) {
                 alert(e instanceof Error ? e.message : "Failed to start base-art generation");
@@ -384,7 +409,7 @@ export default function AdminPagesEditor() {
             title="Generate the fixed base illustration for every page (one-time)"
             className="inline-flex items-center gap-2 rounded-xl border-2 border-brand-primary px-4 py-2 text-sm font-bold text-brand-primary hover:bg-brand-primary/5 disabled:opacity-50"
           >
-            <ImagePlus className="h-4 w-4" /> Base art (all pages)
+            <ImagePlus className="h-4 w-4" /> Base art (all {variant} pages)
           </button>
           <select
             value={slug}
@@ -400,8 +425,51 @@ export default function AdminPagesEditor() {
         </div>
       </div>
 
-      {/* Page tabs — front cover, story pages, back cover (reading order) */}
+      {/* Who this book is offered to */}
+      <div className="card mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
+        <span className="text-sm font-bold text-slate-deep">Available for</span>
+        {VARIANTS.map((v) => (
+          <label key={v} className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={lock === v}
+              onChange={(e) => setLock(e.target.checked ? v : null)}
+              className="h-4 w-4 accent-brand-primary"
+            />
+            <span className="text-sm font-semibold capitalize text-slate-deep">
+              {v} only
+            </span>
+          </label>
+        ))}
+        <span className="text-xs text-slate-mutedText">
+          {lock
+            ? `The storefront only offers this book for a ${lock}.`
+            : "Neither ticked — offered for both boys and girls."}
+        </span>
+      </div>
+
+      {/* Which gender's artwork is being authored */}
       <div className="mb-5 flex flex-wrap items-center gap-2">
+        <div className="inline-flex overflow-hidden rounded-xl border-2 border-brand-primary">
+          {VARIANTS.map((v) => (
+            <button
+              key={v}
+              onClick={() => setVariant(v)}
+              title={`Author the ${v} artwork`}
+              className={`h-9 px-4 text-sm font-bold capitalize transition ${
+                variant === v
+                  ? "bg-brand-primary text-white"
+                  : "bg-white text-brand-primary hover:bg-brand-primary/5"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+        <span className="mr-2 text-xs text-slate-mutedText">
+          Separate pages &amp; base art per gender
+        </span>
+        <span className="mx-1 h-7 w-px bg-brand-borderAccent" />
         {pages.map((p, i) => (
           <button
             key={i}

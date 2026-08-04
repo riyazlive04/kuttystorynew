@@ -21,6 +21,8 @@ export interface Story {
   themeColor: string; // hex used for gradient accents
   supportsTamil: boolean;
   highlights: string[];
+  // null/absent = offered for any child; otherwise only that gender.
+  genderLock?: "boy" | "girl" | null;
 }
 
 export interface Personalization {

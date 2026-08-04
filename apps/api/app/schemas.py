@@ -29,6 +29,7 @@ class StoryOut(BaseModel):
     themeColor: str
     supportsTamil: bool
     highlights: list[str]
+    genderLock: Optional[Literal["boy", "girl"]] = None
 
 
 class PersonalizationIn(BaseModel):

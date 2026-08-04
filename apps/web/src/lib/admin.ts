@@ -60,6 +60,7 @@ export interface AdminStory {
   coverImage: string;
   supportsTamil: boolean;
   active: boolean;
+  genderLock?: Variant | null; // null = offered for any child
 }
 
 // Payload for creating a book via POST /admin/stories (matches StoryUpsert).
@@ -121,9 +122,15 @@ export interface AdminPage {
   letterSpacing: number;
   softLineBreak: boolean;
   outlineWidth: number; // px @1024; 0 = no outline
+  variant?: Variant; // which gender's artwork this page belongs to
   kind?: PageKind; // derived server-side from the reserved page numbers
   label?: string;
 }
+
+// A book is authored once per gender — separate base art, separate face
+// outlines. The Page Editor switches between them with the Boy / Girl buttons.
+export type Variant = "boy" | "girl";
+export const VARIANTS: Variant[] = ["boy", "girl"];
 
 // Reserved page numbers: the covers are ordinary page templates that render
 // through the same face-swap + text pipeline as a story page.
@@ -172,26 +179,46 @@ export const adminApi = {
       method: "DELETE",
     }),
   fonts: (): Promise<AdminFont[]> => req("/admin/fonts"),
-  pages: (slug: string): Promise<AdminPage[]> =>
-    req(`/admin/stories/${slug}/pages`),
-  upsertPage: (slug: string, page: AdminPage): Promise<AdminPage> =>
+  setGenderLock: (slug: string, genderLock: Variant | null): Promise<AdminStory> =>
+    req(`/admin/stories/${slug}/gender-lock`, {
+      method: "PATCH",
+      body: JSON.stringify({ genderLock }),
+    }),
+  pages: (slug: string, variant: Variant = "boy"): Promise<AdminPage[]> =>
+    req(`/admin/stories/${slug}/pages?variant=${variant}`),
+  upsertPage: (
+    slug: string,
+    page: AdminPage,
+    variant: Variant = "boy",
+  ): Promise<AdminPage> =>
     req(`/admin/stories/${slug}/pages`, {
       method: "POST",
-      body: JSON.stringify(page),
+      body: JSON.stringify({ ...page, variant }),
     }),
-  deletePage: (slug: string, pageNumber: number): Promise<{ ok: boolean }> =>
-    req(`/admin/stories/${slug}/pages/${pageNumber}`, { method: "DELETE" }),
+  deletePage: (
+    slug: string,
+    pageNumber: number,
+    variant: Variant = "boy",
+  ): Promise<{ ok: boolean }> =>
+    req(`/admin/stories/${slug}/pages/${pageNumber}?variant=${variant}`, {
+      method: "DELETE",
+    }),
   // Generate a page's generic base illustration once (flux txt2img). Costs 1 render.
-  generateBase: (slug: string, pageNumber: number, prompt?: string): Promise<AdminPage> =>
+  generateBase: (
+    slug: string,
+    pageNumber: number,
+    variant: Variant = "boy",
+    prompt?: string,
+  ): Promise<AdminPage> =>
     req(`/admin/stories/${slug}/pages/${pageNumber}/generate-base`, {
       method: "POST",
-      body: JSON.stringify({ prompt: prompt ?? null }),
+      body: JSON.stringify({ prompt: prompt ?? null, variant }),
     }),
   // Author a full personalized story for the book via an LLM (1 call). Returns
   // the generated pages (also saved as PageTemplates).
   generateStory: (
     slug: string,
-    opts: { numPages: number; premise?: string; gender?: string },
+    opts: { numPages: number; premise?: string; variant?: Variant },
   ): Promise<{ provider: string; count: number; pages: AdminPage[] }> =>
     req(`/admin/stories/${slug}/generate-story`, {
       method: "POST",
@@ -200,11 +227,12 @@ export const adminApi = {
   // Generate the FIXED base illustration for every page of the book (background).
   generateBaseArt: (
     slug: string,
+    variant: Variant = "boy",
     overwrite = false,
   ): Promise<{ ok: boolean; pages: number; status: string }> =>
     req(`/admin/stories/${slug}/generate-base-art`, {
       method: "POST",
-      body: JSON.stringify({ overwrite }),
+      body: JSON.stringify({ overwrite, variant }),
     }),
   upload: async (file: File): Promise<{ url: string }> => {
     const API = process.env.NEXT_PUBLIC_API_URL;

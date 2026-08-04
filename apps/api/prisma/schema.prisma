@@ -55,6 +55,9 @@ model Story {
   gallery       String[]
   themeColor    String   @default("#9333EA")
   supportsTamil Boolean  @default(true)
+  // Restrict who this book can be personalized for: "boy", "girl", or null for
+  // both. Set when the authored base art only works for one gender.
+  genderLock    String?
   highlights    String[]
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
@@ -70,6 +73,11 @@ model PageTemplate {
   book          Story   @relation(fields: [bookTemplateId], references: [id], onDelete: Cascade)
   bookTemplateId String
   pageNumber    Int
+  // Which gender's artwork this page belongs to. A book is authored twice —
+  // once per variant — because the base illustration (and its face outline)
+  // differs. Existing single-variant books default to "boy" and are used for
+  // every child until a "girl" variant is authored (see pages_layout).
+  variant       String  @default("boy")
 
   // --- Diffrun-style inpaint-over-template ---
   // The pre-drawn illustrated scene (fixed style + character body). The child's
@@ -96,7 +104,7 @@ model PageTemplate {
   softLineBreak Boolean @default(true)     // start a new line at each sentence end
   outlineWidth  Int     @default(3)        // px @1024; 0 = none (light text panels)
 
-  @@unique([bookTemplateId, pageNumber])
+  @@unique([bookTemplateId, variant, pageNumber])
 }
 
 // UserPreviewSession in the blueprint.

@@ -5,7 +5,7 @@ Kept intentionally simple; swap for real user auth / RBAC in production.
 """
 import os
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from prisma import Json
@@ -13,7 +13,13 @@ from pydantic import BaseModel
 
 from ..config import settings
 from ..db import prisma
-from ..pages_layout import FRONT_COVER, kind_of, label_of, sort_key
+from ..pages_layout import (
+    FRONT_COVER,
+    kind_of,
+    label_of,
+    normalize_variant,
+    sort_key,
+)
 from ..serializers import order_dict, story_dict
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -218,6 +224,7 @@ class StoryUpsert(BaseModel):
     supportsTamil: bool = True
     highlights: list[str] = []
     active: bool = True
+    genderLock: Optional[Literal["boy", "girl"]] = None
 
 
 @router.get("/stories", dependencies=[Depends(require_admin)])
@@ -233,6 +240,23 @@ async def admin_upsert_story(body: StoryUpsert):
         where={"slug": body.slug},
         data={"create": data, "update": data},
     )
+    return {**story_dict(story), "active": story.active}
+
+
+class GenderLockPatch(BaseModel):
+    # null = the book is offered for any child; "boy"/"girl" restricts it.
+    genderLock: Optional[Literal["boy", "girl"]] = None
+
+
+@router.patch("/stories/{slug}/gender-lock", dependencies=[Depends(require_admin)])
+async def admin_set_gender_lock(slug: str, body: GenderLockPatch):
+    """Restrict which children a book can be personalized for. The storefront
+    only offers the locked gender, and POST /jobs rejects the other one."""
+    story = await prisma.story.update(
+        where={"slug": slug}, data={"genderLock": body.genderLock}
+    )
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
     return {**story_dict(story), "active": story.active}
 
 
@@ -281,18 +305,28 @@ async def admin_delete_story(slug: str, force: bool = False):
 
 # ------------------------- Page templates (CMS) ---------------------------
 
-async def _sync_catalog_cover(story_id: str, page_number: int, base_image: str | None):
+async def _sync_catalog_cover(
+    story_id: str, page_number: int, base_image: str | None, variant: str
+):
     """The front cover's base art IS the book's shop image.
 
     Story.coverImage still exists because the storefront, the cart and past
     order records all need an image when there's no child and no render yet —
     but it's never authored by hand: saving or generating the front cover's base
     art writes it here, so there is only ever one cover to maintain.
+
+    With two gender variants only one can be the shop image: the locked gender
+    if the book is restricted, otherwise the boy variant.
     """
     if page_number != FRONT_COVER or not base_image:
         return
     story = await prisma.story.find_unique(where={"id": story_id})
-    if story and story.coverImage != base_image:
+    if not story:
+        return
+    primary = normalize_variant(getattr(story, "genderLock", None) or "")
+    if normalize_variant(variant) != primary:
+        return
+    if story.coverImage != base_image:
         await prisma.story.update(
             where={"id": story_id}, data={"coverImage": base_image}
         )
@@ -320,6 +354,7 @@ def _page_dict(p) -> dict:
         "letterSpacing": getattr(p, "letterSpacing", 0) or 0,
         "softLineBreak": getattr(p, "softLineBreak", True),
         "outlineWidth": getattr(p, "outlineWidth", 3),
+        "variant": getattr(p, "variant", None) or "boy",
         # Derived from the reserved page numbers — the editor labels tabs with it.
         "kind": kind_of(p.pageNumber),
         "label": label_of(p.pageNumber),
@@ -337,6 +372,7 @@ async def admin_fonts():
 
 class PageUpsert(BaseModel):
     pageNumber: int
+    variant: Literal["boy", "girl"] = "boy"
     baseImageUrl: Optional[str] = None
     stylePrompt: str = "children's storybook illustration, soft colours, consistent character, clean line art"
     faceX: Optional[float] = None
@@ -357,12 +393,15 @@ class PageUpsert(BaseModel):
 
 
 @router.get("/stories/{slug}/pages", dependencies=[Depends(require_admin)])
-async def admin_list_pages(slug: str):
+async def admin_list_pages(slug: str, variant: str = "boy"):
+    """One gender variant's pages. The book is authored twice — the Page Editor
+    switches between them with the Boy / Girl buttons."""
     story = await prisma.story.find_unique(where={"slug": slug})
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     pages = await prisma.pagetemplate.find_many(
-        where={"bookTemplateId": story.id}, order={"pageNumber": "asc"}
+        where={"bookTemplateId": story.id, "variant": normalize_variant(variant)},
+        order={"pageNumber": "asc"},
     )
     # Reading order, not numeric order: front cover (0), story pages, back cover (-1).
     pages = sorted(pages, key=lambda p: sort_key(p.pageNumber))
@@ -381,24 +420,31 @@ async def admin_upsert_page(slug: str, body: PageUpsert):
     data["facePath"] = Json(data.get("facePath") or [])
     page = await prisma.pagetemplate.upsert(
         where={
-            "bookTemplateId_pageNumber": {
+            "bookTemplateId_variant_pageNumber": {
                 "bookTemplateId": story.id,
+                "variant": body.variant,
                 "pageNumber": body.pageNumber,
             }
         },
         data={"create": data, "update": data},
     )
-    await _sync_catalog_cover(story.id, page.pageNumber, page.baseImageUrl)
+    await _sync_catalog_cover(
+        story.id, page.pageNumber, page.baseImageUrl, body.variant
+    )
     return _page_dict(page)
 
 
 @router.delete("/stories/{slug}/pages/{page_number}", dependencies=[Depends(require_admin)])
-async def admin_delete_page(slug: str, page_number: int):
+async def admin_delete_page(slug: str, page_number: int, variant: str = "boy"):
     story = await prisma.story.find_unique(where={"slug": slug})
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     await prisma.pagetemplate.delete_many(
-        where={"bookTemplateId": story.id, "pageNumber": page_number}
+        where={
+            "bookTemplateId": story.id,
+            "variant": normalize_variant(variant),
+            "pageNumber": page_number,
+        }
     )
     return {"ok": True}
 
@@ -406,6 +452,7 @@ async def admin_delete_page(slug: str, page_number: int):
 class GenerateBaseBody(BaseModel):
     # Optional override; defaults to the page's scenePrompt (+ stylePrompt).
     prompt: Optional[str] = None
+    variant: Literal["boy", "girl"] = "boy"
 
 
 @router.post(
@@ -420,7 +467,11 @@ async def admin_generate_base_art(slug: str, page_number: int, body: GenerateBas
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     page = await prisma.pagetemplate.find_first(
-        where={"bookTemplateId": story.id, "pageNumber": page_number}
+        where={
+            "bookTemplateId": story.id,
+            "variant": body.variant,
+            "pageNumber": page_number,
+        }
     )
     if not page:
         raise HTTPException(status_code=404, detail="Page not found — save the page first")
@@ -432,9 +483,10 @@ async def admin_generate_base_art(slug: str, page_number: int, body: GenerateBas
         )
     style = (page.stylePrompt or "").strip()
     # A generic child (no specific identity) so a real face can be swapped in later.
-    prompt = ", ".join(
-        p for p in [scene, style, "a single generic child character, no text"] if p
+    generic = "a single generic %s character, no text" % (
+        "boy" if body.variant == "boy" else "girl"
     )
+    prompt = ", ".join(p for p in [scene, style, generic] if p)
 
     from ..generation_engine import generate_base_art
 
@@ -443,7 +495,7 @@ async def admin_generate_base_art(slug: str, page_number: int, body: GenerateBas
     except Exception as e:  # surface the failure to the admin UI
         raise HTTPException(status_code=502, detail=f"Base-art generation failed: {e}")
 
-    name = f"base_{story.id}_p{page_number}_{uuid.uuid4().hex[:8]}.webp"
+    name = f"base_{story.id}_{body.variant}_p{page_number}_{uuid.uuid4().hex[:8]}.webp"
     os.makedirs(settings.storage_dir, exist_ok=True)
     with open(os.path.join(settings.storage_dir, name), "wb") as f:
         f.write(data)
@@ -452,7 +504,9 @@ async def admin_generate_base_art(slug: str, page_number: int, body: GenerateBas
     page = await prisma.pagetemplate.update(
         where={"id": page.id}, data={"baseImageUrl": url}
     )
-    await _sync_catalog_cover(story.id, page.pageNumber, page.baseImageUrl)
+    await _sync_catalog_cover(
+        story.id, page.pageNumber, page.baseImageUrl, body.variant
+    )
     return _page_dict(page)
 
 
@@ -465,9 +519,11 @@ DEFAULT_STYLE_PROMPT = (
 class GenerateStoryBody(BaseModel):
     numPages: int = 13
     premise: Optional[str] = None
-    gender: str = "neutral"
     stylePrompt: Optional[str] = None
     replace: bool = True  # overwrite the book's existing pages
+    # Which gender variant to author. The hero's gender in the narrative follows
+    # it, so "girl" pages read as a girl's story.
+    variant: Literal["boy", "girl"] = "boy"
 
 
 @router.post(
@@ -491,7 +547,7 @@ async def admin_generate_story(slug: str, body: GenerateStoryBody):
             num_pages=n,
             min_age=story.minAge,
             max_age=story.maxAge,
-            gender=body.gender,
+            gender=body.variant,
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Story generation failed: {e}")
@@ -501,7 +557,11 @@ async def admin_generate_story(slug: str, body: GenerateStoryBody):
         # Story pages only — the authored covers (page 0 / -1) are not part of the
         # narrative and must survive a re-author.
         await prisma.pagetemplate.delete_many(
-            where={"bookTemplateId": story.id, "pageNumber": {"gte": 1}}
+            where={
+                "bookTemplateId": story.id,
+                "variant": body.variant,
+                "pageNumber": {"gte": 1},
+            }
         )
 
     out = []
@@ -517,14 +577,16 @@ async def admin_generate_story(slug: str, body: GenerateStoryBody):
         }
         page = await prisma.pagetemplate.upsert(
             where={
-                "bookTemplateId_pageNumber": {
+                "bookTemplateId_variant_pageNumber": {
                     "bookTemplateId": story.id,
+                    "variant": body.variant,
                     "pageNumber": p["pageNumber"],
                 }
             },
             data={
                 "create": {
                     "bookTemplateId": story.id,
+                    "variant": body.variant,
                     "pageNumber": p["pageNumber"],
                     **fields,
                 },
@@ -537,6 +599,7 @@ async def admin_generate_story(slug: str, body: GenerateStoryBody):
 
 class GenerateBaseArtBody(BaseModel):
     overwrite: bool = False
+    variant: Literal["boy", "girl"] = "boy"
 
 
 @router.post(
@@ -549,13 +612,17 @@ async def admin_generate_book_base_art(slug: str, body: GenerateBaseArtBody):
     story = await prisma.story.find_unique(where={"slug": slug})
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
-    count = await prisma.pagetemplate.count(where={"bookTemplateId": story.id})
+    count = await prisma.pagetemplate.count(
+        where={"bookTemplateId": story.id, "variant": body.variant}
+    )
     if not count:
-        raise HTTPException(status_code=400, detail="Author the story pages first")
+        raise HTTPException(
+            status_code=400, detail=f"Author the {body.variant} pages first"
+        )
     try:
         from ..tasks import generate_book_base_art
 
-        generate_book_base_art.delay(story.id, body.overwrite)
+        generate_book_base_art.delay(story.id, body.overwrite, body.variant)
     except Exception:
         raise HTTPException(status_code=503, detail="Render queue unavailable")
     return {"ok": True, "pages": count, "status": "generating"}

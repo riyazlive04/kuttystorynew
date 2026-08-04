@@ -28,10 +28,16 @@ export function PersonalizeWizard({ story }: { story: Story }) {
   const [submitting, setSubmitting] = useState(false);
   const [consent, setConsent] = useState(false);
 
+  // A gender-locked book only has artwork for that gender, so the choice is
+  // made for the customer and the picker is replaced by a note.
+  const allowedGenders = (
+    story.genderLock ? [story.genderLock] : ["boy", "girl"]
+  ) as ("boy" | "girl")[];
+
   const [data, setData] = useState<Personalization>({
     storySlug: story.slug,
     childName: "",
-    gender: "boy",
+    gender: allowedGenders[0],
     ageYears: 4,
     language: "en",
     skinTone: "medium",
@@ -174,8 +180,16 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                 </select>
               </Field>
               <Field label="Character">
+                {story.genderLock ? (
+                  <p className="rounded-xl border-2 border-brand-borderAccent bg-brand-primary/5 px-3 py-2.5 text-sm font-semibold capitalize text-slate-deep">
+                    {story.genderLock}
+                    <span className="ml-1 font-normal normal-case text-slate-mutedText">
+                      — this book is illustrated as a {story.genderLock}&apos;s story.
+                    </span>
+                  </p>
+                ) : (
                 <div className="grid grid-cols-2 gap-2">
-                  {(["boy", "girl"] as const).map((g) => (
+                  {allowedGenders.map((g) => (
                     <button
                       key={g}
                       onClick={() => update("gender", g)}
@@ -189,6 +203,7 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                     </button>
                   ))}
                 </div>
+                )}
               </Field>
             </div>
           </div>

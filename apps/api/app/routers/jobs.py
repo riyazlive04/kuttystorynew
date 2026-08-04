@@ -9,7 +9,7 @@ from prisma import Json
 from ..config import settings
 from ..db import prisma
 from ..comfyui import build_pages
-from ..pages_layout import COVER_NUMBERS, is_free, label_of
+from ..pages_layout import COVER_NUMBERS, is_free, label_of, normalize_variant
 from ..schemas import PersonalizationIn
 from ..serializers import job_dict
 
@@ -22,12 +22,25 @@ async def create_job(payload: PersonalizationIn):
     if not story:
         raise HTTPException(status_code=404, detail="Unknown story")
 
+    # A gender-locked book only has artwork for that gender — reject the other
+    # one here too, so the rule doesn't depend on the storefront honouring it.
+    lock = getattr(story, "genderLock", None)
+    if lock and payload.gender in ("boy", "girl") and payload.gender != lock:
+        raise HTTPException(
+            status_code=400,
+            detail=f"“{story.title}” is only available as a {lock}'s book.",
+        )
+
     # Initial placeholder pages so the preview shows even before the worker runs
     # (the Celery worker overwrites these with identity-consistent renders).
     # Include the authored covers so the page list has its final shape from the
     # start and the flip-book doesn't reflow when the first render lands.
     cover_rows = await prisma.pagetemplate.find_many(
-        where={"bookTemplateId": story.id, "pageNumber": {"in": list(COVER_NUMBERS)}}
+        where={
+            "bookTemplateId": story.id,
+            "variant": normalize_variant(payload.gender),
+            "pageNumber": {"in": list(COVER_NUMBERS)},
+        }
     )
     pages = build_pages(
         child_name=payload.childName,

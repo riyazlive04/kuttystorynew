@@ -24,6 +24,8 @@ def story_dict(s) -> dict:
         "themeColor": s.themeColor,
         "supportsTamil": s.supportsTamil,
         "highlights": s.highlights,
+        # None = the book works for any child; "boy"/"girl" restricts it.
+        "genderLock": getattr(s, "genderLock", None),
     }
 
 

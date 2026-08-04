@@ -15,6 +15,21 @@ FRONT_COVER = 0
 BACK_COVER = -1
 COVER_NUMBERS = (FRONT_COVER, BACK_COVER)
 
+# A book is authored once per gender: the base illustration and its face outline
+# are different, so "boy" and "girl" are separate sets of page templates.
+VARIANTS = ("boy", "girl")
+DEFAULT_VARIANT = "boy"
+
+
+def normalize_variant(value) -> str:
+    """Map anything (a job's gender, a query param, None) onto a variant key."""
+    v = (value or "").strip().lower()
+    return v if v in VARIANTS else DEFAULT_VARIANT
+
+
+def other_variant(variant: str) -> str:
+    return "girl" if normalize_variant(variant) == "boy" else "boy"
+
 KIND_FRONT = "front_cover"
 KIND_BACK = "back_cover"
 KIND_STORY = "story"

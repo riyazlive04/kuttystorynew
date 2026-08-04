@@ -26,6 +26,8 @@ from .pages_layout import (
     FRONT_COVER,
     is_free,
     kind_of,
+    normalize_variant,
+    other_variant,
     reading_order,
     render_seed,
 )
@@ -61,8 +63,21 @@ _DEFAULT_CAPTIONS = [
 ]
 
 
-async def _templates(db: Prisma, story_id: str) -> dict[int, object]:
-    rows = await db.pagetemplate.find_many(where={"bookTemplateId": story_id})
+async def _templates(db: Prisma, story_id: str, gender: str = "") -> dict[int, object]:
+    """The book's pages for this child's gender.
+
+    Falls back to the other variant when the requested one hasn't been authored,
+    so a book that only has "boy" art still renders for every child instead of
+    producing an empty book.
+    """
+    variant = normalize_variant(gender)
+    rows = await db.pagetemplate.find_many(
+        where={"bookTemplateId": story_id, "variant": variant}
+    )
+    if not rows:
+        rows = await db.pagetemplate.find_many(
+            where={"bookTemplateId": story_id, "variant": other_variant(variant)}
+        )
     return {r.pageNumber: r for r in rows}
 
 
@@ -208,7 +223,7 @@ async def _run_preview(job_id: str) -> None:
             return
         story = await db.story.find_unique(where={"slug": job.storySlug})
         gallery = (story.gallery if story else []) or []
-        templates = await _templates(db, story.id) if story else {}
+        templates = await _templates(db, story.id, job.gender) if story else {}
 
         await db.job.update(
             where={"id": job_id}, data={"status": "processing", "progress": 5}
@@ -301,7 +316,7 @@ async def _run_remaining(job_id: str) -> None:
             return
         story = await db.story.find_unique(where={"slug": job.storySlug})
         gallery = (story.gallery if story else []) or []
-        templates = await _templates(db, story.id) if story else {}
+        templates = await _templates(db, story.id, job.gender) if story else {}
 
         # Re-seat onto the current reading order: a job queued before its book
         # got covers still gets them rendered here, keeping its free pages.
@@ -387,7 +402,7 @@ async def _regenerate_page(job_id: str, page_number: int) -> None:
         if not job:
             return
         story = await db.story.find_unique(where={"slug": job.storySlug})
-        templates = await _templates(db, story.id) if story else {}
+        templates = await _templates(db, story.id, job.gender) if story else {}
         gallery = (story.gallery if story else []) or []
         base = _base_art(gallery, page_number)
 
@@ -423,20 +438,28 @@ def regenerate_page(self, job_id: str, page_number: int) -> str:
 #  Admin: generate the FIXED base illustrations for a whole book (once)        #
 # --------------------------------------------------------------------------- #
 
-async def _generate_book_base_art(story_id: str, overwrite: bool) -> dict:
-    """Generate a generic-child base illustration for every page of a book so the
-    fixed-template + face-personalization pipeline has consistent art per page."""
+async def _generate_book_base_art(
+    story_id: str, overwrite: bool, variant: str = ""
+) -> dict:
+    """Generate a generic-child base illustration for every page of one gender
+    variant of a book, so the fixed-template + face-personalization pipeline has
+    consistent art per page."""
     import os
 
     from .generation_engine import generate_base_art
 
+    variant = normalize_variant(variant)
     db = Prisma()
     await db.connect()
     made, skipped, failed = 0, 0, 0
     try:
         pages = await db.pagetemplate.find_many(
-            where={"bookTemplateId": story_id}, order={"pageNumber": "asc"}
+            where={"bookTemplateId": story_id, "variant": variant},
+            order={"pageNumber": "asc"},
         )
+        story = await db.story.find_unique(where={"id": story_id})
+        # Only the shop-facing variant's front cover becomes the catalog image.
+        primary = normalize_variant(getattr(story, "genderLock", None) or "")
         sem = asyncio.Semaphore(settings.render_concurrency)
 
         async def _one(p):
@@ -444,17 +467,17 @@ async def _generate_book_base_art(story_id: str, overwrite: bool) -> dict:
             if p.baseImageUrl and not overwrite:
                 skipped += 1
                 return
-            prompt = ", ".join(
-                x for x in [p.scenePrompt, p.stylePrompt,
-                            "a single generic child character, no text"] if x
+            child = "a single generic %s character, no text" % (
+                "boy" if variant == "boy" else "girl"
             )
+            prompt = ", ".join(x for x in [p.scenePrompt, p.stylePrompt, child] if x)
             try:
                 async with sem:
                     data = await generate_base_art(
                         scene_prompt=prompt, seed=render_seed(p.pageNumber)
                     )
                 os.makedirs(settings.storage_dir, exist_ok=True)
-                name = f"base_{story_id}_p{p.pageNumber}.jpg"
+                name = f"base_{story_id}_{variant}_p{p.pageNumber}.jpg"
                 with open(os.path.join(settings.storage_dir, name), "wb") as f:
                     f.write(data)
                 url = f"/uploads/{name}"
@@ -462,7 +485,7 @@ async def _generate_book_base_art(story_id: str, overwrite: bool) -> dict:
                     where={"id": p.id}, data={"baseImageUrl": url}
                 )
                 # The front cover's art doubles as the book's shop image.
-                if p.pageNumber == FRONT_COVER:
+                if p.pageNumber == FRONT_COVER and variant == primary:
                     await db.story.update(
                         where={"id": story_id}, data={"coverImage": url}
                     )
@@ -477,8 +500,10 @@ async def _generate_book_base_art(story_id: str, overwrite: bool) -> dict:
 
 
 @celery_app.task(name="app.tasks.generate_book_base_art", bind=True)
-def generate_book_base_art(self, story_id: str, overwrite: bool = False) -> dict:
-    return asyncio.run(_generate_book_base_art(story_id, overwrite))
+def generate_book_base_art(
+    self, story_id: str, overwrite: bool = False, variant: str = ""
+) -> dict:
+    return asyncio.run(_generate_book_base_art(story_id, overwrite, variant))
 
 
 # --------------------------------------------------------------------------- #
