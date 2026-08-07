@@ -66,6 +66,18 @@ function tabLabel(p: AdminPage): string {
   return String(p.pageNumber);
 }
 
+// Mirrors text_layer.outline_color: the halo must contrast with the text, or a
+// black outline around black text just smears the glyphs.
+function outlineColor(fontColor?: string): string {
+  const hex = (fontColor || "#FFFFFF").replace("#", "");
+  const full =
+    hex.length === 3
+      ? hex.split("").map((c) => c + c).join("")
+      : hex.padEnd(6, "0").slice(0, 6);
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) || 0);
+  return 0.299 * r + 0.587 * g + 0.114 * b >= 140 ? "#000" : "#FFF";
+}
+
 function isCover(p: AdminPage | undefined): boolean {
   return p?.pageNumber === FRONT_COVER || p?.pageNumber === BACK_COVER;
 }
@@ -85,6 +97,8 @@ export default function AdminPagesEditor() {
   const [authoring, setAuthoring] = useState(false);
   const [faceOutlineOn, setFaceOutlineOn] = useState(true);
   const [fonts, setFonts] = useState<AdminFont[]>(FALLBACK_FONTS);
+  // Any edit to the open page that hasn't been sent to the backend yet.
+  const [dirty, setDirty] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -119,6 +133,7 @@ export default function AdminPagesEditor() {
     adminApi.pages(slug, variant).then((p) => {
       setPages(p.length ? p : [BLANK(1)]);
       setActive(0);
+      setDirty(false);
     });
   }, [slug, variant]);
 
@@ -138,10 +153,12 @@ export default function AdminPagesEditor() {
     setPages((prev) =>
       prev.map((p, i) => (i === active ? { ...p, [field]: value } : p)),
     );
+    setDirty(true);
   }
 
   function patchMany(vals: Partial<AdminPage>) {
     setPages((prev) => prev.map((p, i) => (i === active ? { ...p, ...vals } : p)));
+    setDirty(true);
   }
 
   // Freehand LASSO: trace the face outline directly on the preview — no numbers.
@@ -165,6 +182,7 @@ export default function AdminPagesEditor() {
   }, []);
   const pxScale = (boxW || DESIGN_W) / DESIGN_W;
   const outlinePx = Math.round((page?.outlineWidth ?? 3) * pxScale);
+  const haloColor = outlineColor(page?.fontColor);
   const [tracing, setTracing] = useState(false);
   const [livePath, setLivePath] = useState<number[][]>([]);
   const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -246,13 +264,20 @@ export default function AdminPagesEditor() {
 
   async function uploadBaseArt(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
+    e.target.value = ""; // let the same file be picked again
+    if (!file || !page) return;
     setUploading(true);
     try {
       const { url } = await adminApi.upload(file);
-      patch("baseImageUrl", url);
-    } catch {
-      alert("Upload failed");
+      const next = { ...page, baseImageUrl: url };
+      setPages((prev) => prev.map((p, i) => (i === active ? next : p)));
+      // Persist straight away. The file is already on the server at this point,
+      // and leaving it only in React state meant switching page or Boy/Girl tab
+      // before "Save page" silently threw the upload away.
+      const saved = await adminApi.upsertPage(slug, next, variant);
+      setPages((prev) => prev.map((p, i) => (i === active ? saved : p)));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
     }
@@ -264,12 +289,35 @@ export default function AdminPagesEditor() {
     try {
       const saved = await adminApi.upsertPage(slug, page, variant);
       setPages((prev) => prev.map((p, i) => (i === active ? saved : p)));
+      setDirty(false);
       return saved;
-    } catch {
-      alert("Save failed");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Save failed");
     } finally {
       setSaving(false);
     }
+  }
+
+  // Guard the three switches that reload `pages` from the server, so unsaved
+  // edits can't vanish without the admin being told.
+  function leaveUnsaved(): boolean {
+    return (
+      !dirty ||
+      confirm("This page has unsaved changes. Leave without saving them?")
+    );
+  }
+  function goToPage(i: number) {
+    if (!leaveUnsaved()) return;
+    setActive(i);
+    setDirty(false);
+  }
+  function switchVariant(v: Variant) {
+    if (v === variant || !leaveUnsaved()) return;
+    setVariant(v);
+  }
+  function switchStory(s: string) {
+    if (s === slug || !leaveUnsaved()) return;
+    setSlug(s);
   }
 
   // Generate the page's GENERIC base illustration once via flux txt2img.
@@ -413,7 +461,7 @@ export default function AdminPagesEditor() {
           </button>
           <select
             value={slug}
-            onChange={(e) => setSlug(e.target.value)}
+            onChange={(e) => switchStory(e.target.value)}
             className="rounded-xl border-2 border-brand-borderAccent bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-brand-primary"
           >
             {stories.map((s) => (
@@ -454,7 +502,7 @@ export default function AdminPagesEditor() {
           {VARIANTS.map((v) => (
             <button
               key={v}
-              onClick={() => setVariant(v)}
+              onClick={() => switchVariant(v)}
               title={`Author the ${v} artwork`}
               className={`h-9 px-4 text-sm font-bold capitalize transition ${
                 variant === v
@@ -473,7 +521,7 @@ export default function AdminPagesEditor() {
         {pages.map((p, i) => (
           <button
             key={i}
-            onClick={() => setActive(i)}
+            onClick={() => goToPage(i)}
             title={p.label || `Page ${p.pageNumber}`}
             className={`h-9 rounded-lg text-sm font-bold transition ${
               isCover(p) ? "px-3" : "w-9"
@@ -755,7 +803,8 @@ export default function AdminPagesEditor() {
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <>
-                    <Save className="h-4 w-4" /> Save page
+                    <Save className="h-4 w-4" />
+                    {dirty ? "Save page •" : "Save page"}
                   </>
                 )}
               </button>
@@ -826,11 +875,11 @@ export default function AdminPagesEditor() {
                   // nothing at all when the outline is turned off.
                   textShadow: outlinePx
                     ? [
-                        `-${outlinePx}px -${outlinePx}px 0 #000`,
-                        `${outlinePx}px -${outlinePx}px 0 #000`,
-                        `-${outlinePx}px ${outlinePx}px 0 #000`,
-                        `${outlinePx}px ${outlinePx}px 0 #000`,
-                        `0 ${outlinePx * 1.5}px ${outlinePx * 2}px rgba(0,0,0,0.45)`,
+                        `-${outlinePx}px -${outlinePx}px 0 ${haloColor}`,
+                        `${outlinePx}px -${outlinePx}px 0 ${haloColor}`,
+                        `-${outlinePx}px ${outlinePx}px 0 ${haloColor}`,
+                        `${outlinePx}px ${outlinePx}px 0 ${haloColor}`,
+                        `0 ${outlinePx}px ${outlinePx * 2}px ${haloColor}`,
                       ].join(", ")
                     : "none",
                   fontWeight: 700,

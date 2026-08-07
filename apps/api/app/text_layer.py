@@ -14,7 +14,7 @@ import re
 from typing import Optional
 
 import httpx
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont
 
 from .config import settings
 
@@ -92,6 +92,22 @@ def available_families() -> list[dict]:
         }
         for key, spec in FONT_FAMILIES.items()
     ]
+
+
+def outline_color(font_color: str) -> tuple[int, int, int]:
+    """The halo colour for a given text colour.
+
+    It has to CONTRAST with the text — a black outline around black text just
+    fattens and smears the glyphs instead of separating them from the artwork.
+    So light text gets a black halo and dark text gets a white one.
+    """
+    try:
+        r, g, b = ImageColor.getrgb(font_color or "#FFFFFF")[:3]
+    except Exception:
+        r, g, b = (255, 255, 255)
+    # Rec. 601 luma — good enough to ask "is this text light or dark?"
+    luma = 0.299 * r + 0.587 * g + 0.114 * b
+    return (0, 0, 0) if luma >= 140 else (255, 255, 255)
 
 
 def personalize(text: str, child_name: str) -> str:
@@ -244,6 +260,8 @@ def compose_page(
     # already has a light text panel behind the words.
     stroke = max(0, round((outline_width or 0) * scale))
 
+    halo = outline_color(font_color)
+
     if stroke:
         # A real drop shadow: drawn into an RGBA layer, blurred, then composited.
         # (Passing an RGBA fill straight to an RGB canvas silently discards the
@@ -253,7 +271,7 @@ def compose_page(
         offset = max(1, round(size * 0.06))
         for line, x, y in placed:
             _draw_tracked(
-                sdraw, (x + offset, y + offset), line, font, (0, 0, 0, 120), tracking
+                sdraw, (x + offset, y + offset), line, font, (*halo, 120), tracking
             )
         shadow = shadow.filter(ImageFilter.GaussianBlur(max(1, stroke)))
         img = Image.alpha_composite(img.convert("RGBA"), shadow).convert("RGB")
@@ -262,7 +280,7 @@ def compose_page(
     for line, x, y in placed:
         _draw_tracked(
             draw, (x, y), line, font, font_color, tracking,
-            stroke_width=stroke, stroke_fill=(0, 0, 0),
+            stroke_width=stroke, stroke_fill=halo,
         )
     return img
 
