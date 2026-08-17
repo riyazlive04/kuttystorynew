@@ -259,6 +259,7 @@ export interface RuntimeConfig {
   freePreviewPages: number;
   totalPages: number;
   faceOutlineEnabled: boolean;
+  whatsappNumber: string;
 }
 
 // Fallback used when there's no backend (mock mode) or /config is unreachable.
@@ -266,6 +267,7 @@ const DEFAULT_CONFIG: RuntimeConfig = {
   freePreviewPages: FREE_PREVIEW_PAGES,
   totalPages: 28,
   faceOutlineEnabled: true,
+  whatsappNumber: "",
 };
 
 // Single source of truth for the free-page count / paywall copy: the backend's
@@ -281,6 +283,7 @@ export async function getConfig(): Promise<RuntimeConfig> {
           totalPages: c.totalPages ?? DEFAULT_CONFIG.totalPages,
           faceOutlineEnabled:
             c.faceOutlineEnabled ?? DEFAULT_CONFIG.faceOutlineEnabled,
+          whatsappNumber: c.whatsappNumber ?? DEFAULT_CONFIG.whatsappNumber,
         };
       }
     } catch {

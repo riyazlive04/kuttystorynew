@@ -84,6 +84,7 @@ export interface StoryCreate {
 
 export interface AdminSettings {
   faceOutlineEnabled: boolean;
+  whatsappNumber: string;
   segmind: { set: boolean; last4: string; source: "admin" | "env" | null };
 }
 
@@ -230,6 +231,7 @@ export const adminApi = {
   updateSettings: (patch: {
     faceOutlineEnabled?: boolean;
     segmindApiKey?: string;
+    whatsappNumber?: string;
   }): Promise<AdminSettings> =>
     req("/admin/settings", { method: "PATCH", body: JSON.stringify(patch) }),
   stories: (): Promise<AdminStory[]> => req("/admin/stories"),

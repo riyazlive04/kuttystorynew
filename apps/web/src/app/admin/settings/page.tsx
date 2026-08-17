@@ -1,13 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Eye, EyeOff, KeyRound, Loader2, ScanFace } from "lucide-react";
+import { Check, Eye, EyeOff, KeyRound, Loader2, MessageCircle, ScanFace } from "lucide-react";
 import { adminApi, type AdminSettings } from "@/lib/admin";
 
 export default function AdminSettingsPage() {
   const [s, setS] = useState<AdminSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingToggle, setSavingToggle] = useState(false);
+
+  // WhatsApp number behind the site's chat button
+  const [waInput, setWaInput] = useState("");
+  const [savingWa, setSavingWa] = useState(false);
+  const [waMsg, setWaMsg] = useState<string | null>(null);
 
   // Segmind key form (write-only; never pre-filled with the actual key)
   const [keyInput, setKeyInput] = useState("");
@@ -18,10 +23,28 @@ export default function AdminSettingsPage() {
   useEffect(() => {
     adminApi
       .getSettings()
-      .then(setS)
+      .then((v) => {
+        setS(v);
+        setWaInput(v.whatsappNumber || "");
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  async function saveWhatsApp() {
+    setSavingWa(true);
+    setWaMsg(null);
+    try {
+      const updated = await adminApi.updateSettings({ whatsappNumber: waInput });
+      setS(updated);
+      setWaInput(updated.whatsappNumber || "");
+      setWaMsg("Saved — the chat button uses this straight away ✓");
+    } catch (e) {
+      setWaMsg(e instanceof Error ? e.message : "Failed to save the number");
+    } finally {
+      setSavingWa(false);
+    }
+  }
 
   async function toggleFaceOutline() {
     if (!s) return;
@@ -68,6 +91,54 @@ export default function AdminSettingsPage() {
   return (
     <div className="max-w-2xl">
       <h1 className="mb-6 text-2xl font-bold text-slate-deep">Settings</h1>
+
+      {/* WhatsApp number */}
+      <div className="card mb-6 p-6">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-lilac text-brand-primary">
+            <MessageCircle className="h-5 w-5" />
+          </span>
+          <div className="flex-1">
+            <h2 className="font-bold text-slate-deep">WhatsApp number</h2>
+            <p className="mt-1 text-sm text-slate-mutedText">
+              Behind the green chat button on every storefront page. Include the
+              country code — 90031 69615 in India is <b>919003169615</b>. Spaces,
+              dashes and a leading + are cleaned up for you.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <input
+                value={waInput}
+                onChange={(e) => setWaInput(e.target.value)}
+                placeholder="919003169615"
+                inputMode="tel"
+                className="w-56 rounded-xl border-2 border-brand-borderAccent px-3 py-2 text-sm outline-none focus:border-brand-primary"
+              />
+              <button
+                onClick={saveWhatsApp}
+                disabled={savingWa || waInput === (s.whatsappNumber || "")}
+                className="btn-primary px-4 py-2 text-sm disabled:opacity-40"
+              >
+                {savingWa ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+              </button>
+              {s.whatsappNumber && (
+                <a
+                  href={`https://wa.me/${s.whatsappNumber}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs font-bold text-brand-primary hover:underline"
+                >
+                  Test this number →
+                </a>
+              )}
+            </div>
+            {waMsg && (
+              <p className="mt-2 text-sm font-semibold text-slate-mutedText">
+                {waMsg}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Face outline toggle */}
       <div className="card mb-6 p-6">

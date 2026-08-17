@@ -106,6 +106,7 @@ async def admin_delete_order(order_id: str):
 
 class SettingsPatch(BaseModel):
     faceOutlineEnabled: Optional[bool] = None
+    whatsappNumber: Optional[str] = None
     # Write-only. Provide to set a new key; "" clears it; omit to leave unchanged.
     segmindApiKey: Optional[str] = None
 
@@ -140,6 +141,16 @@ async def admin_update_settings(body: SettingsPatch):
     data = body.model_dump()
     if data.get("faceOutlineEnabled") is not None:
         update_settings({"faceOutlineEnabled": data["faceOutlineEnabled"]})
+    if data.get("whatsappNumber") is not None:
+        from ..app_settings import normalize_whatsapp
+
+        number = normalize_whatsapp(data["whatsappNumber"])
+        if number and not (8 <= len(number) <= 15):
+            raise HTTPException(
+                status_code=400,
+                detail="That doesn't look like a phone number with its country code.",
+            )
+        update_settings({"whatsappNumber": number})
     # Secret handled separately (encrypted at rest, never echoed back).
     if data.get("segmindApiKey") is not None:
         set_secret("segmind_api_key", (data["segmindApiKey"] or "").strip())

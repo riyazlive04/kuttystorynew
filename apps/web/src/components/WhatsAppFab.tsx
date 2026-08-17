@@ -1,17 +1,28 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { getConfig } from "@/lib/api";
+
 // Floating WhatsApp support button - the #1 support/trust channel in India.
 // wa.me wants the country code and no +, so 90031 69615 becomes 919003169615.
-// Override with NEXT_PUBLIC_WHATSAPP at build time to point somewhere else.
-const NUMBER = process.env.NEXT_PUBLIC_WHATSAPP || "919003169615";
+// The live number comes from Admin → Settings at runtime; this is only the
+// fallback for mock mode or an unreachable backend.
+const FALLBACK = process.env.NEXT_PUBLIC_WHATSAPP || "919003169615";
 const MSG = encodeURIComponent(
   "Hi KuttyStory! I'd like to create a personalized book for my child.",
 );
 
 export function WhatsAppFab() {
+  const [number, setNumber] = useState(FALLBACK);
+  useEffect(() => {
+    getConfig()
+      .then((c) => c.whatsappNumber && setNumber(c.whatsappNumber))
+      .catch(() => {});
+  }, []);
+
   return (
     <a
-      href={`https://wa.me/${NUMBER}?text=${MSG}`}
+      href={`https://wa.me/${number}?text=${MSG}`}
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Chat on WhatsApp"
