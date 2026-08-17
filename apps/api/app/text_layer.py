@@ -566,8 +566,17 @@ def _panel_config(text_box: Optional[dict], blocks: list) -> Optional[dict]:
     return None
 
 
-def compose_to_bytes(fmt: str = "JPEG", quality: int = 92, **kwargs) -> bytes:
+def compose_to_bytes(fmt: str = "JPEG", quality: int = 96, **kwargs) -> bytes:
+    """Compose a page and encode it.
+
+    This file is the SOURCE the print PDF is built from, so it is encoded at
+    high quality with 4:4:4 chroma — every JPEG generation between the render
+    and the press compounds, and burned-in text is the first thing to suffer.
+    """
     img = compose_page(**kwargs)
     buf = io.BytesIO()
-    img.save(buf, format=fmt, quality=quality)
+    save_kw = {"quality": quality}
+    if fmt.upper() == "JPEG":
+        save_kw["subsampling"] = 0
+    img.save(buf, format=fmt, **save_kw)
     return buf.getvalue()

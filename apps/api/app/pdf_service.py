@@ -7,7 +7,7 @@ import io
 import os
 
 import httpx
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 from .color import to_cmyk
 from .config import settings
@@ -15,6 +15,13 @@ from .text_layer import _load_font, personalize
 
 # 210mm square @ 300 dpi
 PAGE_PX = 2480
+
+# Pillow embeds PDF images as JPEG at quality 75 unless told otherwise, which
+# visibly softens artwork that has ALREADY been through a JPEG on the way in.
+# 4:4:4 (subsampling=0) matters as much as the quality here: the default 4:2:0
+# halves the colour resolution, and coloured text on illustration is exactly
+# where that shows.
+PDF_JPEG = {"quality": 95, "subsampling": 0}
 
 
 def _placeholder(caption: str, idx: int) -> Image.Image:
@@ -61,6 +68,13 @@ def _fit_square(img: Image.Image) -> Image.Image:
     w, h = img.size
     scale = min(PAGE_PX / w, PAGE_PX / h)
     fitted = img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+    # Enlarging cannot add detail, but it does soften every edge — a light
+    # unsharp mask restores the bite that makes a print look crisp. Only on the
+    # way up; downscaling is already sharp.
+    if scale > 1.05:
+        fitted = fitted.filter(
+            ImageFilter.UnsharpMask(radius=1.6, percent=110, threshold=3)
+        )
     canvas = Image.new("RGB", (PAGE_PX, PAGE_PX), (255, 255, 255))
     canvas.paste(fitted, ((PAGE_PX - fitted.width) // 2, (PAGE_PX - fitted.height) // 2))
     return canvas
@@ -110,6 +124,7 @@ def build_preview_pdf(job) -> str:
         append_images=imgs[1:],
         resolution=150.0,
         title=f"KuttyStory Preview - {job.storyTitle} for {job.childName}",
+        **PDF_JPEG,
     )
     return f"/uploads/{fname}"
 
@@ -143,5 +158,6 @@ def build_book_pdf(job) -> str:
         append_images=imgs[1:],
         resolution=300.0,
         title=f"KuttyStory - {job.storyTitle} for {job.childName}",
+        **PDF_JPEG,
     )
     return f"/uploads/{fname}"
