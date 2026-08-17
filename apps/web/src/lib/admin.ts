@@ -136,6 +136,9 @@ export const VARIANTS: Variant[] = ["boy", "girl"];
 // through the same face-swap + text pipeline as a story page.
 export const FRONT_COVER = 0;
 export const BACK_COVER = -1;
+// Print-only: the strip between the covers on the printed wrap. Authored like a
+// page but never shown to the customer and never part of the interior PDF.
+export const SPINE = -2;
 
 // A font the PIL text layer can burn in (GET /admin/fonts).
 export interface AdminFont {

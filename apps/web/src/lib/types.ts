@@ -45,7 +45,7 @@ export type JobStatus =
   | "completed"
   | "failed";
 
-export type PageKind = "story" | "front_cover" | "back_cover";
+export type PageKind = "story" | "front_cover" | "back_cover" | "spine";
 
 export interface PreviewPage {
   index: number; // slot in reading order — NOT the page number once covers exist

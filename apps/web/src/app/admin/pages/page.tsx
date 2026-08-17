@@ -7,6 +7,7 @@ import {
   adminApi,
   BACK_COVER,
   FRONT_COVER,
+  SPINE,
   VARIANTS,
   type AdminFont,
   type AdminPage,
@@ -54,7 +55,7 @@ const BLANK = (n: number): AdminPage => ({
 // face outline, face swap and text layer as any story page.
 const BLANK_COVER = (n: number): AdminPage => ({
   ...BLANK(n),
-  kind: n === FRONT_COVER ? "front_cover" : "back_cover",
+  kind: n === FRONT_COVER ? "front_cover" : n === SPINE ? "spine" : "back_cover",
   storyText: n === FRONT_COVER ? "{{name}}" : "",
   textY: n === FRONT_COVER ? 88 : 50,
   fontSize: n === FRONT_COVER ? 64 : 36,
@@ -63,6 +64,7 @@ const BLANK_COVER = (n: number): AdminPage => ({
 function tabLabel(p: AdminPage): string {
   if (p.pageNumber === FRONT_COVER) return "Front";
   if (p.pageNumber === BACK_COVER) return "Back";
+  if (p.pageNumber === SPINE) return "Spine";
   return String(p.pageNumber);
 }
 
@@ -79,7 +81,11 @@ function outlineColor(fontColor?: string): string {
 }
 
 function isCover(p: AdminPage | undefined): boolean {
-  return p?.pageNumber === FRONT_COVER || p?.pageNumber === BACK_COVER;
+  return (
+    p?.pageNumber === FRONT_COVER ||
+    p?.pageNumber === BACK_COVER ||
+    p?.pageNumber === SPINE
+  );
 }
 
 export default function AdminPagesEditor() {
@@ -348,14 +354,16 @@ export default function AdminPagesEditor() {
 
   const hasFront = pages.some((p) => p.pageNumber === FRONT_COVER);
   const hasBack = pages.some((p) => p.pageNumber === BACK_COVER);
+  const hasSpine = pages.some((p) => p.pageNumber === SPINE);
 
   function addPage() {
     const storyNums = pages
       .filter((p) => p.pageNumber >= 1)
       .map((p) => p.pageNumber);
     const next = (storyNums.length ? Math.max(...storyNums) : 0) + 1;
-    // Keep reading order: a new story page goes before the back cover.
-    const at = hasBack ? pages.length - 1 : pages.length;
+    // Keep reading order: story pages sit before the back cover and the spine.
+    const trailing = (hasBack ? 1 : 0) + (hasSpine ? 1 : 0);
+    const at = pages.length - trailing;
     setPages((prev) => [...prev.slice(0, at), BLANK(next), ...prev.slice(at)]);
     setActive(at);
   }
@@ -364,10 +372,12 @@ export default function AdminPagesEditor() {
     if (n === FRONT_COVER) {
       setPages((prev) => [BLANK_COVER(n), ...prev]);
       setActive(0);
-    } else {
-      setActive(pages.length);
-      setPages((prev) => [...prev, BLANK_COVER(n)]);
+      return;
     }
+    // Back cover goes before the spine, which always sorts last.
+    const at = n === BACK_COVER && hasSpine ? pages.length - 1 : pages.length;
+    setPages((prev) => [...prev.slice(0, at), BLANK_COVER(n), ...prev.slice(at)]);
+    setActive(at);
   }
 
   // Author a full, coherent, personalized story for the whole book via an LLM.
@@ -561,6 +571,15 @@ export default function AdminPagesEditor() {
             <Plus className="h-3.5 w-3.5" /> Back cover
           </button>
         )}
+        {!hasSpine && (
+          <button
+            onClick={() => addCover(SPINE)}
+            title="Add the spine artwork — print only, never shown to the customer"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border-2 border-dashed border-slate-300 px-3 text-xs font-bold text-slate-mutedText hover:border-brand-primary hover:text-brand-primary"
+          >
+            <Plus className="h-3.5 w-3.5" /> Spine
+          </button>
+        )}
       </div>
 
       {page && (
@@ -570,15 +589,30 @@ export default function AdminPagesEditor() {
             {isCover(page) ? (
               <div className="rounded-xl border-2 border-brand-primary/40 bg-brand-primary/5 p-3">
                 <p className="text-sm font-bold text-brand-primary">
-                  {page.pageNumber === FRONT_COVER ? "Front cover" : "Back cover"}
+                  {page.pageNumber === FRONT_COVER
+                    ? "Front cover"
+                    : page.pageNumber === SPINE
+                      ? "Spine (print only)"
+                      : "Back cover"}
                 </p>
                 <p className="mt-0.5 text-xs text-slate-mutedText">
-                  A real page in the book: the child&apos;s face is swapped into the
-                  base art below and the text is burned in, exactly like a story
-                  page.{" "}
-                  {page.pageNumber === FRONT_COVER
-                    ? "It reads first and is part of the free preview."
-                    : "It reads last and unlocks after purchase."}
+                  {page.pageNumber === SPINE ? (
+                    <>
+                      The strip between the covers on the printed wrap. It is
+                      <b> not a page of the book</b> — it never appears in the
+                      preview, the page count, or the interior PDF. Upload the
+                      spine artwork and set its text; usually the title, no face.
+                    </>
+                  ) : (
+                    <>
+                      A real page in the book: the child&apos;s face is swapped
+                      into the base art below and the text is burned in, exactly
+                      like a story page.{" "}
+                      {page.pageNumber === FRONT_COVER
+                        ? "It reads first and is part of the free preview."
+                        : "It reads last and unlocks after purchase."}
+                    </>
+                  )}
                 </p>
                 {page.pageNumber === FRONT_COVER && (
                   <p className="mt-1.5 text-xs font-semibold text-brand-primary">
