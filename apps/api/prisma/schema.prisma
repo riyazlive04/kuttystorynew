@@ -58,6 +58,9 @@ model Story {
   // Restrict who this book can be personalized for: "boy", "girl", or null for
   // both. Set when the authored base art only works for one gender.
   genderLock    String?
+  // The Spine page's artwork, mirrored here so the storefront can show it on
+  // the book's edge without joining page templates on every listing request.
+  spineImage    String?
   highlights    String[]
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())

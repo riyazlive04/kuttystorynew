@@ -24,6 +24,7 @@ from .config import settings
 from .generation_engine import extract_identity, render_page
 from .pages_layout import (
     FRONT_COVER,
+    SPINE,
     is_free,
     kind_of,
     normalize_variant,
@@ -588,10 +589,12 @@ async def _generate_book_base_art(
                 await db.pagetemplate.update(
                     where={"id": p.id}, data={"baseImageUrl": url}
                 )
-                # The front cover's art doubles as the book's shop image.
-                if p.pageNumber == FRONT_COVER and variant == primary:
+                # The front cover's art doubles as the book's shop image, and
+                # the spine's shows on the card's edge.
+                if variant == primary and p.pageNumber in (FRONT_COVER, SPINE):
+                    field = "coverImage" if p.pageNumber == FRONT_COVER else "spineImage"
                     await db.story.update(
-                        where={"id": story_id}, data={"coverImage": url}
+                        where={"id": story_id}, data={field: url}
                     )
                 made += 1
             except Exception:

@@ -39,8 +39,23 @@ export function StoryCard({ story }: { story: Story }) {
               className="object-cover"
             />
 
-            {/* Spine: the hinge shadow, then the crease highlight beside it. */}
-            <div className="pointer-events-none absolute inset-y-0 left-0 w-[8%] bg-gradient-to-r from-slate-950/55 via-slate-950/20 to-transparent" />
+            {/* Spine. The admin's Spine artwork when there is one; otherwise
+                the cover itself slides under the band, which reads like a
+                wrapped cover rather than a hole. Either way the hinge shading
+                and crease sit on top so it still looks like a fold. */}
+            <div className="pointer-events-none absolute inset-y-0 left-0 w-[8%] overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={story.spineImage || story.coverImage}
+                alt=""
+                aria-hidden="true"
+                className="h-full w-full object-cover"
+                style={
+                  story.spineImage ? undefined : { objectPosition: "left center" }
+                }
+              />
+            </div>
+            <div className="pointer-events-none absolute inset-y-0 left-0 w-[8%] bg-gradient-to-r from-slate-950/55 via-slate-950/20 to-slate-950/5" />
             <div className="pointer-events-none absolute inset-y-0 left-[8%] w-px bg-white/25" />
 
             {/* Page block along the fore edge. */}

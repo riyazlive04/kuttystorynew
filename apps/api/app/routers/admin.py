@@ -16,6 +16,7 @@ from ..config import settings
 from ..db import prisma
 from ..pages_layout import (
     FRONT_COVER,
+    SPINE,
     kind_of,
     label_of,
     normalize_variant,
@@ -420,7 +421,7 @@ async def _sync_catalog_cover(
     With two gender variants only one can be the shop image: the locked gender
     if the book is restricted, otherwise the boy variant.
     """
-    if page_number != FRONT_COVER or not base_image:
+    if page_number not in (FRONT_COVER, SPINE) or not base_image:
         return
     story = await prisma.story.find_unique(where={"id": story_id})
     if not story:
@@ -428,9 +429,10 @@ async def _sync_catalog_cover(
     primary = normalize_variant(getattr(story, "genderLock", None) or "")
     if normalize_variant(variant) != primary:
         return
-    if story.coverImage != base_image:
+    field = "coverImage" if page_number == FRONT_COVER else "spineImage"
+    if getattr(story, field, None) != base_image:
         await prisma.story.update(
-            where={"id": story_id}, data={"coverImage": base_image}
+            where={"id": story_id}, data={field: base_image}
         )
 
 

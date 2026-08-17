@@ -23,6 +23,8 @@ export interface Story {
   highlights: string[];
   // null/absent = offered for any child; otherwise only that gender.
   genderLock?: "boy" | "girl" | null;
+  // The Spine page's artwork, shown on the book's edge in the storefront.
+  spineImage?: string | null;
 }
 
 export interface Personalization {

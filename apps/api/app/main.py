@@ -30,16 +30,20 @@ async def lifespan(app: FastAPI):
     # authored catalog cover. Reconcile books whose front cover was drawn before
     # that became automatic (idempotent: only writes when they differ).
     try:
-        from .pages_layout import FRONT_COVER
+        from .pages_layout import FRONT_COVER, SPINE
 
-        fronts = await prisma.pagetemplate.find_many(
-            where={"pageNumber": FRONT_COVER}, include={"book": True}
+        rows = await prisma.pagetemplate.find_many(
+            where={"pageNumber": {"in": [FRONT_COVER, SPINE]}},
+            include={"book": True},
         )
-        for f in fronts:
-            if f.baseImageUrl and f.book and f.book.coverImage != f.baseImageUrl:
+        for r in rows:
+            if not (r.baseImageUrl and r.book):
+                continue
+            field = "coverImage" if r.pageNumber == FRONT_COVER else "spineImage"
+            if getattr(r.book, field, None) != r.baseImageUrl:
                 await prisma.story.update(
-                    where={"id": f.bookTemplateId},
-                    data={"coverImage": f.baseImageUrl},
+                    where={"id": r.bookTemplateId},
+                    data={field: r.baseImageUrl},
                 )
     except Exception as e:  # pragma: no cover
         print(f"[startup] cover sync skipped: {e}")

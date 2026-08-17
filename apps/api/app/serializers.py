@@ -26,6 +26,7 @@ def story_dict(s) -> dict:
         "highlights": s.highlights,
         # None = the book works for any child; "boy"/"girl" restricts it.
         "genderLock": getattr(s, "genderLock", None),
+        "spineImage": getattr(s, "spineImage", None),
     }
 
 
