@@ -1,8 +1,9 @@
 "use client";
 
 // Floating WhatsApp support button - the #1 support/trust channel in India.
-// Set NEXT_PUBLIC_WHATSAPP to your business number (with country code, no +).
-const NUMBER = process.env.NEXT_PUBLIC_WHATSAPP || "919876543210";
+// wa.me wants the country code and no +, so 90031 69615 becomes 919003169615.
+// Override with NEXT_PUBLIC_WHATSAPP at build time to point somewhere else.
+const NUMBER = process.env.NEXT_PUBLIC_WHATSAPP || "919003169615";
 const MSG = encodeURIComponent(
   "Hi KuttyStory! I'd like to create a personalized book for my child.",
 );
