@@ -908,14 +908,22 @@ export default function AdminPagesEditor() {
                   <button
                     key={i}
                     onClick={() => setRow(i)}
-                    className={`max-w-[10rem] truncate rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                    title={b.text?.trim() || `Row ${i + 1}`}
+                    className={`inline-flex max-w-[11rem] items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold transition ${
                       i === row
                         ? "bg-brand-primary text-white"
                         : "border-2 border-brand-borderAccent text-slate-mutedText hover:border-brand-primary"
                     }`}
-                    style={i === row ? undefined : { color: b.fontColor }}
                   >
-                    {b.text?.trim() || `Row ${i + 1}`}
+                    {/* The row's colour goes in a swatch, not the label: tinting
+                        the text made a white row invisible on a white tab. */}
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-300"
+                      style={{ backgroundColor: b.fontColor || "#FFFFFF" }}
+                    />
+                    <span className="truncate">
+                      {b.text?.trim() || `Row ${i + 1}`}
+                    </span>
                   </button>
                 ))}
                 <button
