@@ -150,6 +150,8 @@ export interface TextBlock {
   softLineBreak: boolean;
   outlineWidth: number;
   outlineColor: string; // "" = auto-contrast against the text colour
+  outline2Width: number; // wider second ring drawn outside the first; 0 = off
+  outline2Color: string;
   shadow: boolean;
   // Panel behind the text, so type stays readable over busy artwork.
   boxEnabled: boolean;
@@ -176,6 +178,8 @@ export const BLANK_BLOCK = (y = 50): TextBlock => ({
   softLineBreak: true,
   outlineWidth: 4,
   outlineColor: "",
+  outline2Width: 0,
+  outline2Color: "#FFFFFF",
   shadow: true,
   boxEnabled: false,
   boxColor: "#FFFFFF",

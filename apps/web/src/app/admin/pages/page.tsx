@@ -1116,7 +1116,7 @@ export default function AdminPagesEditor() {
                   className="input"
                 />
               </Field>
-              <Field label="Outline colour">
+              <Field label="Stroke colour">
                 <div className="flex items-center gap-2">
                   <input
                     type="color"
@@ -1148,7 +1148,7 @@ export default function AdminPagesEditor() {
                   </label>
                 </div>
               </Field>
-              <Field label="Outline (px @1024 — 0 = none)">
+              <Field label="Stroke / outline (px @1024 — 0 = none)">
                 <input
                   type="number"
                   min="0"
@@ -1161,11 +1161,41 @@ export default function AdminPagesEditor() {
               </Field>
             </div>
             {(block.outlineWidth ?? 3) > 0 && (
-              <p className="-mt-2 text-xs text-slate-mutedText">
-                The outline and drop shadow keep light text readable over
-                artwork. If this page has a light panel behind the text, set the
-                outline to <b>0</b> and pick a dark font colour instead.
-              </p>
+              <>
+                <div className="-mt-2 grid grid-cols-2 gap-4">
+                  <Field label="2nd stroke (px @1024 — 0 = off)">
+                    <input
+                      type="number"
+                      min={0}
+                      value={block.outline2Width ?? 0}
+                      onChange={(e) =>
+                        patchBlock(
+                          "outline2Width",
+                          Math.max(0, Number(e.target.value)),
+                        )
+                      }
+                      className="input"
+                    />
+                  </Field>
+                  <Field label="2nd stroke colour">
+                    <input
+                      type="color"
+                      value={block.outline2Color || "#FFFFFF"}
+                      onChange={(e) =>
+                        patchBlock("outline2Color", e.target.value)
+                      }
+                      className="h-10 w-full rounded-xl border-2 border-brand-borderAccent"
+                    />
+                  </Field>
+                </div>
+                <p className="-mt-2 text-xs text-slate-mutedText">
+                  A second stroke must be <b>wider</b> than the first to show —
+                  it is drawn outside it, giving the layered keyline on
+                  children&apos;s book covers (fill, white ring, dark ring). Over
+                  a light text panel, set both strokes to <b>0</b> and use a dark
+                  font colour instead.
+                </p>
+              </>
             )}
 
             <label className="flex items-start gap-3 rounded-xl border-2 border-brand-borderAccent p-3">

@@ -283,6 +283,11 @@ BLOCK_DEFAULTS = {
     "softLineBreak": True,
     "outlineWidth": DEFAULT_OUTLINE,
     "outlineColor": "",       # "" = auto-contrast against the text colour
+    # Optional SECOND, wider stroke drawn outside the first — the layered
+    # keyline you see on children's book covers (teal fill, white ring, dark
+    # ring). 0 = off.
+    "outline2Width": 0,
+    "outline2Color": "#FFFFFF",
     "shadow": True,
     # Panel behind the text, so type stays readable over busy artwork.
     "boxEnabled": False,
@@ -339,6 +344,21 @@ def _draw_block(img: Image.Image, block: dict, child_name: str) -> Image.Image:
     # and the shadow can carry its own colour instead of the outline's.
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     tdraw = ImageDraw.Draw(layer)
+
+    # The outer stroke is a full pass drawn first with a WIDER stroke; the pass
+    # that follows covers its middle, leaving only the outer ring showing.
+    outer = max(0, round(float(b["outline2Width"] or 0) * scale))
+    if outer > stroke:
+        try:
+            outer_rgb = ImageColor.getrgb(str(b["outline2Color"] or "#FFFFFF"))[:3]
+        except Exception:
+            outer_rgb = (255, 255, 255)
+        for line, x, y in placed:
+            _draw_tracked(
+                tdraw, (x, y), line, font, outer_rgb, tracking,
+                stroke_width=outer, stroke_fill=outer_rgb,
+            )
+
     for line, x, y in placed:
         _draw_tracked(
             tdraw, (x, y), line, font, str(b["fontColor"]), tracking,
@@ -357,7 +377,8 @@ def _draw_block(img: Image.Image, block: dict, child_name: str) -> Image.Image:
         for line, x, y in placed:
             _draw_tracked(
                 sdraw, (x + offset, y + offset), line, font, (0, 0, 0, 150),
-                tracking, stroke_width=stroke, stroke_fill=(0, 0, 0, 150),
+                tracking, stroke_width=max(stroke, outer),
+                stroke_fill=(0, 0, 0, 150),
             )
         blur = max(2, round(size * 0.05))
         shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(blur))
