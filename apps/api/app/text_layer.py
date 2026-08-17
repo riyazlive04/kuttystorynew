@@ -81,17 +81,64 @@ DEFAULT_FAMILY = "sans"
 DEFAULT_OUTLINE = 3
 
 
+# Fonts the admin installs themselves. This lives on the shared storage volume,
+# NOT in the image: the worker renders the pages, so anything dropped here has to
+# be visible to both containers, and it has to survive a rebuild.
+CUSTOM_DIR = os.path.join(settings.storage_dir, "fonts")
+CUSTOM_PREFIX = "custom:"
+FONT_EXTS = (".ttf", ".otf", ".ttc")
+
+
+def _custom_files() -> dict[str, str]:
+    """{key: path} for every font file the admin has installed."""
+    out: dict[str, str] = {}
+    try:
+        for name in sorted(os.listdir(CUSTOM_DIR)):
+            if name.lower().endswith(FONT_EXTS):
+                out[CUSTOM_PREFIX + os.path.splitext(name)[0]] = os.path.join(
+                    CUSTOM_DIR, name
+                )
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    return out
+
+
+def _custom_label(key: str) -> str:
+    stem = key[len(CUSTOM_PREFIX):]
+    return stem.replace("_", " ").replace("-", " ").strip() or stem
+
+
 def available_families() -> list[dict]:
-    """Family list for the admin UI, flagging which ones are actually installed."""
-    return [
+    """Family list for the admin UI, flagging which ones are actually installed.
+
+    Built-ins come from the image; anything in CUSTOM_DIR is listed after them,
+    so the admin can drop a .ttf/.otf in and have it appear in the picker.
+    """
+    families = [
         {
             "key": key,
             "label": spec["label"],
             "css": spec["css"],
             "installed": any(os.path.exists(p) for p in spec["files"]),
+            "custom": False,
         }
         for key, spec in FONT_FAMILIES.items()
     ]
+    for key, path in _custom_files().items():
+        families.append(
+            {
+                "key": key,
+                "label": _custom_label(key),
+                # The browser can't load a server-side font file, so the editor
+                # preview approximates it; the burned-in text uses the real one.
+                "css": "'Segoe UI', system-ui, sans-serif",
+                "installed": os.path.exists(path),
+                "custom": True,
+            }
+        )
+    return families
 
 
 def outline_color(font_color: str) -> tuple[int, int, int]:
@@ -115,8 +162,17 @@ def personalize(text: str, child_name: str) -> str:
 
 
 def _load_font(size: int, family: str = DEFAULT_FAMILY) -> ImageFont.FreeTypeFont:
-    spec = FONT_FAMILIES.get(family or DEFAULT_FAMILY, FONT_FAMILIES[DEFAULT_FAMILY])
+    family = family or DEFAULT_FAMILY
+    custom: list[str] = []
+    if family.startswith(CUSTOM_PREFIX):
+        path = _custom_files().get(family)
+        if path:
+            custom.append(path)
+    spec = FONT_FAMILIES.get(family, FONT_FAMILIES[DEFAULT_FAMILY])
     candidates = [
+        # An admin-installed font wins; if its file has since been deleted we
+        # fall through to the built-ins rather than failing the whole render.
+        *custom,
         *spec["files"],
         # Fall back to the default family, then to any DejaVu that exists.
         *FONT_FAMILIES[DEFAULT_FAMILY]["files"],

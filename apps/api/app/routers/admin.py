@@ -7,7 +7,7 @@ import os
 import uuid
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from prisma import Json
 from pydantic import BaseModel, Field
 
@@ -458,6 +458,65 @@ async def admin_fonts():
     from ..text_layer import available_families
 
     return available_families()
+
+
+@router.post("/fonts", dependencies=[Depends(require_admin)])
+async def admin_upload_font(file: UploadFile = File(...)):
+    """Install a font the admin supplies. Saved to the shared storage volume so
+    the worker that burns the text can load it too, and so it survives a rebuild
+    (fonts baked into the image would not)."""
+    from ..text_layer import CUSTOM_DIR, CUSTOM_PREFIX, FONT_EXTS, available_families
+
+    name = os.path.basename(file.filename or "")
+    stem, ext = os.path.splitext(name)
+    if ext.lower() not in FONT_EXTS:
+        raise HTTPException(
+            status_code=400, detail=f"Only {', '.join(FONT_EXTS)} font files"
+        )
+    # Keep the stem filesystem-safe; it becomes the family key.
+    safe = "".join(c for c in stem if c.isalnum() or c in "-_ ").strip().replace(" ", "-")
+    if not safe:
+        raise HTTPException(status_code=400, detail="Unusable font file name")
+
+    data = await file.read()
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Font too large (max 20MB)")
+
+    os.makedirs(CUSTOM_DIR, exist_ok=True)
+    path = os.path.join(CUSTOM_DIR, safe + ext.lower())
+    with open(path, "wb") as f:
+        f.write(data)
+
+    # Reject anything Pillow can't actually render with, rather than letting it
+    # fail later mid-render.
+    try:
+        from PIL import ImageFont
+
+        ImageFont.truetype(path, 24)
+    except Exception:
+        os.remove(path)
+        raise HTTPException(status_code=400, detail="That file isn't a usable font")
+
+    key = CUSTOM_PREFIX + safe
+    return {"ok": True, "key": key, "families": available_families()}
+
+
+@router.delete("/fonts/{key:path}", dependencies=[Depends(require_admin)])
+async def admin_delete_font(key: str):
+    """Remove an admin-installed font. Built-ins can't be deleted; pages still
+    using a removed font fall back to the default sans."""
+    from ..text_layer import CUSTOM_PREFIX, _custom_files, available_families
+
+    if not key.startswith(CUSTOM_PREFIX):
+        raise HTTPException(status_code=400, detail="Only installed fonts can be removed")
+    path = _custom_files().get(key)
+    if not path:
+        raise HTTPException(status_code=404, detail="Font not found")
+    try:
+        os.remove(path)
+    except OSError:
+        raise HTTPException(status_code=500, detail="Could not remove that font")
+    return {"ok": True, "families": available_families()}
 
 
 class PageUpsert(BaseModel):

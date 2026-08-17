@@ -106,6 +106,8 @@ export default function AdminPagesEditor() {
   // Any edit to the open page that hasn't been sent to the backend yet.
   const [dirty, setDirty] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const fontRef = useRef<HTMLInputElement>(null);
+  const [fontBusy, setFontBusy] = useState(false);
 
   useEffect(() => {
     adminApi
@@ -265,6 +267,36 @@ export default function AdminPagesEditor() {
       setStories((prev) =>
         prev.map((x) => (x.slug === slug ? { ...x, genderLock: lock } : x)),
       );
+    }
+  }
+
+  // Admin-supplied fonts live on the shared storage volume, so the worker that
+  // burns the text can load them and a rebuild doesn't wipe them.
+  async function installFont(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setFontBusy(true);
+    try {
+      const r = await adminApi.uploadFont(file);
+      setFonts(r.families);
+      patch("fontFamily", r.key); // select what was just installed
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Font upload failed");
+    } finally {
+      setFontBusy(false);
+    }
+  }
+
+  async function removeFont(key: string) {
+    if (!confirm("Remove this font? Pages using it fall back to the default sans."))
+      return;
+    try {
+      const r = await adminApi.deleteFont(key);
+      setFonts(r.families);
+      if (page?.fontFamily === key) patch("fontFamily", "sans");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not remove that font");
     }
   }
 
@@ -781,10 +813,37 @@ export default function AdminPagesEditor() {
                   {fonts.map((f) => (
                     <option key={f.key} value={f.key}>
                       {f.label}
+                      {f.custom ? " (yours)" : ""}
                       {f.installed ? "" : " (not installed — falls back)"}
                     </option>
                   ))}
                 </select>
+                <div className="mt-1.5 flex items-center gap-3">
+                  <input
+                    ref={fontRef}
+                    type="file"
+                    accept=".ttf,.otf,.ttc"
+                    onChange={installFont}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fontRef.current?.click()}
+                    disabled={fontBusy}
+                    className="text-xs font-bold text-brand-primary hover:underline disabled:opacity-50"
+                  >
+                    {fontBusy ? "Installing…" : "+ Add your own font"}
+                  </button>
+                  {fonts.find((f) => f.key === page.fontFamily)?.custom && (
+                    <button
+                      type="button"
+                      onClick={() => removeFont(page.fontFamily)}
+                      className="text-xs font-semibold text-red-500 hover:underline"
+                    >
+                      Remove this font
+                    </button>
+                  )}
+                </div>
               </Field>
               <Field label="Letter spacing (px @1024)">
                 <input

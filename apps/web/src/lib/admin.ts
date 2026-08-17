@@ -149,6 +149,7 @@ export interface AdminFont {
   label: string;
   css: string;
   installed: boolean;
+  custom?: boolean; // admin-installed, living on the storage volume
 }
 
 export const adminApi = {
@@ -185,6 +186,29 @@ export const adminApi = {
       method: "DELETE",
     }),
   fonts: (): Promise<AdminFont[]> => req("/admin/fonts"),
+  deleteFont: (key: string): Promise<{ ok: boolean; families: AdminFont[] }> =>
+    req(`/admin/fonts/${encodeURIComponent(key)}`, { method: "DELETE" }),
+  uploadFont: async (
+    file: File,
+  ): Promise<{ ok: boolean; key: string; families: AdminFont[] }> => {
+    const API = process.env.NEXT_PUBLIC_API_URL;
+    if (!API) throw new Error("Backend not configured.");
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch(`${API}/admin/fonts`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getToken()}` },
+      body: fd,
+    });
+    if (!res.ok) {
+      const detail = await res
+        .json()
+        .then((j) => (typeof j?.detail === "string" ? j.detail : null))
+        .catch(() => null);
+      throw new Error(detail || "Font upload failed");
+    }
+    return res.json();
+  },
   // Render a whole book for review: every page, nothing paywalled.
   testRender: (body: {
     storySlug: string;
