@@ -9,7 +9,7 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from prisma import Json
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..config import settings
 from ..db import prisma
@@ -233,13 +233,41 @@ async def admin_list_stories():
     return [{**story_dict(s), "active": s.active} for s in stories]
 
 
+def age_label(min_age: int, max_age: int) -> str:
+    return f"Ages {min_age}-{max_age}"
+
+
 @router.post("/stories", dependencies=[Depends(require_admin)])
 async def admin_upsert_story(body: StoryUpsert):
     data = body.model_dump()
+    # The storefront shows `ageRange`, but the admin only ever sets min/max —
+    # so derive the label here rather than trusting whatever the client sent.
+    # A caller may still pass a custom label deliberately; blank means derive.
+    if not (data.get("ageRange") or "").strip():
+        data["ageRange"] = age_label(data["minAge"], data["maxAge"])
     story = await prisma.story.upsert(
         where={"slug": body.slug},
         data={"create": data, "update": data},
     )
+    return {**story_dict(story), "active": story.active}
+
+
+class AgesPatch(BaseModel):
+    minAge: int = Field(ge=0, le=18)
+    maxAge: int = Field(ge=0, le=18)
+
+
+@router.patch("/stories/{slug}/ages", dependencies=[Depends(require_admin)])
+async def admin_set_ages(slug: str, body: AgesPatch):
+    """Correct a book's age range after creation. Keeps the displayed label in
+    step with min/max, which is what the storefront actually renders."""
+    lo, hi = sorted((body.minAge, body.maxAge))
+    story = await prisma.story.update(
+        where={"slug": slug},
+        data={"minAge": lo, "maxAge": hi, "ageRange": age_label(lo, hi)},
+    )
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
     return {**story_dict(story), "active": story.active}
 
 

@@ -61,6 +61,8 @@ export interface AdminStory {
   supportsTamil: boolean;
   active: boolean;
   genderLock?: Variant | null; // null = offered for any child
+  minAge?: number;
+  maxAge?: number;
 }
 
 // Payload for creating a book via POST /admin/stories (matches StoryUpsert).
@@ -182,6 +184,11 @@ export const adminApi = {
       method: "DELETE",
     }),
   fonts: (): Promise<AdminFont[]> => req("/admin/fonts"),
+  setAges: (slug: string, minAge: number, maxAge: number): Promise<AdminStory> =>
+    req(`/admin/stories/${slug}/ages`, {
+      method: "PATCH",
+      body: JSON.stringify({ minAge, maxAge }),
+    }),
   setGenderLock: (slug: string, genderLock: Variant | null): Promise<AdminStory> =>
     req(`/admin/stories/${slug}/gender-lock`, {
       method: "PATCH",

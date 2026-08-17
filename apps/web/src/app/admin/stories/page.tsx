@@ -17,13 +17,20 @@ function slugify(s: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+// The label shown on the storefront is DERIVED from min/max — it used to be a
+// prefilled string with no input, so it stayed "Ages 3-7" no matter what the
+// admin typed.
+function ageLabel(minAge: number, maxAge: number): string {
+  return `Ages ${minAge}-${maxAge}`;
+}
+
 const BLANK_BOOK: StoryCreate = {
   slug: "",
   title: "",
   tagline: "",
   description: "",
   categoryTag: "ADVENTURE",
-  ageRange: "Ages 3-7",
+  ageRange: ageLabel(3, 7),
   minAge: 3,
   maxAge: 7,
   pdfPrice: 799,
@@ -38,6 +45,12 @@ export default function AdminStories() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+
+  function replaceStory(updated: AdminStory) {
+    setStories((prev) =>
+      prev.map((x) => (x.slug === updated.slug ? { ...x, ...updated } : x)),
+    );
+  }
 
   useEffect(() => {
     adminApi
@@ -141,6 +154,7 @@ export default function AdminStories() {
               <p className="text-sm text-slate-mutedText">
                 {s.ageRange} · {inr(s.pdfPrice)} / {inr(s.printPrice)}
               </p>
+              <AgeEditor story={s} onSaved={(u) => replaceStory(u)} />
               <div className="mt-3 flex items-center justify-between gap-2">
                 <span
                   className={`text-xs font-bold ${
@@ -198,6 +212,79 @@ export default function AdminStories() {
   );
 }
 
+// Age is what the storefront shows, and it was stuck at whatever the create
+// form sent. Editable here so books created before the fix can be corrected —
+// there is no other story-edit screen.
+function AgeEditor({
+  story,
+  onSaved,
+}: {
+  story: AdminStory;
+  onSaved: (s: AdminStory) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [lo, setLo] = useState(story.minAge ?? 2);
+  const [hi, setHi] = useState(story.maxAge ?? 8);
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    setBusy(true);
+    try {
+      onSaved(await adminApi.setAges(story.slug, lo, hi));
+      setOpen(false);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not save the age range");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="mt-1 text-xs font-semibold text-brand-primary hover:underline"
+      >
+        Edit age range
+      </button>
+    );
+  }
+  return (
+    <div className="mt-2 flex items-center gap-1.5">
+      <input
+        type="number"
+        min={0}
+        max={18}
+        value={lo}
+        onChange={(e) => setLo(Number(e.target.value))}
+        className="w-14 rounded-lg border-2 border-brand-borderAccent px-2 py-1 text-xs"
+      />
+      <span className="text-xs text-slate-mutedText">to</span>
+      <input
+        type="number"
+        min={0}
+        max={18}
+        value={hi}
+        onChange={(e) => setHi(Number(e.target.value))}
+        className="w-14 rounded-lg border-2 border-brand-borderAccent px-2 py-1 text-xs"
+      />
+      <button
+        onClick={save}
+        disabled={busy}
+        className="rounded-lg bg-brand-primary px-2.5 py-1 text-xs font-bold text-white disabled:opacity-50"
+      >
+        {busy ? "…" : "Save"}
+      </button>
+      <button
+        onClick={() => setOpen(false)}
+        className="text-xs font-semibold text-slate-mutedText hover:underline"
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 function CreateBookModal({
   onClose,
   onCreated,
@@ -224,7 +311,7 @@ function CreateBookModal({
     const body: StoryCreate = {
       ...form,
       slug,
-      ageRange: form.ageRange || `Ages ${form.minAge}-${form.maxAge}`,
+      ageRange: ageLabel(form.minAge, form.maxAge),
       // Placeholder until the book's Front cover is authored — saving that page
       // overwrites this with its base art.
       coverImage: "/covers/journey-to-the-stars.svg",
