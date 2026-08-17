@@ -126,6 +126,9 @@ model Job {
   progress    Int       @default(0)
   pages       Json      // PreviewPage[] (generatedUrls + captions)
   isPurchased Boolean   @default(false)
+  // Admin proof render: every page produced, nothing paywalled, excluded from
+  // the customer-facing preview lists.
+  isTest      Boolean   @default(false)
   printApproved Boolean @default(false)  // customer approved the book for print
   approvedAt  DateTime?
   pdfDownloadUrl String?

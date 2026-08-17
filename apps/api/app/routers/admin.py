@@ -177,6 +177,7 @@ async def admin_list_jobs(limit: int = 200, purchased: Optional[bool] = None):
                 "status": j.status,
                 "progress": j.progress,
                 "isPurchased": j.isPurchased,
+                "isTest": getattr(j, "isTest", False),
                 "printApproved": j.printApproved,
                 "purged": j.purged,
                 "renderedFreePages": rendered_free,
@@ -185,6 +186,67 @@ async def admin_list_jobs(limit: int = 200, purchased: Optional[bool] = None):
             }
         )
     return out
+
+
+# ------------------------- Full test render -------------------------------
+
+class TestRenderBody(BaseModel):
+    storySlug: str
+    childName: str = "Aarav"
+    gender: Literal["boy", "girl"] = "boy"
+    ageYears: int = 5
+    language: str = "en"
+    photoUrl: Optional[str] = None   # from POST /upload
+    photoUrls: list[str] = []
+
+
+@router.post("/test-render", dependencies=[Depends(require_admin)])
+async def admin_test_render(body: TestRenderBody):
+    """Render a book END TO END for review — every page, nothing paywalled.
+
+    Uses the same pipeline a customer's order goes through, so what comes out is
+    what a buyer would get. Costs one render per page, so it's an explicit
+    action rather than something that happens on save.
+    """
+    story = await prisma.story.find_unique(where={"slug": body.storySlug})
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    variant = normalize_variant(body.gender)
+    authored = await prisma.pagetemplate.count(
+        where={"bookTemplateId": story.id, "variant": variant, "pageNumber": {"gte": 1}}
+    )
+    if not authored:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No {variant} pages authored for this book yet.",
+        )
+
+    photos = body.photoUrls or ([body.photoUrl] if body.photoUrl else [])
+    job = await prisma.job.create(
+        data={
+            "storySlug": story.slug,
+            "storyTitle": story.title,
+            "childName": body.childName,
+            "gender": body.gender,
+            "ageYears": body.ageYears,
+            "language": body.language,
+            "photoUrl": body.photoUrl or (photos[0] if photos else None),
+            "photoUrls": photos,
+            "status": "queued",
+            "progress": 0,
+            "pages": Json([]),
+            "isTest": True,
+        }
+    )
+    try:
+        from ..tasks import generate_full_book
+
+        generate_full_book.delay(job.id)
+    except Exception:
+        await prisma.job.delete(where={"id": job.id})
+        raise HTTPException(status_code=503, detail="Render queue unavailable")
+    return {"ok": True, "jobId": job.id, "pages": authored, "variant": variant}
 
 
 # ----------------------------- Stats --------------------------------------

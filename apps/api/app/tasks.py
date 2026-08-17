@@ -379,6 +379,97 @@ def generate_book(self, job_id: str) -> str:
     return job_id
 
 
+async def _run_full(job_id: str) -> None:
+    """Admin proof render: every page of the book, nothing paywalled.
+
+    Same pipeline as a customer run — the point is to check exactly what a buyer
+    would get — but it renders the whole reading order in one pass instead of
+    stopping at the free preview, and finishes by stitching the CMYK print PDF
+    so the print output can be checked too.
+    """
+    db = Prisma()
+    await db.connect()
+    try:
+        job = await db.job.find_unique(where={"id": job_id})
+        if not job:
+            return
+        story = await db.story.find_unique(where={"slug": job.storySlug})
+        gallery = (story.gallery if story else []) or []
+        templates = await _templates(db, story.id, job.gender) if story else {}
+
+        await db.job.update(
+            where={"id": job_id}, data={"status": "processing", "progress": 5}
+        )
+
+        identity = job.identityVectors
+        if identity is None:
+            identity = await extract_identity(job.photoUrl or "")
+            await db.job.update(
+                where={"id": job_id},
+                data={"identityVectors": Json(identity), "progress": 10},
+            )
+            job = await db.job.find_unique(where={"id": job_id})
+
+        order = reading_order(templates.keys(), TOTAL)
+        slot = {n: i for i, n in enumerate(order)}
+        pages = [_blank(n, i, locked=False) for i, n in enumerate(order)]
+        await db.job.update(
+            where={"id": job_id},
+            data={"status": "rendering", "progress": 12, "pages": Json(pages)},
+        )
+
+        sem = asyncio.Semaphore(settings.render_concurrency)
+        done = 0
+        lock = asyncio.Lock()
+
+        async def _one(n: int) -> None:
+            nonlocal done, pages
+            async with sem:
+                page = await _render_one(job, templates.get(n), n, _base_art(gallery, n))
+            async with lock:
+                # Nothing is locked in a proof render — the whole point is to see
+                # every page, including the ones a customer would have to buy.
+                pages[slot[n]] = {**page, "index": slot[n], "locked": False}
+                done += 1
+                await db.job.update(
+                    where={"id": job_id},
+                    data={
+                        "progress": 12 + int(done / max(1, len(order)) * 84),
+                        "pages": Json(pages),
+                    },
+                )
+
+        await asyncio.gather(*(_one(n) for n in order))
+
+        job = await db.job.update(
+            where={"id": job_id},
+            data={"status": "completed", "progress": 100, "pages": Json(pages)},
+        )
+        try:
+            from .pdf_service import build_book_pdf
+
+            pdf_url = build_book_pdf(job)
+            await db.job.update(
+                where={"id": job_id}, data={"pdfDownloadUrl": pdf_url}
+            )
+        except Exception:
+            pass  # the pages are the deliverable here; the PDF is a bonus
+    except Exception:
+        await db.job.update(where={"id": job_id}, data={"status": "failed"})
+        raise
+    finally:
+        await _disconnect(db)
+
+
+@celery_app.task(name="app.tasks.generate_full_book", bind=True, max_retries=1)
+def generate_full_book(self, job_id: str) -> str:
+    try:
+        asyncio.run(_run_full(job_id))
+    except Exception as exc:  # pragma: no cover
+        raise self.retry(exc=exc, countdown=5)
+    return job_id
+
+
 @celery_app.task(name="app.tasks.render_remaining", bind=True, max_retries=2)
 def render_remaining(self, job_id: str) -> str:
     try:

@@ -96,6 +96,7 @@ export interface AdminJob {
   status: string;
   progress: number;
   isPurchased: boolean;
+  isTest?: boolean;
   printApproved: boolean;
   purged: boolean;
   renderedFreePages: number;
@@ -184,6 +185,14 @@ export const adminApi = {
       method: "DELETE",
     }),
   fonts: (): Promise<AdminFont[]> => req("/admin/fonts"),
+  // Render a whole book for review: every page, nothing paywalled.
+  testRender: (body: {
+    storySlug: string;
+    childName: string;
+    gender: Variant;
+    photoUrl?: string;
+  }): Promise<{ ok: boolean; jobId: string; pages: number; variant: Variant }> =>
+    req("/admin/test-render", { method: "POST", body: JSON.stringify(body) }),
   setAges: (slug: string, minAge: number, maxAge: number): Promise<AdminStory> =>
     req(`/admin/stories/${slug}/ages`, {
       method: "PATCH",

@@ -2,8 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Download, ExternalLink, Loader2 } from "lucide-react";
-import { adminApi, type AdminJob } from "@/lib/admin";
+import { Download, ExternalLink, Loader2, Sparkles } from "lucide-react";
+import {
+  adminApi,
+  VARIANTS,
+  type AdminJob,
+  type AdminStory,
+  type Variant,
+} from "@/lib/admin";
 import { previewPdfUrl } from "@/lib/api";
 import { previewPath } from "@/lib/format";
 
@@ -23,6 +29,8 @@ export default function AdminPreviews() {
   const [jobs, setJobs] = useState<AdminJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
+  const [showTest, setShowTest] = useState(false);
+  const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
     setLoading(true);
@@ -31,7 +39,15 @@ export default function AdminPreviews() {
       .then(setJobs)
       .catch(() => setJobs([]))
       .finally(() => setLoading(false));
-  }, [filter]);
+  }, [filter, refresh]);
+
+  // A render in flight? Poll so progress ticks without a manual reload.
+  useEffect(() => {
+    if (!jobs.some((j) => j.status === "queued" || j.status === "rendering" || j.status === "processing"))
+      return;
+    const t = setTimeout(() => setRefresh((n) => n + 1), 5000);
+    return () => clearTimeout(t);
+  }, [jobs]);
 
   return (
     <div>
@@ -44,6 +60,12 @@ export default function AdminPreviews() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowTest(true)}
+            className="inline-flex items-center gap-2 rounded-xl bg-brand-gradient px-4 py-2 text-sm font-bold text-white"
+          >
+            <Sparkles className="h-4 w-4" /> Generate full story
+          </button>
           {(["all", "purchased"] as Filter[]).map((f) => (
             <button
               key={f}
@@ -94,6 +116,11 @@ export default function AdminPreviews() {
                         Paid
                       </span>
                     )}
+                    {j.isTest && (
+                      <span className="ml-2 rounded-full bg-brand-lilac px-2 py-0.5 text-[10px] font-bold uppercase text-brand-primaryDark">
+                        Test
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 pr-4 text-slate-mutedText">{j.storyTitle}</td>
                   <td className="py-3 pr-4">
@@ -105,7 +132,7 @@ export default function AdminPreviews() {
                     )}
                   </td>
                   <td className="py-3 pr-4 text-slate-mutedText">
-                    {j.renderedFreePages} free
+                    {j.renderedFreePages} {j.isTest ? "pages" : "free"}
                   </td>
                   <td className="py-3 pr-4 text-slate-mutedText">
                     {fmtDate(j.createdAt)}
@@ -143,6 +170,206 @@ export default function AdminPreviews() {
           </table>
         </div>
       )}
+
+      {showTest && (
+        <TestRenderModal
+          onClose={() => setShowTest(false)}
+          onStarted={() => {
+            setShowTest(false);
+            setRefresh((n) => n + 1);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Renders a whole book end to end for review — every page, nothing paywalled,
+// through the same pipeline a customer's order uses.
+function TestRenderModal({
+  onClose,
+  onStarted,
+}: {
+  onClose: () => void;
+  onStarted: () => void;
+}) {
+  const [stories, setStories] = useState<AdminStory[]>([]);
+  const [slug, setSlug] = useState("");
+  const [childName, setChildName] = useState("Aarav");
+  const [gender, setGender] = useState<Variant>("boy");
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    adminApi
+      .stories()
+      .then((s) => {
+        setStories(s);
+        if (s[0]) setSlug(s[0].slug);
+      })
+      .catch(() => {});
+  }, []);
+
+  const story = stories.find((s) => s.slug === slug);
+  // A gender-locked book can only be rendered for that gender.
+  const allowed = story?.genderLock ? [story.genderLock] : VARIANTS;
+  useEffect(() => {
+    if (!allowed.includes(gender)) setGender(allowed[0]);
+  }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function pickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const { url } = await adminApi.upload(file);
+      setPhotoUrl(url);
+    } catch {
+      setError("Photo upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function start() {
+    if (!slug) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const r = await adminApi.testRender({
+        storySlug: slug,
+        childName: childName.trim() || "Aarav",
+        gender,
+        photoUrl: photoUrl || undefined,
+      });
+      alert(
+        `Rendering ${r.pages} ${r.variant} pages plus covers in the background. ` +
+          `Watch the progress in this list, then hit View to page through it.`,
+      );
+      onStarted();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not start the render");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4">
+      <div className="card w-full max-w-lg p-6">
+        <h2 className="text-lg font-bold text-slate-deep">Generate full story</h2>
+        <p className="mt-1 text-sm text-slate-mutedText">
+          Renders <b>every page</b> of the book — covers included, nothing behind
+          the paywall — using the same pipeline a real order goes through. Costs
+          one render per page.
+        </p>
+
+        <div className="mt-5 space-y-4">
+          <label className="block">
+            <span className="mb-1 block text-sm font-semibold text-slate-deep">
+              Book
+            </span>
+            <select
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+              className="w-full rounded-xl border-2 border-brand-borderAccent px-3 py-2 text-sm outline-none focus:border-brand-primary"
+            >
+              {stories.map((s) => (
+                <option key={s.slug} value={s.slug}>
+                  {s.title}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid grid-cols-2 gap-4">
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-deep">
+                Child&apos;s name
+              </span>
+              <input
+                value={childName}
+                onChange={(e) => setChildName(e.target.value)}
+                className="w-full rounded-xl border-2 border-brand-borderAccent px-3 py-2 text-sm outline-none focus:border-brand-primary"
+              />
+            </label>
+            <div>
+              <span className="mb-1 block text-sm font-semibold text-slate-deep">
+                Character
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                {allowed.map((g) => (
+                  <button
+                    key={g}
+                    onClick={() => setGender(g)}
+                    className={`rounded-xl border-2 py-2 text-sm font-semibold capitalize transition ${
+                      gender === g
+                        ? "border-brand-primary bg-brand-primary/5 text-brand-primaryDark"
+                        : "border-slate-200 text-slate-mutedText"
+                    }`}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <span className="mb-1 block text-sm font-semibold text-slate-deep">
+              Test photo
+            </span>
+            <div className="flex items-center gap-3">
+              <label className="flex cursor-pointer items-center gap-2 rounded-xl border-2 border-dashed border-brand-primary px-4 py-2 text-sm font-semibold text-brand-primary hover:bg-brand-primary/5">
+                {uploading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {photoUrl ? "Replace photo" : "Upload a child's photo"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={pickPhoto}
+                />
+              </label>
+              {photoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={photoUrl}
+                  alt="test face"
+                  className="h-12 w-12 rounded-lg object-cover"
+                />
+              )}
+            </div>
+            <p className="mt-1 text-xs text-slate-mutedText">
+              Without a photo the pages still render, but no face is swapped in —
+              so upload one to check the result a customer would actually get.
+            </p>
+          </div>
+        </div>
+
+        {error && (
+          <p className="mt-4 text-sm font-semibold text-red-500">{error}</p>
+        )}
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="rounded-xl border-2 border-brand-borderAccent px-4 py-2 text-sm font-bold text-slate-deep"
+          >
+            Cancel
+          </button>
+          <button onClick={start} disabled={busy || !slug} className="btn-primary">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Start render"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
