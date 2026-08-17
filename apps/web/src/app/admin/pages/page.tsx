@@ -393,6 +393,36 @@ export default function AdminPagesEditor() {
 
   // Two checkboxes, one underlying value: ticking one unticks the other, and
   // neither ticked means the book is offered for any child.
+  // Age range lives on the book, not the page, but this is where the admin is
+  // working — so it is editable here as well as in the Story Library.
+  const [ageLo, setAgeLo] = useState(2);
+  const [ageHi, setAgeHi] = useState(8);
+  const [ageBusy, setAgeBusy] = useState(false);
+  useEffect(() => {
+    if (story) {
+      setAgeLo(story.minAge ?? 2);
+      setAgeHi(story.maxAge ?? 8);
+    }
+  }, [story?.slug, story?.minAge, story?.maxAge]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ageDirty =
+    !!story && (ageLo !== (story.minAge ?? 2) || ageHi !== (story.maxAge ?? 8));
+
+  async function saveAges() {
+    if (!slug) return;
+    setAgeBusy(true);
+    try {
+      const updated = await adminApi.setAges(slug, ageLo, ageHi);
+      setStories((prev) =>
+        prev.map((x) => (x.slug === slug ? { ...x, ...updated } : x)),
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not save the age range");
+    } finally {
+      setAgeBusy(false);
+    }
+  }
+
   async function setLock(next: Variant | null) {
     if (!slug) return;
     setStories((prev) =>
@@ -688,6 +718,39 @@ export default function AdminPagesEditor() {
             ? `The storefront only offers this book for a ${lock}.`
             : "Neither ticked — offered for both boys and girls."}
         </span>
+
+        <span className="mx-1 hidden h-7 w-px bg-brand-borderAccent sm:block" />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-bold text-slate-deep">Ages</span>
+          <input
+            type="number"
+            min={0}
+            max={18}
+            value={ageLo}
+            onChange={(e) => setAgeLo(Number(e.target.value))}
+            className="w-16 rounded-lg border-2 border-brand-borderAccent px-2 py-1 text-sm outline-none focus:border-brand-primary"
+          />
+          <span className="text-xs text-slate-mutedText">to</span>
+          <input
+            type="number"
+            min={0}
+            max={18}
+            value={ageHi}
+            onChange={(e) => setAgeHi(Number(e.target.value))}
+            className="w-16 rounded-lg border-2 border-brand-borderAccent px-2 py-1 text-sm outline-none focus:border-brand-primary"
+          />
+          <button
+            onClick={saveAges}
+            disabled={ageBusy || !ageDirty}
+            className="rounded-lg bg-brand-primary px-3 py-1 text-xs font-bold text-white disabled:opacity-40"
+          >
+            {ageBusy ? "Saving…" : ageDirty ? "Save ages" : "Saved"}
+          </button>
+          <span className="text-xs text-slate-mutedText">
+            shown on the storefront as “{`Ages ${Math.min(ageLo, ageHi)}-${Math.max(ageLo, ageHi)}`}”
+          </span>
+        </div>
       </div>
 
       {/* Which gender's artwork is being authored */}
