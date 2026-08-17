@@ -109,6 +109,10 @@ model PageTemplate {
   warpDistortH  Float   @default(0)
   warpDistortV  Float   @default(0)
   warpVertical  Boolean @default(false)    // bend along the vertical axis
+  // Independently styled text blocks, drawn in order — what a cover needs to
+  // stack rows in different fonts/colours/sizes. Empty = use the fields above
+  // as a single block, which is what every existing page does.
+  textBlocks    Json?
 
   @@unique([bookTemplateId, variant, pageNumber])
 }

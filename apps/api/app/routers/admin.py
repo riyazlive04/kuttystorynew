@@ -450,6 +450,7 @@ def _page_dict(p) -> dict:
         "warpDistortH": getattr(p, "warpDistortH", 0) or 0,
         "warpDistortV": getattr(p, "warpDistortV", 0) or 0,
         "warpVertical": bool(getattr(p, "warpVertical", False)),
+        "textBlocks": list(getattr(p, "textBlocks", None) or []),
         "variant": getattr(p, "variant", None) or "boy",
         # Derived from the reserved page numbers — the editor labels tabs with it.
         "kind": kind_of(p.pageNumber),
@@ -550,6 +551,7 @@ class PageUpsert(BaseModel):
     warpDistortH: float = 0
     warpDistortV: float = 0
     warpVertical: bool = False
+    textBlocks: Optional[list] = None
 
 
 @router.get("/stories/{slug}/pages", dependencies=[Depends(require_admin)])
@@ -578,6 +580,7 @@ async def admin_upsert_page(slug: str, body: PageUpsert):
     # Prisma Python client can't set a JSON column to SQL NULL via update, and an
     # empty polygon is treated as no-mask downstream (len < 3).
     data["facePath"] = Json(data.get("facePath") or [])
+    data["textBlocks"] = Json(data.get("textBlocks") or [])
     page = await prisma.pagetemplate.upsert(
         where={
             "bookTemplateId_variant_pageNumber": {
@@ -631,6 +634,7 @@ async def admin_text_preview(slug: str, page_number: int, body: PageUpsert):
         data = await asyncio.to_thread(
             compose_to_bytes,
             image_src=base,
+            blocks=body.textBlocks or None,
             story_text=body.storyText,
             child_name="Aarav",
             text_x_pct=body.textX,

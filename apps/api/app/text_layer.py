@@ -269,14 +269,123 @@ def _wrap(
     return lines
 
 
+# One styled text block. A page holds a list of these, so a cover can stack
+# three rows in three fonts, three colours and three sizes — the single-block
+# fields on PageTemplate are just the first entry.
+BLOCK_DEFAULTS = {
+    "text": "",
+    "textX": 50.0,
+    "textY": 82.0,
+    "fontSize": 42,
+    "fontColor": "#FFFFFF",
+    "fontFamily": DEFAULT_FAMILY,
+    "letterSpacing": 0.0,
+    "softLineBreak": True,
+    "outlineWidth": DEFAULT_OUTLINE,
+    "outlineColor": "",       # "" = auto-contrast against the text colour
+    "shadow": True,
+    "warpStyle": STYLE_NONE,
+    "warpBend": 0.0,
+    "warpDistortH": 0.0,
+    "warpDistortV": 0.0,
+    "warpVertical": False,
+}
+
+
+def _draw_block(img: Image.Image, block: dict, child_name: str) -> Image.Image:
+    """Burn one styled block onto the page and return the new image."""
+    b = {**BLOCK_DEFAULTS, **(block or {})}
+    text = personalize(str(b["text"] or ""), child_name)
+    if not text.strip():
+        return img
+
+    W, H = img.size
+    scale = W / 1024
+    size = max(12, int(float(b["fontSize"]) * scale))
+    font = _load_font(size, str(b["fontFamily"] or DEFAULT_FAMILY))
+    tracking = float(b["letterSpacing"] or 0.0) * scale
+
+    measure = ImageDraw.Draw(img)
+    max_w = int(W * 0.86)
+    lines = _wrap(measure, text, font, max_w, tracking, bool(b["softLineBreak"]))
+    line_h = int(size * 1.25)
+    block_h = line_h * len(lines)
+
+    cx = W * (float(b["textX"]) / 100.0)
+    top = H * (float(b["textY"]) / 100.0) - block_h / 2
+
+    placed = []
+    for i, line in enumerate(lines):
+        lw = _text_w(measure, line, font, tracking)
+        placed.append((line, cx - lw / 2, top + i * line_h))
+
+    # Outline width is authored at the 1024 design width and scales with the
+    # canvas, so it stays proportional to the type instead of being a fixed 2px
+    # that swallows small text. 0 turns it off — the right choice when the art
+    # already has a light text panel behind the words.
+    stroke = max(0, round(float(b["outlineWidth"] or 0) * scale))
+    halo = _resolve_outline(str(b["outlineColor"] or ""), str(b["fontColor"]))
+
+    # Drawn into its own transparent layer so the warp can be applied to the
+    # finished type — glyphs, stroke and shadow bending together.
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    tdraw = ImageDraw.Draw(layer)
+
+    if stroke and b["shadow"]:
+        # A real drop shadow: drawn into an RGBA layer, blurred, then composited.
+        # (Passing an RGBA fill straight to an RGB canvas silently discards the
+        # alpha, which is what turned this shadow into solid black before.)
+        shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        sdraw = ImageDraw.Draw(shadow)
+        offset = max(1, round(size * 0.06))
+        for line, x, y in placed:
+            _draw_tracked(
+                sdraw, (x + offset, y + offset), line, font, (*halo, 120), tracking
+            )
+        layer.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(max(1, stroke))))
+
+    for line, x, y in placed:
+        _draw_tracked(
+            tdraw, (x, y), line, font, str(b["fontColor"]), tracking,
+            stroke_width=stroke, stroke_fill=halo,
+        )
+
+    style = str(b["warpStyle"] or STYLE_NONE)
+    if style != STYLE_NONE:
+        layer = warp_layer(
+            layer,
+            style=style,
+            bend=float(b["warpBend"] or 0),
+            distort_h=float(b["warpDistortH"] or 0),
+            distort_v=float(b["warpDistortV"] or 0),
+            vertical=bool(b["warpVertical"]),
+        )
+
+    out = img.convert("RGBA")
+    out.alpha_composite(layer)
+    return out.convert("RGB")
+
+
+def _resolve_outline(chosen: str, font_color: str) -> tuple[int, int, int]:
+    """An explicit halo colour if one was picked, else auto-contrast."""
+    if chosen:
+        try:
+            return ImageColor.getrgb(chosen)[:3]
+        except Exception:
+            pass
+    return outline_color(font_color)
+
+
 def compose_page(
     *,
     image_src: str,
-    story_text: str,
     child_name: str,
-    text_x_pct: float,
-    text_y_pct: float,
-    font_size: int,
+    blocks: Optional[list] = None,
+    # --- legacy single-block signature, still used by the render pipeline -----
+    story_text: str = "",
+    text_x_pct: float = 50,
+    text_y_pct: float = 82,
+    font_size: int = 42,
     font_color: str = "#FFFFFF",
     font_family: str = DEFAULT_FAMILY,
     letter_spacing: float = 0.0,
@@ -288,80 +397,39 @@ def compose_page(
     warp_distort_v: float = 0.0,
     warp_vertical: bool = False,
 ) -> Image.Image:
-    """Return a PIL image with the personalised story line burned in."""
+    """Burn the page's text onto its artwork.
+
+    `blocks` is the general form — a list of independently styled text blocks,
+    drawn in order, which is what a cover needs to stack rows in different
+    fonts and colours. A page with no blocks falls back to the single-block
+    fields, so every existing template keeps rendering unchanged.
+    """
     img = _load_image(image_src)
-    W, H = img.size
-    draw = ImageDraw.Draw(img)
 
-    text = personalize(story_text, child_name)
-    if not text.strip():
-        return img
+    items = [b for b in (blocks or []) if str((b or {}).get("text", "")).strip()]
+    if not items:
+        items = [
+            {
+                "text": story_text,
+                "textX": text_x_pct,
+                "textY": text_y_pct,
+                "fontSize": font_size,
+                "fontColor": font_color,
+                "fontFamily": font_family,
+                "letterSpacing": letter_spacing,
+                "softLineBreak": soft_line_break,
+                "outlineWidth": outline_width,
+                "warpStyle": warp_style,
+                "warpBend": warp_bend,
+                "warpDistortH": warp_distort_h,
+                "warpDistortV": warp_distort_v,
+                "warpVertical": warp_vertical,
+            }
+        ]
 
-    # Scale font relative to canvas so % coords behave consistently across sizes.
-    scale = W / 1024
-    size = max(12, int(font_size * scale))
-    font = _load_font(size, font_family)
-    tracking = (letter_spacing or 0.0) * scale
-
-    max_w = int(W * 0.86)
-    lines = _wrap(draw, text, font, max_w, tracking, soft_line_break)
-    line_h = int(size * 1.25)
-    block_h = line_h * len(lines)
-
-    cx = W * (text_x_pct / 100.0)
-    top = H * (text_y_pct / 100.0) - block_h / 2
-
-    placed = []
-    for i, line in enumerate(lines):
-        lw = _text_w(draw, line, font, tracking)
-        placed.append((line, cx - lw / 2, top + i * line_h))
-
-    # Outline width is authored at the 1024 design width and scales with the
-    # canvas, so it stays proportional to the type instead of being a fixed 2px
-    # that swallows small text. 0 turns it off — the right choice when the art
-    # already has a light text panel behind the words.
-    stroke = max(0, round((outline_width or 0) * scale))
-
-    halo = outline_color(font_color)
-
-    # The text is drawn into its own transparent layer rather than straight onto
-    # the page, so the warp can be applied to the finished type — glyphs, stroke
-    # and shadow bending together — before it is composited down.
-    text_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    tdraw = ImageDraw.Draw(text_layer)
-
-    if stroke:
-        # A real drop shadow: drawn into an RGBA layer, blurred, then composited.
-        # (Passing an RGBA fill straight to an RGB canvas silently discards the
-        # alpha, which is what turned this shadow into solid black before.)
-        shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        sdraw = ImageDraw.Draw(shadow)
-        offset = max(1, round(size * 0.06))
-        for line, x, y in placed:
-            _draw_tracked(
-                sdraw, (x + offset, y + offset), line, font, (*halo, 120), tracking
-            )
-        text_layer.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(max(1, stroke))))
-
-    for line, x, y in placed:
-        _draw_tracked(
-            tdraw, (x, y), line, font, font_color, tracking,
-            stroke_width=stroke, stroke_fill=halo,
-        )
-
-    if warp_style and warp_style != STYLE_NONE:
-        text_layer = warp_layer(
-            text_layer,
-            style=warp_style,
-            bend=warp_bend,
-            distort_h=warp_distort_h,
-            distort_v=warp_distort_v,
-            vertical=warp_vertical,
-        )
-
-    out = img.convert("RGBA")
-    out.alpha_composite(text_layer)
-    return out.convert("RGB")
+    for block in items:
+        img = _draw_block(img, block, child_name)
+    return img
 
 
 def compose_to_bytes(fmt: str = "JPEG", quality: int = 92, **kwargs) -> bytes:

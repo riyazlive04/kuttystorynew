@@ -130,10 +130,51 @@ export interface AdminPage {
   warpDistortH: number;  // -100..100
   warpDistortV: number;  // -100..100
   warpVertical: boolean;
+  textBlocks?: TextBlock[];
   variant?: Variant; // which gender's artwork this page belongs to
   kind?: PageKind; // derived server-side from the reserved page numbers
   label?: string;
 }
+
+// One styled row of text. A page holds a list of them, so a cover can stack
+// rows in different fonts, colours and sizes.
+export interface TextBlock {
+  text: string;
+  textX: number;
+  textY: number;
+  fontSize: number;
+  fontColor: string;
+  fontFamily: string;
+  letterSpacing: number;
+  softLineBreak: boolean;
+  outlineWidth: number;
+  outlineColor: string; // "" = auto-contrast against the text colour
+  shadow: boolean;
+  warpStyle: "none" | "arc";
+  warpBend: number;
+  warpDistortH: number;
+  warpDistortV: number;
+  warpVertical: boolean;
+}
+
+export const BLANK_BLOCK = (y = 50): TextBlock => ({
+  text: "",
+  textX: 50,
+  textY: y,
+  fontSize: 64,
+  fontColor: "#FFFFFF",
+  fontFamily: "sans",
+  letterSpacing: 0,
+  softLineBreak: true,
+  outlineWidth: 4,
+  outlineColor: "",
+  shadow: true,
+  warpStyle: "none",
+  warpBend: 0,
+  warpDistortH: 0,
+  warpDistortV: 0,
+  warpVertical: false,
+});
 
 // A book is authored once per gender — separate base art, separate face
 // outlines. The Page Editor switches between them with the Boy / Girl buttons.

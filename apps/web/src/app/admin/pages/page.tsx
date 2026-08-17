@@ -8,10 +8,12 @@ import {
   BACK_COVER,
   FRONT_COVER,
   SPINE,
+  BLANK_BLOCK,
   VARIANTS,
   type AdminFont,
   type AdminPage,
   type AdminStory,
+  type TextBlock,
   type Variant,
 } from "@/lib/admin";
 
@@ -151,13 +153,94 @@ export default function AdminPagesEditor() {
   }, [slug, variant]);
 
   const page = pages[active];
-  const softBreak = page?.softLineBreak ?? true;
+
+  // Every page is edited as a LIST of styled rows. A page authored before text
+  // blocks existed has none, so its single set of text fields becomes row 0 —
+  // that's what lets a cover stack three rows in three fonts and colours.
+  const legacyBlock = (p: AdminPage): TextBlock => ({
+    ...BLANK_BLOCK(),
+    text: p.storyText,
+    textX: p.textX,
+    textY: p.textY,
+    fontSize: p.fontSize,
+    fontColor: p.fontColor,
+    fontFamily: p.fontFamily,
+    letterSpacing: p.letterSpacing,
+    softLineBreak: p.softLineBreak,
+    outlineWidth: p.outlineWidth,
+    warpStyle: p.warpStyle,
+    warpBend: p.warpBend,
+    warpDistortH: p.warpDistortH,
+    warpDistortV: p.warpDistortV,
+    warpVertical: p.warpVertical,
+  });
+  const blocks: TextBlock[] = page
+    ? page.textBlocks?.length
+      ? page.textBlocks
+      : [legacyBlock(page)]
+    : [];
+  const [row, setRow] = useState(0);
+  const block = blocks[Math.min(row, blocks.length - 1)] ?? BLANK_BLOCK();
+
+  function setBlocks(next: TextBlock[]) {
+    // Row 0 is mirrored back onto the flat fields so anything still reading the
+    // old shape (and the fallback in the renderer) stays correct.
+    const head = next[0] ?? BLANK_BLOCK();
+    setPages((prev) =>
+      prev.map((p, i) =>
+        i === active
+          ? {
+              ...p,
+              textBlocks: next,
+              storyText: head.text,
+              textX: head.textX,
+              textY: head.textY,
+              fontSize: head.fontSize,
+              fontColor: head.fontColor,
+              fontFamily: head.fontFamily,
+              letterSpacing: head.letterSpacing,
+              softLineBreak: head.softLineBreak,
+              outlineWidth: head.outlineWidth,
+              warpStyle: head.warpStyle,
+              warpBend: head.warpBend,
+              warpDistortH: head.warpDistortH,
+              warpDistortV: head.warpDistortV,
+              warpVertical: head.warpVertical,
+            }
+          : p,
+      ),
+    );
+    setDirty(true);
+  }
+
+  function patchBlock(field: keyof TextBlock, value: string | number | boolean) {
+    setBlocks(blocks.map((b, i) => (i === row ? { ...b, [field]: value } : b)));
+  }
+
+  function addRow() {
+    const last = blocks[blocks.length - 1];
+    const next = [
+      ...blocks,
+      { ...BLANK_BLOCK(Math.min(95, (last?.textY ?? 50) + 15)), text: "New row" },
+    ];
+    setBlocks(next);
+    setRow(next.length - 1);
+  }
+
+  function removeRow(i: number) {
+    if (blocks.length <= 1) return;
+    const next = blocks.filter((_, j) => j !== i);
+    setBlocks(next);
+    setRow(Math.max(0, Math.min(row, next.length - 1)));
+  }
+
+  const softBreak = block.softLineBreak ?? true;
   // Same split the text layer uses: sentence end followed by whitespace.
   const previewLines = useMemo(() => {
-    const text = (page?.storyText || "").replace(/\{\{name\}\}/gi, "Aarav").trim();
+    const text = (block.text || "").replace(/\{\{name\}\}/gi, "Aarav").trim();
     if (!text) return [];
     return softBreak ? text.split(/(?<=[.!?])\s+/).filter(Boolean) : [text];
-  }, [page?.storyText, softBreak]);
+  }, [block.text, softBreak]);
 
   function patch(
     field: keyof AdminPage,
@@ -196,23 +279,26 @@ export default function AdminPagesEditor() {
   const pxScale = (boxW || DESIGN_W) / DESIGN_W;
   const outlinePx = Math.round((page?.outlineWidth ?? 3) * pxScale);
   const haloColor = outlineColor(page?.fontColor);
-  const warpOn = (page?.warpStyle || "none") !== "none";
+  const warpOn = (block.warpStyle || "none") !== "none";
+  // More than one row, or a warp, is beyond what the CSS overlay can show —
+  // fall back to the real renderer for an honest preview.
+  const serverPreview = warpOn || blocks.length > 1;
 
   // CSS can't reproduce an arc warp, and a preview that disagrees with the
   // render is worse than none — so once warp is on, show the ACTUAL composed
   // page from the server instead of the CSS overlay. Debounced; costs no AI.
   const [warpUrl, setWarpUrl] = useState<string | null>(null);
-  const warpKey = warpOn
+  const warpKey = serverPreview
     ? JSON.stringify([
         page?.pageNumber, page?.baseImageUrl, page?.storyText, page?.textX,
         page?.textY, page?.fontSize, page?.fontColor, page?.fontFamily,
         page?.letterSpacing, page?.softLineBreak, page?.outlineWidth,
         page?.warpStyle, page?.warpBend, page?.warpDistortH,
-        page?.warpDistortV, page?.warpVertical, variant,
+        page?.warpDistortV, page?.warpVertical, variant, page?.textBlocks,
       ])
     : "";
   useEffect(() => {
-    if (!warpOn || !page?.baseImageUrl || !slug) {
+    if (!serverPreview || !page?.baseImageUrl || !slug) {
       setWarpUrl(null);
       return;
     }
@@ -811,21 +897,60 @@ export default function AdminPagesEditor() {
                 className="input"
               />
             </Field>
-            <Field label="Story text (use {{name}} for the child's name)">
+            {/* Text rows — each with its own font, size, colour and warp */}
+            <div>
+              <span className="mb-1 block text-sm font-semibold text-slate-deep">
+                Text rows (use {"{{name}}"} for the child&apos;s name)
+              </span>
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {blocks.map((b, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setRow(i)}
+                    className={`max-w-[10rem] truncate rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                      i === row
+                        ? "bg-brand-primary text-white"
+                        : "border-2 border-brand-borderAccent text-slate-mutedText hover:border-brand-primary"
+                    }`}
+                    style={i === row ? undefined : { color: b.fontColor }}
+                  >
+                    {b.text?.trim() || `Row ${i + 1}`}
+                  </button>
+                ))}
+                <button
+                  onClick={addRow}
+                  title="Add another styled row"
+                  className="rounded-lg border-2 border-dashed border-brand-primary px-2.5 py-1 text-xs font-bold text-brand-primary"
+                >
+                  + Row
+                </button>
+                {blocks.length > 1 && (
+                  <button
+                    onClick={() => removeRow(row)}
+                    className="rounded-lg border-2 border-red-200 px-2.5 py-1 text-xs font-bold text-red-500"
+                  >
+                    Delete row
+                  </button>
+                )}
+              </div>
               <input
-                value={page.storyText}
-                onChange={(e) => patch("storyText", e.target.value)}
+                value={block.text}
+                onChange={(e) => patchBlock("text", e.target.value)}
                 placeholder="{{name}} climbed up to the treehouse."
                 className="input"
               />
-            </Field>
+              <p className="mt-1 text-xs text-slate-mutedText">
+                Everything below styles the <b>selected row</b> only — so a cover
+                can stack rows in different fonts, sizes and colours.
+              </p>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Text X (%)">
                 <input
                   type="number"
                   step="0.5"
-                  value={page.textX}
-                  onChange={(e) => patch("textX", Number(e.target.value))}
+                  value={block.textX}
+                  onChange={(e) => patchBlock("textX", Number(e.target.value))}
                   className="input"
                 />
               </Field>
@@ -833,31 +958,31 @@ export default function AdminPagesEditor() {
                 <input
                   type="number"
                   step="0.5"
-                  value={page.textY}
-                  onChange={(e) => patch("textY", Number(e.target.value))}
+                  value={block.textY}
+                  onChange={(e) => patchBlock("textY", Number(e.target.value))}
                   className="input"
                 />
               </Field>
               <Field label="Font size (px @1024)">
                 <input
                   type="number"
-                  value={page.fontSize}
-                  onChange={(e) => patch("fontSize", Number(e.target.value))}
+                  value={block.fontSize}
+                  onChange={(e) => patchBlock("fontSize", Number(e.target.value))}
                   className="input"
                 />
               </Field>
               <Field label="Font color">
                 <input
                   type="color"
-                  value={page.fontColor}
-                  onChange={(e) => patch("fontColor", e.target.value)}
+                  value={block.fontColor}
+                  onChange={(e) => patchBlock("fontColor", e.target.value)}
                   className="h-10 w-full rounded-xl border-2 border-brand-borderAccent"
                 />
               </Field>
               <Field label="Font">
                 <select
-                  value={page.fontFamily || "sans"}
-                  onChange={(e) => patch("fontFamily", e.target.value)}
+                  value={block.fontFamily || "sans"}
+                  onChange={(e) => patchBlock("fontFamily", e.target.value)}
                   className="input"
                 >
                   {fonts.map((f) => (
@@ -899,24 +1024,56 @@ export default function AdminPagesEditor() {
                 <input
                   type="number"
                   step="0.5"
-                  value={page.letterSpacing ?? 0}
-                  onChange={(e) => patch("letterSpacing", Number(e.target.value))}
+                  value={block.letterSpacing ?? 0}
+                  onChange={(e) => patchBlock("letterSpacing", Number(e.target.value))}
                   className="input"
                 />
+              </Field>
+              <Field label="Outline colour">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={block.outlineColor || "#FFFFFF"}
+                    onChange={(e) => patchBlock("outlineColor", e.target.value)}
+                    className="h-10 w-14 rounded-xl border-2 border-brand-borderAccent"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => patchBlock("outlineColor", "")}
+                    className={`rounded-lg border-2 px-2 py-1 text-xs font-bold ${
+                      block.outlineColor
+                        ? "border-brand-borderAccent text-slate-mutedText"
+                        : "border-brand-primary text-brand-primary"
+                    }`}
+                  >
+                    Auto
+                  </button>
+                  <label className="ml-1 flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={block.shadow !== false}
+                      onChange={(e) => patchBlock("shadow", e.target.checked)}
+                      className="h-4 w-4 accent-brand-primary"
+                    />
+                    <span className="text-xs font-semibold text-slate-deep">
+                      Shadow
+                    </span>
+                  </label>
+                </div>
               </Field>
               <Field label="Outline (px @1024 — 0 = none)">
                 <input
                   type="number"
                   min="0"
-                  value={page.outlineWidth ?? 3}
+                  value={block.outlineWidth ?? 3}
                   onChange={(e) =>
-                    patch("outlineWidth", Math.max(0, Number(e.target.value)))
+                    patchBlock("outlineWidth", Math.max(0, Number(e.target.value)))
                   }
                   className="input"
                 />
               </Field>
             </div>
-            {(page.outlineWidth ?? 3) > 0 && (
+            {(block.outlineWidth ?? 3) > 0 && (
               <p className="-mt-2 text-xs text-slate-mutedText">
                 The outline and drop shadow keep light text readable over
                 artwork. If this page has a light panel behind the text, set the
@@ -928,7 +1085,7 @@ export default function AdminPagesEditor() {
               <input
                 type="checkbox"
                 checked={softBreak}
-                onChange={(e) => patch("softLineBreak", e.target.checked)}
+                onChange={(e) => patchBlock("softLineBreak", e.target.checked)}
                 className="mt-0.5 h-4 w-4 accent-brand-primary"
               />
               <span className="text-sm">
@@ -945,8 +1102,8 @@ export default function AdminPagesEditor() {
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-sm font-bold text-slate-deep">Warp</span>
                 <select
-                  value={page.warpStyle || "none"}
-                  onChange={(e) => patch("warpStyle", e.target.value)}
+                  value={block.warpStyle || "none"}
+                  onChange={(e) => patchBlock("warpStyle", e.target.value)}
                   className="rounded-lg border-2 border-brand-borderAccent px-2 py-1 text-sm outline-none focus:border-brand-primary"
                 >
                   <option value="none">None</option>
@@ -958,8 +1115,8 @@ export default function AdminPagesEditor() {
                       <label key={String(vert)} className="flex items-center gap-1.5">
                         <input
                           type="radio"
-                          checked={!!page.warpVertical === vert}
-                          onChange={() => patch("warpVertical", vert)}
+                          checked={!!block.warpVertical === vert}
+                          onChange={() => patchBlock("warpVertical", vert)}
                           className="h-3.5 w-3.5 accent-brand-primary"
                         />
                         <span className="text-xs font-semibold text-slate-deep">
@@ -975,21 +1132,21 @@ export default function AdminPagesEditor() {
                 <div className="mt-3 space-y-2">
                   <Slider
                     label="Bend"
-                    value={page.warpBend ?? 0}
-                    onChange={(v) => patch("warpBend", v)}
+                    value={block.warpBend ?? 0}
+                    onChange={(v) => patchBlock("warpBend", v)}
                   />
                   <p className="pt-1 text-xs font-semibold text-slate-mutedText">
                     Distortion
                   </p>
                   <Slider
                     label="Horizontal"
-                    value={page.warpDistortH ?? 0}
-                    onChange={(v) => patch("warpDistortH", v)}
+                    value={block.warpDistortH ?? 0}
+                    onChange={(v) => patchBlock("warpDistortH", v)}
                   />
                   <Slider
                     label="Vertical"
-                    value={page.warpDistortV ?? 0}
-                    onChange={(v) => patch("warpDistortV", v)}
+                    value={block.warpDistortV ?? 0}
+                    onChange={(v) => patchBlock("warpDistortV", v)}
                   />
                 </div>
               )}
@@ -1057,7 +1214,7 @@ export default function AdminPagesEditor() {
               )}
               <div
                 className={`pointer-events-none absolute w-[86%] -translate-x-1/2 -translate-y-1/2 text-center ${
-                  warpOn ? "hidden" : ""
+                  serverPreview ? "hidden" : ""
                 }`}
                 style={{
                   left: `${page.textX}%`,
@@ -1096,13 +1253,13 @@ export default function AdminPagesEditor() {
                 style={{ left: `${page.textX}%`, top: `${page.textY}%` }}
               />
             </div>
-            {warpOn && (
+            {serverPreview && (
               <p className="mt-2 text-xs font-semibold text-brand-primary">
                 {warpUrl
-                  ? "Warped text composed by the real renderer — this is exactly what gets burned in."
+                  ? "Composed by the real renderer — exactly what gets burned in."
                   : page.baseImageUrl
-                    ? "Composing the warped text…"
-                    : "Upload base art to preview the warp."}
+                    ? "Composing…"
+                    : "Upload base art to preview this."}
               </p>
             )}
             <p className="mt-2 text-xs text-slate-400">

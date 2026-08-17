@@ -18,7 +18,10 @@ export function StoryCard({ story }: { story: Story }) {
   const onPersonalize = () => router.push(`/stories/${story.slug}`);
 
   return (
-    <div className="flex max-w-sm transform flex-col overflow-hidden rounded-3xl border-2 border-slate-100 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+    // w-full matters: without it the card shrink-wraps its content, so a long
+    // title widens the card, and the square cover grows with it — which is why
+    // one story's artwork sat lower than the rest of the row.
+    <div className="flex h-full w-full max-w-sm transform flex-col overflow-hidden rounded-3xl border-2 border-slate-100 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
       <button
         onClick={onPersonalize}
         className="relative aspect-square w-full overflow-hidden border-b border-slate-100 bg-slate-50 text-left"

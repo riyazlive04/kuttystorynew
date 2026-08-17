@@ -173,16 +173,22 @@ async def _render_one(
     # (http = hosted model output; /uploads = a swapped page saved locally.)
     # Skip when there's no story text (e.g. templates that already have the text
     # baked in) — otherwise we'd double up the text on the page.
+    _blocks = list(getattr(template, "textBlocks", None) or []) if template else []
+    _has_text = bool((story_text or "").strip()) or any(
+        str((b or {}).get("text", "")).strip() for b in _blocks
+    )
     if (
         (image_url.startswith("http") or image_url.startswith("/uploads/"))
         and template is not None
-        and (story_text or "").strip()
+        and _has_text
     ):
         from .text_layer import compose_to_bytes
 
         try:
+            blocks = getattr(template, "textBlocks", None)
             data = compose_to_bytes(
                 image_src=image_url,
+                blocks=list(blocks) if blocks else None,
                 story_text=story_text,
                 child_name=job.childName,
                 text_x_pct=template.textX,
