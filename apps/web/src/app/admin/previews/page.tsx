@@ -64,7 +64,7 @@ export default function AdminPreviews() {
             onClick={() => setShowTest(true)}
             className="inline-flex items-center gap-2 rounded-xl bg-brand-gradient px-4 py-2 text-sm font-bold text-white"
           >
-            <Sparkles className="h-4 w-4" /> Generate full story
+            <Sparkles className="h-4 w-4" /> Test render a book
           </button>
           {(["all", "purchased"] as Filter[]).map((f) => (
             <button
@@ -261,11 +261,12 @@ function TestRenderModal({
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4">
       <div className="card w-full max-w-lg p-6">
-        <h2 className="text-lg font-bold text-slate-deep">Generate full story</h2>
+        <h2 className="text-lg font-bold text-slate-deep">Test render a book</h2>
         <p className="mt-1 text-sm text-slate-mutedText">
-          Renders <b>every page</b> of the book — covers included, nothing behind
-          the paywall — using the same pipeline a real order goes through. Costs
-          one render per page.
+          Renders the book <b>exactly as a customer would get it</b> — the pages
+          you have already authored, with a face swapped in and the text burned
+          on — but every page, with nothing behind the paywall. Nothing you have
+          written is changed. Costs one render per page.
         </p>
 
         <div className="mt-5 space-y-4">

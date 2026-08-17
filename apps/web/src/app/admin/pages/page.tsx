@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { BookOpen, ImagePlus, Loader2, Plus, Save, Sparkles, Trash2 } from "lucide-react";
 import {
@@ -562,7 +563,12 @@ export default function AdminPagesEditor() {
     );
     if (
       !confirm(
-        `Generate a full ${numPages}-page story with AI? This overwrites this book's ${variant} pages (1 LLM call, ~a few cents).`,
+        `Have AI WRITE NEW TEXT for ${numPages} pages?
+
+` +
+          `This REPLACES the ${variant} page text you have already authored. ` +
+          `It does not render anything — to see the book as a customer would, ` +
+          `use Previews → Test render a book.`,
       )
     )
       return;
@@ -604,10 +610,19 @@ export default function AdminPagesEditor() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-slate-deep">Page Editor (CMS)</h1>
         <div className="flex flex-wrap items-center gap-3">
+          {/* The two are easy to confuse: this one RENDERS what is authored,
+              the AI button REPLACES what is authored. */}
+          <Link
+            href="/admin/previews"
+            title="See this book rendered exactly as a customer would get it"
+            className="inline-flex items-center gap-2 rounded-xl border-2 border-brand-primary px-4 py-2 text-sm font-bold text-brand-primary hover:bg-brand-primary/5"
+          >
+            <Sparkles className="h-4 w-4" /> Test render a book
+          </Link>
           <button
             onClick={generateStory}
             disabled={authoring || !slug}
-            title="Author a full personalized story for this book with AI"
+            title="Write NEW narrative text for this book with AI — replaces the pages you have authored"
             className="inline-flex items-center gap-2 rounded-xl bg-brand-gradient px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
           >
             {authoring ? (
@@ -615,7 +630,7 @@ export default function AdminPagesEditor() {
             ) : (
               <BookOpen className="h-4 w-4" />
             )}
-            Generate full story (AI) — {variant}
+            Write story text (AI) — {variant}
           </button>
           <button
             onClick={async () => {
