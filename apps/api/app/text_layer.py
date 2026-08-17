@@ -333,46 +333,56 @@ def _draw_block(img: Image.Image, block: dict, child_name: str) -> Image.Image:
     stroke = max(0, round(float(b["outlineWidth"] or 0) * scale))
     halo = _resolve_outline(str(b["outlineColor"] or ""), str(b["fontColor"]))
 
-    # Drawn into its own transparent layer so the warp can be applied to the
-    # finished type — glyphs, stroke and shadow bending together.
+    # Text and shadow are drawn into SEPARATE transparent layers. Keeping the
+    # shadow out of the text layer matters twice over: the panel is measured
+    # from the text alone (a shadow folded in would inflate the box around it),
+    # and the shadow can carry its own colour instead of the outline's.
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     tdraw = ImageDraw.Draw(layer)
-
-    if stroke and b["shadow"]:
-        # A real drop shadow: drawn into an RGBA layer, blurred, then composited.
-        # (Passing an RGBA fill straight to an RGB canvas silently discards the
-        # alpha, which is what turned this shadow into solid black before.)
-        shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        sdraw = ImageDraw.Draw(shadow)
-        offset = max(1, round(size * 0.06))
-        for line, x, y in placed:
-            _draw_tracked(
-                sdraw, (x + offset, y + offset), line, font, (*halo, 120), tracking
-            )
-        layer.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(max(1, stroke))))
-
     for line, x, y in placed:
         _draw_tracked(
             tdraw, (x, y), line, font, str(b["fontColor"]), tracking,
             stroke_width=stroke, stroke_fill=halo,
         )
 
+    shadow_layer = None
+    if b["shadow"]:
+        # A drop shadow is dark by definition — it used to borrow the outline
+        # colour, so dark text (whose auto halo is white) cast a WHITE shadow
+        # that did nothing but swell the panel. It is also no longer tied to
+        # the outline: a page with a panel usually wants outline 0 and a shadow.
+        shadow_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        sdraw = ImageDraw.Draw(shadow_layer)
+        offset = max(1, round(size * 0.06))
+        for line, x, y in placed:
+            _draw_tracked(
+                sdraw, (x + offset, y + offset), line, font, (0, 0, 0, 150),
+                tracking, stroke_width=stroke, stroke_fill=(0, 0, 0, 150),
+            )
+        blur = max(2, round(size * 0.05))
+        shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(blur))
+
     style = str(b["warpStyle"] or STYLE_NONE)
     if style != STYLE_NONE:
-        layer = warp_layer(
-            layer,
+        warp_args = dict(
             style=style,
             bend=float(b["warpBend"] or 0),
             distort_h=float(b["warpDistortH"] or 0),
             distort_v=float(b["warpDistortV"] or 0),
             vertical=bool(b["warpVertical"]),
         )
+        layer = warp_layer(layer, **warp_args)
+        if shadow_layer is not None:
+            shadow_layer = warp_layer(shadow_layer, **warp_args)
 
     out = img.convert("RGBA")
     if b["boxEnabled"]:
+        # Measured from the text, NOT the shadow — see above.
         panel = _text_panel(layer, b, scale, W, H)
         if panel is not None:
             out.alpha_composite(panel)
+    if shadow_layer is not None:
+        out.alpha_composite(shadow_layer)
     out.alpha_composite(layer)
     return out.convert("RGB")
 
