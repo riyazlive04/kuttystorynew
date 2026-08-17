@@ -6,6 +6,13 @@ import { BookOpen } from "lucide-react";
 import type { Story } from "@/lib/types";
 import { inr } from "@/lib/format";
 
+// The printed book is 210mm square (see pdf_service.PAGE_PX) with a 1cm spine,
+// so the spine is 10/210 of the cover's width. Derived rather than eyeballed —
+// if the trim size or the binding changes, change it here.
+const COVER_MM = 210;
+const SPINE_MM = 10;
+const SPINE_PCT = (SPINE_MM / COVER_MM) * 100; // 4.76%
+
 const CATEGORY_STYLES: Record<string, string> = {
   LEARNING: "bg-amber-500/90",
   ADVENTURE: "bg-indigo-500/90",
@@ -43,7 +50,10 @@ export function StoryCard({ story }: { story: Story }) {
                 the cover itself slides under the band, which reads like a
                 wrapped cover rather than a hole. Either way the hinge shading
                 and crease sit on top so it still looks like a fold. */}
-            <div className="pointer-events-none absolute inset-y-0 left-0 w-[8%] overflow-hidden">
+            <div
+              className="pointer-events-none absolute inset-y-0 left-0 overflow-hidden"
+              style={{ width: `${SPINE_PCT}%` }}
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={story.spineImage || story.coverImage}
@@ -55,8 +65,14 @@ export function StoryCard({ story }: { story: Story }) {
                 }
               />
             </div>
-            <div className="pointer-events-none absolute inset-y-0 left-0 w-[8%] bg-gradient-to-r from-slate-950/55 via-slate-950/20 to-slate-950/5" />
-            <div className="pointer-events-none absolute inset-y-0 left-[8%] w-px bg-white/25" />
+            <div
+              className="pointer-events-none absolute inset-y-0 left-0 bg-gradient-to-r from-slate-950/55 via-slate-950/20 to-slate-950/5"
+              style={{ width: `${SPINE_PCT}%` }}
+            />
+            <div
+              className="pointer-events-none absolute inset-y-0 w-px bg-white/25"
+              style={{ left: `${SPINE_PCT}%` }}
+            />
 
             {/* Page block along the fore edge. */}
             <div className="pointer-events-none absolute inset-y-[1.5%] right-0 w-[1.8%] rounded-r-md bg-gradient-to-l from-white via-slate-200 to-slate-400/60" />
@@ -65,9 +81,10 @@ export function StoryCard({ story }: { story: Story }) {
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/12 via-transparent to-slate-950/12" />
 
             <span
-              className={`chip absolute left-[12%] top-4 z-10 text-white backdrop-blur-sm ${
+              className={`chip absolute top-4 z-10 text-white backdrop-blur-sm ${
                 CATEGORY_STYLES[story.categoryTag] || "bg-slate-900/80"
               }`}
+              style={{ left: `calc(${SPINE_PCT}% + 0.75rem)` }}
             >
               {story.categoryTag}
             </span>
