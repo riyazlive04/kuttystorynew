@@ -25,8 +25,6 @@ export default function HomePage() {
 
       <TrustBar />
 
-      <Steps />
-
       <section className="container-x py-8">
         <div className="mb-10 flex items-end justify-between">
           <div>
@@ -50,6 +48,8 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      <Steps />
 
       <PricingTier />
       <Reviews />
