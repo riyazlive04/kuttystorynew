@@ -150,6 +150,13 @@ export interface TextBlock {
   outlineWidth: number;
   outlineColor: string; // "" = auto-contrast against the text colour
   shadow: boolean;
+  // Panel behind the text, so type stays readable over busy artwork.
+  boxEnabled: boolean;
+  boxColor: string;
+  boxOpacity: number;   // 0-100
+  boxPadding: number;   // px @1024
+  boxRadius: number;    // px @1024
+  boxFullWidth: boolean;
   warpStyle: "none" | "arc";
   warpBend: number;
   warpDistortH: number;
@@ -169,6 +176,12 @@ export const BLANK_BLOCK = (y = 50): TextBlock => ({
   outlineWidth: 4,
   outlineColor: "",
   shadow: true,
+  boxEnabled: false,
+  boxColor: "#FFFFFF",
+  boxOpacity: 70,
+  boxPadding: 26,
+  boxRadius: 22,
+  boxFullWidth: false,
   warpStyle: "none",
   warpBend: 0,
   warpDistortH: 0,

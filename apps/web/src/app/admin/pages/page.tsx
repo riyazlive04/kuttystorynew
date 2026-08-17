@@ -282,7 +282,8 @@ export default function AdminPagesEditor() {
   const warpOn = (block.warpStyle || "none") !== "none";
   // More than one row, or a warp, is beyond what the CSS overlay can show —
   // fall back to the real renderer for an honest preview.
-  const serverPreview = warpOn || blocks.length > 1;
+  const serverPreview =
+    warpOn || blocks.length > 1 || blocks.some((b) => b.boxEnabled);
 
   // CSS can't reproduce an arc warp, and a preview that disagrees with the
   // render is worse than none — so once warp is on, show the ACTUAL composed
@@ -1097,6 +1098,68 @@ export default function AdminPagesEditor() {
               </span>
             </label>
 
+            {/* Panel behind the text */}
+            <div className="rounded-xl border-2 border-brand-borderAccent p-3">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={!!block.boxEnabled}
+                  onChange={(e) => patchBlock("boxEnabled", e.target.checked)}
+                  className="h-4 w-4 accent-brand-primary"
+                />
+                <span className="text-sm font-bold text-slate-deep">
+                  Background box
+                </span>
+                <span className="text-xs text-slate-mutedText">
+                  a panel behind this row so the text stays readable
+                </span>
+              </label>
+
+              {block.boxEnabled && (
+                <div className="mt-3 space-y-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input
+                      type="color"
+                      value={block.boxColor || "#FFFFFF"}
+                      onChange={(e) => patchBlock("boxColor", e.target.value)}
+                      className="h-9 w-14 rounded-xl border-2 border-brand-borderAccent"
+                    />
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={!!block.boxFullWidth}
+                        onChange={(e) =>
+                          patchBlock("boxFullWidth", e.target.checked)
+                        }
+                        className="h-4 w-4 accent-brand-primary"
+                      />
+                      <span className="text-xs font-semibold text-slate-deep">
+                        Full width
+                      </span>
+                    </label>
+                  </div>
+                  <Slider
+                    label="Opacity"
+                    min={0}
+                    value={block.boxOpacity ?? 70}
+                    onChange={(v) => patchBlock("boxOpacity", v)}
+                  />
+                  <Slider
+                    label="Padding"
+                    min={0}
+                    value={block.boxPadding ?? 26}
+                    onChange={(v) => patchBlock("boxPadding", v)}
+                  />
+                  <Slider
+                    label="Corner"
+                    min={0}
+                    value={block.boxRadius ?? 22}
+                    onChange={(v) => patchBlock("boxRadius", v)}
+                  />
+                </div>
+              )}
+            </div>
+
             {/* Warp — mirrors Photoshop's Warp Options dialog */}
             <div className="rounded-xl border-2 border-brand-borderAccent p-3">
               <div className="flex flex-wrap items-center gap-3">
@@ -1294,10 +1357,14 @@ function Slider({
   label,
   value,
   onChange,
+  min = -100,
+  max = 100,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
+  min?: number;
+  max?: number;
 }) {
   return (
     <div className="flex items-center gap-3">
@@ -1306,8 +1373,8 @@ function Slider({
       </span>
       <input
         type="range"
-        min={-100}
-        max={100}
+        min={min}
+        max={max}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         className="h-1 flex-1 accent-brand-primary"
@@ -1315,11 +1382,11 @@ function Slider({
       <div className="flex w-16 shrink-0 items-center rounded-lg border-2 border-brand-borderAccent px-1.5 py-0.5">
         <input
           type="number"
-          min={-100}
-          max={100}
+          min={min}
+          max={max}
           value={value}
           onChange={(e) =>
-            onChange(Math.max(-100, Math.min(100, Number(e.target.value))))
+            onChange(Math.max(min, Math.min(max, Number(e.target.value))))
           }
           className="w-full text-right text-xs outline-none"
         />

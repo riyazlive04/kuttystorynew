@@ -284,6 +284,13 @@ BLOCK_DEFAULTS = {
     "outlineWidth": DEFAULT_OUTLINE,
     "outlineColor": "",       # "" = auto-contrast against the text colour
     "shadow": True,
+    # Panel behind the text, so type stays readable over busy artwork.
+    "boxEnabled": False,
+    "boxColor": "#FFFFFF",
+    "boxOpacity": 70,      # 0 = invisible, 100 = solid
+    "boxPadding": 26,      # px @1024 around the text
+    "boxRadius": 22,       # px @1024 corner rounding
+    "boxFullWidth": False, # span the page instead of hugging the text
     "warpStyle": STYLE_NONE,
     "warpBend": 0.0,
     "warpDistortH": 0.0,
@@ -362,8 +369,51 @@ def _draw_block(img: Image.Image, block: dict, child_name: str) -> Image.Image:
         )
 
     out = img.convert("RGBA")
+    if b["boxEnabled"]:
+        panel = _text_panel(layer, b, scale, W, H)
+        if panel is not None:
+            out.alpha_composite(panel)
     out.alpha_composite(layer)
     return out.convert("RGB")
+
+
+def _text_panel(
+    layer: Image.Image, b: dict, scale: float, W: int, H: int
+) -> Optional[Image.Image]:
+    """A rounded translucent panel sized to the text that will sit on it.
+
+    Measured from the FINISHED text layer, so it accounts for the outline, the
+    shadow and any warp — and drawn separately from that layer so the panel
+    itself stays a clean rectangle instead of bending with the type.
+    """
+    bbox = layer.getbbox()
+    if not bbox:
+        return None
+    pad = max(0, round(float(b["boxPadding"] or 0) * scale))
+    radius = max(0, round(float(b["boxRadius"] or 0) * scale))
+    x0, y0, x1, y1 = bbox
+    x0, y0, x1, y1 = x0 - pad, y0 - pad, x1 + pad, y1 + pad
+    if b["boxFullWidth"]:
+        margin = int(W * 0.04)
+        x0, x1 = margin, W - margin
+    x0, y0 = max(0, x0), max(0, y0)
+    x1, y1 = min(W, x1), min(H, y1)
+    if x1 <= x0 or y1 <= y0:
+        return None
+
+    try:
+        rgb = ImageColor.getrgb(str(b["boxColor"] or "#FFFFFF"))[:3]
+    except Exception:
+        rgb = (255, 255, 255)
+    alpha = int(max(0, min(100, float(b["boxOpacity"] or 0))) * 255 / 100)
+    if alpha <= 0:
+        return None
+
+    panel = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(panel).rounded_rectangle(
+        (x0, y0, x1, y1), radius=radius, fill=(*rgb, alpha)
+    )
+    return panel
 
 
 def _resolve_outline(chosen: str, font_color: str) -> tuple[int, int, int]:
