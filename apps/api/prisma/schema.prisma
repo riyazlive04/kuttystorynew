@@ -113,6 +113,10 @@ model PageTemplate {
   // stack rows in different fonts/colours/sizes. Empty = use the fields above
   // as a single block, which is what every existing page does.
   textBlocks    Json?
+  // ONE translucent panel behind all of the rows: {enabled, color, opacity,
+  // padding, radius, fullWidth}. Page-level because the box frames the whole
+  // text, not an individual row.
+  textBox       Json?
 
   @@unique([bookTemplateId, variant, pageNumber])
 }

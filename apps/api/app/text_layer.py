@@ -304,20 +304,25 @@ BLOCK_DEFAULTS = {
 }
 
 
-def _draw_block(img: Image.Image, block: dict, child_name: str) -> Image.Image:
-    """Burn one styled block onto the page and return the new image."""
+def _block_layers(size_wh: tuple, block: dict, child_name: str):
+    """Render one styled row into (text, shadow) layers.
+
+    Nothing is composited here: the page's background panel has to be sized from
+    ALL the rows at once and drawn beneath every one of them, so the caller does
+    the stacking.
+    """
     b = {**BLOCK_DEFAULTS, **(block or {})}
     text = personalize(str(b["text"] or ""), child_name)
     if not text.strip():
-        return img
+        return None, None
 
-    W, H = img.size
+    W, H = size_wh
     scale = W / 1024
     size = max(12, int(float(b["fontSize"]) * scale))
     font = _load_font(size, str(b["fontFamily"] or DEFAULT_FAMILY))
     tracking = float(b["letterSpacing"] or 0.0) * scale
 
-    measure = ImageDraw.Draw(img)
+    measure = ImageDraw.Draw(Image.new("RGB", (W, H)))
     max_w = int(W * 0.86)
     lines = _wrap(measure, text, font, max_w, tracking, bool(b["softLineBreak"]))
     line_h = int(size * 1.25)
@@ -342,7 +347,7 @@ def _draw_block(img: Image.Image, block: dict, child_name: str) -> Image.Image:
     # shadow out of the text layer matters twice over: the panel is measured
     # from the text alone (a shadow folded in would inflate the box around it),
     # and the shadow can carry its own colour instead of the outline's.
-    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     tdraw = ImageDraw.Draw(layer)
 
     # The outer stroke is a full pass drawn first with a WIDER stroke; the pass
@@ -371,7 +376,7 @@ def _draw_block(img: Image.Image, block: dict, child_name: str) -> Image.Image:
         # colour, so dark text (whose auto halo is white) cast a WHITE shadow
         # that did nothing but swell the panel. It is also no longer tied to
         # the outline: a page with a panel usually wants outline 0 and a shadow.
-        shadow_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        shadow_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         sdraw = ImageDraw.Draw(shadow_layer)
         offset = max(1, round(size * 0.06))
         for line, x, y in placed:
@@ -396,28 +401,19 @@ def _draw_block(img: Image.Image, block: dict, child_name: str) -> Image.Image:
         if shadow_layer is not None:
             shadow_layer = warp_layer(shadow_layer, **warp_args)
 
-    out = img.convert("RGBA")
-    if b["boxEnabled"]:
-        # Measured from the text, NOT the shadow — see above.
-        panel = _text_panel(layer, b, scale, W, H)
-        if panel is not None:
-            out.alpha_composite(panel)
-    if shadow_layer is not None:
-        out.alpha_composite(shadow_layer)
-    out.alpha_composite(layer)
-    return out.convert("RGB")
+    return layer, shadow_layer
 
 
 def _text_panel(
-    layer: Image.Image, b: dict, scale: float, W: int, H: int
+    bbox, b: dict, scale: float, W: int, H: int
 ) -> Optional[Image.Image]:
-    """A rounded translucent panel sized to the text that will sit on it.
+    """One rounded translucent panel covering the text that will sit on it.
 
-    Measured from the FINISHED text layer, so it accounts for the outline, the
-    shadow and any warp — and drawn separately from that layer so the panel
-    itself stays a clean rectangle instead of bending with the type.
+    `bbox` is the union of every row's finished text, so a page gets a single
+    panel behind the whole block rather than one per row. Measured from the text
+    (not the shadow, which would inflate it) and drawn as its own layer, so the
+    panel stays a clean rectangle instead of bending with a warped row.
     """
-    bbox = layer.getbbox()
     if not bbox:
         return None
     pad = max(0, round(float(b["boxPadding"] or 0) * scale))
@@ -472,6 +468,7 @@ def compose_page(
     letter_spacing: float = 0.0,
     soft_line_break: bool = True,
     outline_width: int = DEFAULT_OUTLINE,
+    text_box: Optional[dict] = None,
     warp_style: str = STYLE_NONE,
     warp_bend: float = 0.0,
     warp_distort_h: float = 0.0,
@@ -508,9 +505,65 @@ def compose_page(
             }
         ]
 
+    W, H = img.size
+    scale = W / 1024
+
+    rendered = []
     for block in items:
-        img = _draw_block(img, block, child_name)
-    return img
+        text_layer, shadow_layer = _block_layers((W, H), block, child_name)
+        if text_layer is not None:
+            rendered.append((text_layer, shadow_layer))
+    if not rendered:
+        return img
+
+    # ONE panel for the whole text, sized to the union of every row — the box is
+    # a property of the page, not of an individual row.
+    panel_cfg = _panel_config(text_box, items)
+    out = img.convert("RGBA")
+    if panel_cfg:
+        union = None
+        for text_layer, _ in rendered:
+            box = text_layer.getbbox()
+            if not box:
+                continue
+            union = box if union is None else (
+                min(union[0], box[0]), min(union[1], box[1]),
+                max(union[2], box[2]), max(union[3], box[3]),
+            )
+        panel = _text_panel(union, {**BLOCK_DEFAULTS, **panel_cfg}, scale, W, H)
+        if panel is not None:
+            out.alpha_composite(panel)
+
+    for text_layer, shadow_layer in rendered:
+        if shadow_layer is not None:
+            out.alpha_composite(shadow_layer)
+        out.alpha_composite(text_layer)
+    return out.convert("RGB")
+
+
+def _panel_config(text_box: Optional[dict], blocks: list) -> Optional[dict]:
+    """The page's panel settings, or None when no panel is wanted.
+
+    Pages authored before the panel moved up to page level carry the settings on
+    a row instead; the first row that had one wins, so those pages keep their
+    box (as a single panel now) without anyone re-authoring them.
+    """
+    if text_box is not None:
+        if not (text_box.get("enabled") or text_box.get("boxEnabled")):
+            return None
+        return {
+            "boxColor": text_box.get("color", text_box.get("boxColor", "#FFFFFF")),
+            "boxOpacity": text_box.get("opacity", text_box.get("boxOpacity", 70)),
+            "boxPadding": text_box.get("padding", text_box.get("boxPadding", 26)),
+            "boxRadius": text_box.get("radius", text_box.get("boxRadius", 22)),
+            "boxFullWidth": text_box.get(
+                "fullWidth", text_box.get("boxFullWidth", False)
+            ),
+        }
+    for b in blocks:
+        if (b or {}).get("boxEnabled"):
+            return dict(b)
+    return None
 
 
 def compose_to_bytes(fmt: str = "JPEG", quality: int = 92, **kwargs) -> bytes:

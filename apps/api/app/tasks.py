@@ -186,9 +186,11 @@ async def _render_one(
 
         try:
             blocks = getattr(template, "textBlocks", None)
+            text_box = getattr(template, "textBox", None)
             data = compose_to_bytes(
                 image_src=image_url,
                 blocks=list(blocks) if blocks else None,
+                text_box=dict(text_box) if text_box else None,
                 story_text=story_text,
                 child_name=job.childName,
                 text_x_pct=template.textX,

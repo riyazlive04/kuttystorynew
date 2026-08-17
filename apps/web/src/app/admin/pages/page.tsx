@@ -10,11 +10,13 @@ import {
   FRONT_COVER,
   SPINE,
   BLANK_BLOCK,
+  BLANK_BOX,
   VARIANTS,
   type AdminFont,
   type AdminPage,
   type AdminStory,
   type TextBlock,
+  type TextBox,
   type Variant,
 } from "@/lib/admin";
 
@@ -214,6 +216,19 @@ export default function AdminPagesEditor() {
     setDirty(true);
   }
 
+  // The panel belongs to the PAGE — one box framing every row — so it is
+  // patched on the page rather than through patchBlock.
+  const textBox: TextBox = { ...BLANK_BOX(), ...(page?.textBox ?? {}) };
+
+  function patchBox(field: keyof TextBox, value: string | number | boolean) {
+    setPages((prev) =>
+      prev.map((p, i) =>
+        i === active ? { ...p, textBox: { ...textBox, [field]: value } } : p,
+      ),
+    );
+    setDirty(true);
+  }
+
   function patchBlock(field: keyof TextBlock, value: string | number | boolean) {
     setBlocks(blocks.map((b, i) => (i === row ? { ...b, [field]: value } : b)));
   }
@@ -284,7 +299,7 @@ export default function AdminPagesEditor() {
   // More than one row, or a warp, is beyond what the CSS overlay can show —
   // fall back to the real renderer for an honest preview.
   const serverPreview =
-    warpOn || blocks.length > 1 || blocks.some((b) => b.boxEnabled);
+    warpOn || blocks.length > 1 || textBox.enabled;
 
   // CSS can't reproduce an arc warp, and a preview that disagrees with the
   // render is worse than none — so once warp is on, show the ACTUAL composed
@@ -297,6 +312,7 @@ export default function AdminPagesEditor() {
         page?.letterSpacing, page?.softLineBreak, page?.outlineWidth,
         page?.warpStyle, page?.warpBend, page?.warpDistortH,
         page?.warpDistortV, page?.warpVertical, variant, page?.textBlocks,
+        page?.textBox,
       ])
     : "";
   useEffect(() => {
@@ -1219,33 +1235,33 @@ export default function AdminPagesEditor() {
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={!!block.boxEnabled}
-                  onChange={(e) => patchBlock("boxEnabled", e.target.checked)}
+                  checked={textBox.enabled}
+                  onChange={(e) => patchBox("enabled", e.target.checked)}
                   className="h-4 w-4 accent-brand-primary"
                 />
                 <span className="text-sm font-bold text-slate-deep">
                   Background box
                 </span>
                 <span className="text-xs text-slate-mutedText">
-                  a panel behind this row so the text stays readable
+                  one panel behind <b>all</b> the rows on this page
                 </span>
               </label>
 
-              {block.boxEnabled && (
+              {textBox.enabled && (
                 <div className="mt-3 space-y-3">
                   <div className="flex flex-wrap items-center gap-3">
                     <input
                       type="color"
-                      value={block.boxColor || "#FFFFFF"}
-                      onChange={(e) => patchBlock("boxColor", e.target.value)}
+                      value={textBox.color || "#FFFFFF"}
+                      onChange={(e) => patchBox("color", e.target.value)}
                       className="h-9 w-14 rounded-xl border-2 border-brand-borderAccent"
                     />
                     <label className="flex items-center gap-1.5">
                       <input
                         type="checkbox"
-                        checked={!!block.boxFullWidth}
+                        checked={textBox.fullWidth}
                         onChange={(e) =>
-                          patchBlock("boxFullWidth", e.target.checked)
+                          patchBox("fullWidth", e.target.checked)
                         }
                         className="h-4 w-4 accent-brand-primary"
                       />
@@ -1257,20 +1273,20 @@ export default function AdminPagesEditor() {
                   <Slider
                     label="Opacity"
                     min={0}
-                    value={block.boxOpacity ?? 70}
-                    onChange={(v) => patchBlock("boxOpacity", v)}
+                    value={textBox.opacity ?? 70}
+                    onChange={(v) => patchBox("opacity", v)}
                   />
                   <Slider
                     label="Padding"
                     min={0}
-                    value={block.boxPadding ?? 26}
-                    onChange={(v) => patchBlock("boxPadding", v)}
+                    value={textBox.padding ?? 26}
+                    onChange={(v) => patchBox("padding", v)}
                   />
                   <Slider
                     label="Corner"
                     min={0}
-                    value={block.boxRadius ?? 22}
-                    onChange={(v) => patchBlock("boxRadius", v)}
+                    value={textBox.radius ?? 22}
+                    onChange={(v) => patchBox("radius", v)}
                   />
                 </div>
               )}

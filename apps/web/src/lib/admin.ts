@@ -132,6 +132,7 @@ export interface AdminPage {
   warpDistortV: number;  // -100..100
   warpVertical: boolean;
   textBlocks?: TextBlock[];
+  textBox?: TextBox;
   variant?: Variant; // which gender's artwork this page belongs to
   kind?: PageKind; // derived server-side from the reserved page numbers
   label?: string;
@@ -153,19 +154,31 @@ export interface TextBlock {
   outline2Width: number; // wider second ring drawn outside the first; 0 = off
   outline2Color: string;
   shadow: boolean;
-  // Panel behind the text, so type stays readable over busy artwork.
-  boxEnabled: boolean;
-  boxColor: string;
-  boxOpacity: number;   // 0-100
-  boxPadding: number;   // px @1024
-  boxRadius: number;    // px @1024
-  boxFullWidth: boolean;
   warpStyle: "none" | "arc";
   warpBend: number;
   warpDistortH: number;
   warpDistortV: number;
   warpVertical: boolean;
 }
+
+// ONE panel behind all of a page's rows — the box frames the whole text.
+export interface TextBox {
+  enabled: boolean;
+  color: string;
+  opacity: number;   // 0-100
+  padding: number;   // px @1024
+  radius: number;    // px @1024
+  fullWidth: boolean;
+}
+
+export const BLANK_BOX = (): TextBox => ({
+  enabled: false,
+  color: "#FFFFFF",
+  opacity: 70,
+  padding: 26,
+  radius: 22,
+  fullWidth: false,
+});
 
 export const BLANK_BLOCK = (y = 50): TextBlock => ({
   text: "",
@@ -181,12 +194,6 @@ export const BLANK_BLOCK = (y = 50): TextBlock => ({
   outline2Width: 0,
   outline2Color: "#FFFFFF",
   shadow: true,
-  boxEnabled: false,
-  boxColor: "#FFFFFF",
-  boxOpacity: 70,
-  boxPadding: 26,
-  boxRadius: 22,
-  boxFullWidth: false,
   warpStyle: "none",
   warpBend: 0,
   warpDistortH: 0,
