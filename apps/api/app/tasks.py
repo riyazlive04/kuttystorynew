@@ -193,6 +193,11 @@ async def _render_one(
                 letter_spacing=getattr(template, "letterSpacing", 0) or 0,
                 soft_line_break=getattr(template, "softLineBreak", True),
                 outline_width=getattr(template, "outlineWidth", None) or 0,
+                warp_style=getattr(template, "warpStyle", None) or "none",
+                warp_bend=getattr(template, "warpBend", 0) or 0,
+                warp_distort_h=getattr(template, "warpDistortH", 0) or 0,
+                warp_distort_v=getattr(template, "warpDistortV", 0) or 0,
+                warp_vertical=bool(getattr(template, "warpVertical", False)),
             )
             os.makedirs(settings.storage_dir, exist_ok=True)
             fname = f"{job.id}_p{page_number}.jpg"

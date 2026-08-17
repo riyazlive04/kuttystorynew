@@ -49,6 +49,11 @@ const BLANK = (n: number): AdminPage => ({
   letterSpacing: 0,
   softLineBreak: true,
   outlineWidth: 3,
+  warpStyle: "none",
+  warpBend: 0,
+  warpDistortH: 0,
+  warpDistortV: 0,
+  warpVertical: false,
 });
 
 // A cover is an ordinary page template at a reserved number — same base art,
@@ -191,6 +196,51 @@ export default function AdminPagesEditor() {
   const pxScale = (boxW || DESIGN_W) / DESIGN_W;
   const outlinePx = Math.round((page?.outlineWidth ?? 3) * pxScale);
   const haloColor = outlineColor(page?.fontColor);
+  const warpOn = (page?.warpStyle || "none") !== "none";
+
+  // CSS can't reproduce an arc warp, and a preview that disagrees with the
+  // render is worse than none — so once warp is on, show the ACTUAL composed
+  // page from the server instead of the CSS overlay. Debounced; costs no AI.
+  const [warpUrl, setWarpUrl] = useState<string | null>(null);
+  const warpKey = warpOn
+    ? JSON.stringify([
+        page?.pageNumber, page?.baseImageUrl, page?.storyText, page?.textX,
+        page?.textY, page?.fontSize, page?.fontColor, page?.fontFamily,
+        page?.letterSpacing, page?.softLineBreak, page?.outlineWidth,
+        page?.warpStyle, page?.warpBend, page?.warpDistortH,
+        page?.warpDistortV, page?.warpVertical, variant,
+      ])
+    : "";
+  useEffect(() => {
+    if (!warpOn || !page?.baseImageUrl || !slug) {
+      setWarpUrl(null);
+      return;
+    }
+    let url: string | null = null;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      adminApi
+        .textPreview(slug, page, variant)
+        .then((u) => {
+          if (cancelled) {
+            URL.revokeObjectURL(u);
+            return;
+          }
+          url = u;
+          setWarpUrl((old) => {
+            if (old) URL.revokeObjectURL(old);
+            return u;
+          });
+        })
+        .catch(() => {});
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+      if (url) URL.revokeObjectURL(url);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [warpKey]);
   const [tracing, setTracing] = useState(false);
   const [livePath, setLivePath] = useState<number[][]>([]);
   const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -890,6 +940,61 @@ export default function AdminPagesEditor() {
               </span>
             </label>
 
+            {/* Warp — mirrors Photoshop's Warp Options dialog */}
+            <div className="rounded-xl border-2 border-brand-borderAccent p-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-sm font-bold text-slate-deep">Warp</span>
+                <select
+                  value={page.warpStyle || "none"}
+                  onChange={(e) => patch("warpStyle", e.target.value)}
+                  className="rounded-lg border-2 border-brand-borderAccent px-2 py-1 text-sm outline-none focus:border-brand-primary"
+                >
+                  <option value="none">None</option>
+                  <option value="arc">Arc</option>
+                </select>
+                {warpOn && (
+                  <div className="flex items-center gap-3">
+                    {([false, true] as const).map((vert) => (
+                      <label key={String(vert)} className="flex items-center gap-1.5">
+                        <input
+                          type="radio"
+                          checked={!!page.warpVertical === vert}
+                          onChange={() => patch("warpVertical", vert)}
+                          className="h-3.5 w-3.5 accent-brand-primary"
+                        />
+                        <span className="text-xs font-semibold text-slate-deep">
+                          {vert ? "Vertical" : "Horizontal"}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {warpOn && (
+                <div className="mt-3 space-y-2">
+                  <Slider
+                    label="Bend"
+                    value={page.warpBend ?? 0}
+                    onChange={(v) => patch("warpBend", v)}
+                  />
+                  <p className="pt-1 text-xs font-semibold text-slate-mutedText">
+                    Distortion
+                  </p>
+                  <Slider
+                    label="Horizontal"
+                    value={page.warpDistortH ?? 0}
+                    onChange={(v) => patch("warpDistortH", v)}
+                  />
+                  <Slider
+                    label="Vertical"
+                    value={page.warpDistortV ?? 0}
+                    onChange={(v) => patch("warpDistortV", v)}
+                  />
+                </div>
+              )}
+            </div>
+
             <div className="flex gap-3 pt-2">
               <button onClick={save} disabled={saving} className="btn-primary flex-1">
                 {saving ? (
@@ -928,7 +1033,7 @@ export default function AdminPagesEditor() {
               {page.baseImageUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={page.baseImageUrl}
+                  src={warpUrl || page.baseImageUrl}
                   alt="Base illustration"
                   draggable={false}
                   className="pointer-events-none absolute inset-0 h-full w-full object-cover"
@@ -951,7 +1056,9 @@ export default function AdminPagesEditor() {
                 </svg>
               )}
               <div
-                className="pointer-events-none absolute w-[86%] -translate-x-1/2 -translate-y-1/2 text-center"
+                className={`pointer-events-none absolute w-[86%] -translate-x-1/2 -translate-y-1/2 text-center ${
+                  warpOn ? "hidden" : ""
+                }`}
                 style={{
                   left: `${page.textX}%`,
                   top: `${page.textY}%`,
@@ -989,6 +1096,15 @@ export default function AdminPagesEditor() {
                 style={{ left: `${page.textX}%`, top: `${page.textY}%` }}
               />
             </div>
+            {warpOn && (
+              <p className="mt-2 text-xs font-semibold text-brand-primary">
+                {warpUrl
+                  ? "Warped text composed by the real renderer — this is exactly what gets burned in."
+                  : page.baseImageUrl
+                    ? "Composing the warped text…"
+                    : "Upload base art to preview the warp."}
+              </p>
+            )}
             <p className="mt-2 text-xs text-slate-400">
               With base art set, the engine face-swaps the child onto this fixed
               illustration; otherwise it renders the scene prompt via FLUX+PuLID.
@@ -1012,6 +1128,46 @@ export default function AdminPagesEditor() {
           border-color: #9333ea;
         }
       `}</style>
+    </div>
+  );
+}
+
+// Photoshop's warp sliders: -100..100 with the numeric box beside them.
+function Slider({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-20 shrink-0 text-xs font-semibold text-slate-mutedText">
+        {label}:
+      </span>
+      <input
+        type="range"
+        min={-100}
+        max={100}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="h-1 flex-1 accent-brand-primary"
+      />
+      <div className="flex w-16 shrink-0 items-center rounded-lg border-2 border-brand-borderAccent px-1.5 py-0.5">
+        <input
+          type="number"
+          min={-100}
+          max={100}
+          value={value}
+          onChange={(e) =>
+            onChange(Math.max(-100, Math.min(100, Number(e.target.value))))
+          }
+          className="w-full text-right text-xs outline-none"
+        />
+        <span className="text-xs text-slate-400">%</span>
+      </div>
     </div>
   );
 }

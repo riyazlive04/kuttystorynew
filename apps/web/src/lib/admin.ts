@@ -125,6 +125,11 @@ export interface AdminPage {
   letterSpacing: number;
   softLineBreak: boolean;
   outlineWidth: number; // px @1024; 0 = no outline
+  warpStyle: "none" | "arc";
+  warpBend: number;      // -100..100
+  warpDistortH: number;  // -100..100
+  warpDistortV: number;  // -100..100
+  warpVertical: boolean;
   variant?: Variant; // which gender's artwork this page belongs to
   kind?: PageKind; // derived server-side from the reserved page numbers
   label?: string;
@@ -186,6 +191,29 @@ export const adminApi = {
       method: "DELETE",
     }),
   fonts: (): Promise<AdminFont[]> => req("/admin/fonts"),
+  // Compose the page's text over its base art with the REAL renderer and hand
+  // back a JPEG object URL — no CSS approximation, no AI cost.
+  textPreview: async (
+    slug: string,
+    page: AdminPage,
+    variant: Variant = "boy",
+  ): Promise<string> => {
+    const API = process.env.NEXT_PUBLIC_API_URL;
+    if (!API) throw new Error("Backend not configured.");
+    const res = await fetch(
+      `${API}/admin/stories/${slug}/pages/${page.pageNumber}/text-preview`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({ ...page, variant }),
+      },
+    );
+    if (!res.ok) throw new Error("Preview failed");
+    return URL.createObjectURL(await res.blob());
+  },
   deleteFont: (key: string): Promise<{ ok: boolean; families: AdminFont[] }> =>
     req(`/admin/fonts/${encodeURIComponent(key)}`, { method: "DELETE" }),
   uploadFont: async (

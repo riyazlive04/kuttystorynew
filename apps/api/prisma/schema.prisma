@@ -103,6 +103,12 @@ model PageTemplate {
   letterSpacing Float   @default(0)        // px @1024 canvas, may be negative
   softLineBreak Boolean @default(true)     // start a new line at each sentence end
   outlineWidth  Int     @default(3)        // px @1024; 0 = none (light text panels)
+  // Photoshop-style warp (see app/warp.py). All percentages, -100..100.
+  warpStyle     String  @default("none")   // "none" | "arc"
+  warpBend      Float   @default(0)
+  warpDistortH  Float   @default(0)
+  warpDistortV  Float   @default(0)
+  warpVertical  Boolean @default(false)    // bend along the vertical axis
 
   @@unique([bookTemplateId, variant, pageNumber])
 }

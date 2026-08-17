@@ -17,6 +17,7 @@ import httpx
 from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont
 
 from .config import settings
+from .warp import STYLE_ARC, STYLE_NONE, warp_layer
 
 # Sentence end followed by a space: ". " / "! " / "? " — the split point for the
 # text layer's line breaks. Decimals ("4.5") lack the trailing space, so they
@@ -281,6 +282,11 @@ def compose_page(
     letter_spacing: float = 0.0,
     soft_line_break: bool = True,
     outline_width: int = DEFAULT_OUTLINE,
+    warp_style: str = STYLE_NONE,
+    warp_bend: float = 0.0,
+    warp_distort_h: float = 0.0,
+    warp_distort_v: float = 0.0,
+    warp_vertical: bool = False,
 ) -> Image.Image:
     """Return a PIL image with the personalised story line burned in."""
     img = _load_image(image_src)
@@ -318,6 +324,12 @@ def compose_page(
 
     halo = outline_color(font_color)
 
+    # The text is drawn into its own transparent layer rather than straight onto
+    # the page, so the warp can be applied to the finished type — glyphs, stroke
+    # and shadow bending together — before it is composited down.
+    text_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    tdraw = ImageDraw.Draw(text_layer)
+
     if stroke:
         # A real drop shadow: drawn into an RGBA layer, blurred, then composited.
         # (Passing an RGBA fill straight to an RGB canvas silently discards the
@@ -329,16 +341,27 @@ def compose_page(
             _draw_tracked(
                 sdraw, (x + offset, y + offset), line, font, (*halo, 120), tracking
             )
-        shadow = shadow.filter(ImageFilter.GaussianBlur(max(1, stroke)))
-        img = Image.alpha_composite(img.convert("RGBA"), shadow).convert("RGB")
-        draw = ImageDraw.Draw(img)
+        text_layer.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(max(1, stroke))))
 
     for line, x, y in placed:
         _draw_tracked(
-            draw, (x, y), line, font, font_color, tracking,
+            tdraw, (x, y), line, font, font_color, tracking,
             stroke_width=stroke, stroke_fill=halo,
         )
-    return img
+
+    if warp_style and warp_style != STYLE_NONE:
+        text_layer = warp_layer(
+            text_layer,
+            style=warp_style,
+            bend=warp_bend,
+            distort_h=warp_distort_h,
+            distort_v=warp_distort_v,
+            vertical=warp_vertical,
+        )
+
+    out = img.convert("RGBA")
+    out.alpha_composite(text_layer)
+    return out.convert("RGB")
 
 
 def compose_to_bytes(fmt: str = "JPEG", quality: int = 92, **kwargs) -> bytes:

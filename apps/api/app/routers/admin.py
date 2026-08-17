@@ -3,6 +3,7 @@
 Auth: send `Authorization: Bearer <ADMIN_TOKEN>` (or `X-Admin-Token`).
 Kept intentionally simple; swap for real user auth / RBAC in production.
 """
+import asyncio
 import os
 import uuid
 from typing import Literal, Optional
@@ -444,6 +445,11 @@ def _page_dict(p) -> dict:
         "letterSpacing": getattr(p, "letterSpacing", 0) or 0,
         "softLineBreak": getattr(p, "softLineBreak", True),
         "outlineWidth": getattr(p, "outlineWidth", 3),
+        "warpStyle": getattr(p, "warpStyle", None) or "none",
+        "warpBend": getattr(p, "warpBend", 0) or 0,
+        "warpDistortH": getattr(p, "warpDistortH", 0) or 0,
+        "warpDistortV": getattr(p, "warpDistortV", 0) or 0,
+        "warpVertical": bool(getattr(p, "warpVertical", False)),
         "variant": getattr(p, "variant", None) or "boy",
         # Derived from the reserved page numbers — the editor labels tabs with it.
         "kind": kind_of(p.pageNumber),
@@ -539,6 +545,11 @@ class PageUpsert(BaseModel):
     letterSpacing: float = 0
     softLineBreak: bool = True
     outlineWidth: int = 3
+    warpStyle: Literal["none", "arc"] = "none"
+    warpBend: float = 0
+    warpDistortH: float = 0
+    warpDistortV: float = 0
+    warpVertical: bool = False
 
 
 @router.get("/stories/{slug}/pages", dependencies=[Depends(require_admin)])
@@ -596,6 +607,49 @@ async def admin_delete_page(slug: str, page_number: int, variant: str = "boy"):
         }
     )
     return {"ok": True}
+
+
+@router.post(
+    "/stories/{slug}/pages/{page_number}/text-preview",
+    dependencies=[Depends(require_admin)],
+)
+async def admin_text_preview(slug: str, page_number: int, body: PageUpsert):
+    """Compose the page's text over its base art and return the JPEG.
+
+    This is the REAL text layer, not a CSS approximation — warp, fonts, letter
+    spacing, outline and shadow all come out exactly as they will on the printed
+    page. No AI is involved, so it costs nothing but a few milliseconds.
+    """
+    from fastapi.responses import Response
+
+    from ..text_layer import compose_to_bytes
+
+    base = (body.baseImageUrl or "").strip()
+    if not base:
+        raise HTTPException(status_code=400, detail="This page has no base art yet")
+    try:
+        data = await asyncio.to_thread(
+            compose_to_bytes,
+            image_src=base,
+            story_text=body.storyText,
+            child_name="Aarav",
+            text_x_pct=body.textX,
+            text_y_pct=body.textY,
+            font_size=body.fontSize,
+            font_color=body.fontColor,
+            font_family=body.fontFamily,
+            letter_spacing=body.letterSpacing,
+            soft_line_break=body.softLineBreak,
+            outline_width=body.outlineWidth,
+            warp_style=body.warpStyle,
+            warp_bend=body.warpBend,
+            warp_distort_h=body.warpDistortH,
+            warp_distort_v=body.warpDistortV,
+            warp_vertical=body.warpVertical,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not compose: {e}")
+    return Response(content=data, media_type="image/jpeg")
 
 
 class GenerateBaseBody(BaseModel):
