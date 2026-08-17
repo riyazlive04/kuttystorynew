@@ -9,6 +9,7 @@ import os
 import httpx
 from PIL import Image, ImageDraw
 
+from .color import to_cmyk
 from .config import settings
 from .text_layer import _load_font, personalize
 
@@ -116,12 +117,17 @@ def build_preview_pdf(job) -> str:
 def build_book_pdf(job) -> str:
     """Combine all pages into a CMYK print PDF; return its /uploads URL.
 
+    Pages are composed in sRGB (that's what the models return and what the web
+    preview needs); the conversion to CMYK happens here, once, through an ICC
+    profile when one is installed — see app.color for why `convert("CMYK")`
+    alone is not good enough for print.
+
     Takes an already-fetched job (the worker owns its own Prisma connection, so
     this stays DB-agnostic).
     """
     pages = list(job.pages) if job.pages else []
     imgs = [
-        _page_image(p, job.childName, i).convert("CMYK")
+        to_cmyk(_page_image(p, job.childName, i))
         for i, p in enumerate(pages)
     ]
     if not imgs:

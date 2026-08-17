@@ -95,6 +95,8 @@ async def public_config():
 
 @app.get("/health", tags=["meta"])
 async def health():
+    from .color import describe as color_describe
+
     db_ok = prisma.is_connected()
     return {
         "status": "ok" if db_ok else "degraded",
@@ -102,4 +104,7 @@ async def health():
         "payments_live": settings.payments_live,
         "gpu_live": settings.gpu_live,
         "environment": settings.environment,
+        # Which profile the print PDF is being converted through, so a colour
+        # problem can be diagnosed without shelling into the container.
+        "print": color_describe(),
     }

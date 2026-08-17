@@ -13,10 +13,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Extra families offered by the page editor's font picker. Optional on purpose:
-# if a package is unavailable the text layer just falls back to DejaVu.
+# Extra families offered by the page editor's font picker, plus free ICC
+# profiles so the print PDF's RGB->CMYK conversion is colour-managed. Optional
+# on purpose: without them the text layer falls back to DejaVu and the colour
+# conversion falls back to its own black generation (see app/color.py).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-liberation fonts-comic-neue \
+    && apt-get install -y --no-install-recommends \
+       fonts-liberation fonts-comic-neue icc-profiles-free \
     ; rm -rf /var/lib/apt/lists/*
 
 # Use the system Node instead of downloading a nodeenv at generate time.
