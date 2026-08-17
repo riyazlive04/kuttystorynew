@@ -170,6 +170,30 @@ async def _render_one(
         seed=render_seed(page_number) if seed is None else seed,
     )
 
+    # Re-seat the swapped face into the FULL-RESOLUTION base art before any
+    # text goes on. The provider hands back ~1024px whatever we send it, which
+    # is only ~124 dpi at 210mm; the base art the admin uploaded is usually far
+    # larger, and everything except the face is identical in both.
+    if base_image_url and face_region and image_url:
+        try:
+            from .reintegrate import merge_face
+            from .text_layer import _load_image
+
+            merged = merge_face(
+                _load_image(base_image_url), _load_image(image_url), face_region
+            )
+            if merged is not None:
+                os.makedirs(settings.storage_dir, exist_ok=True)
+                fname = f"{job.id}_p{page_number}_hi.jpg"
+                merged.save(
+                    os.path.join(settings.storage_dir, fname),
+                    quality=96,
+                    subsampling=0,
+                )
+                image_url = f"/uploads/{fname}"
+        except Exception:
+            pass  # keep the provider's frame if anything about the merge fails
+
     # Real raster output -> burn text with PIL and persist a composed JPEG.
     # (http = hosted model output; /uploads = a swapped page saved locally.)
     # Skip when there's no story text (e.g. templates that already have the text
