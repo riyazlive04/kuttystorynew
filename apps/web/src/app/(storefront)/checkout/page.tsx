@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Lock, ShieldCheck } from "lucide-react";
 import { useCart } from "@/lib/cart";
 import { inr } from "@/lib/format";
-import { createOrder } from "@/lib/api";
+import { createOrder, verifyPayment } from "@/lib/api";
 import { payWithRazorpay } from "@/lib/razorpay";
 import type { OrderInput } from "@/lib/types";
 
@@ -64,6 +64,7 @@ export default function CheckoutPage() {
         email: form.email,
         phone: form.phone,
         orderTitle: `KuttyStory · ${items.length} book(s)`,
+        receipt: `kutty_${Date.now()}`,
       });
 
       const input: OrderInput = {
@@ -76,6 +77,19 @@ export default function CheckoutPage() {
         total,
       };
       const order = await createOrder(input);
+
+      // Verify server-side before treating the order as paid: the signature is
+      // the only proof the payment is genuine, and it can only be checked with
+      // the key secret, which never leaves the backend.
+      if (!payment.mock) {
+        await verifyPayment({
+          orderId: order.id,
+          razorpayOrderId: payment.orderId,
+          razorpayPaymentId: payment.paymentId,
+          razorpaySignature: payment.signature,
+        });
+      }
+
       clear();
       router.push(
         `/order/${order.id}?pid=${encodeURIComponent(payment.paymentId)}`,

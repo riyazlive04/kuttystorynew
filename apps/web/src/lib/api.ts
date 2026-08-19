@@ -224,6 +224,36 @@ export async function getJob(jobId: string): Promise<Job | undefined> {
   return raw ? deriveMockJob(raw) : undefined;
 }
 
+/** Hand the Razorpay receipt to the backend, which recomputes the signature
+ *  and only then marks our order paid. Without this the order stays pending
+ *  until the webhook reconciles it. Returns false when there is no backend. */
+export async function verifyPayment(args: {
+  orderId: string;
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  razorpaySignature: string;
+}): Promise<boolean> {
+  if (!API) return false;
+  const res = await fetch(`${API}/payments/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      orderId: args.orderId,
+      razorpay_order_id: args.razorpayOrderId,
+      razorpay_payment_id: args.razorpayPaymentId,
+      razorpay_signature: args.razorpaySignature,
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((j) => (typeof j?.detail === "string" ? j.detail : null))
+      .catch(() => null);
+    throw new Error(detail || "We could not verify that payment.");
+  }
+  return true;
+}
+
 export async function createOrder(input: OrderInput): Promise<Order> {
   if (API) {
     const res = await fetch(`${API}/orders`, {

@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -8,6 +9,11 @@ from ..db import prisma
 from ..schemas import CreatePaymentIn, CreatePaymentOut, VerifyPaymentIn
 
 router = APIRouter(prefix="/payments", tags=["payments"])
+
+log = logging.getLogger(__name__)
+
+# Razorpay rejects anything under 1 rupee.
+MIN_PAISE = 100
 
 
 def _razorpay_client():
@@ -22,6 +28,11 @@ def _razorpay_client():
 async def create_payment_order(payload: CreatePaymentIn):
     """Create a Razorpay order. Amount arrives in rupees, Razorpay wants paise."""
     amount_paise = payload.amount * 100
+    if amount_paise < MIN_PAISE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Amount must be at least {MIN_PAISE} paise (₹1).",
+        )
 
     if not settings.payments_live:
         # Mock mode — no credentials configured.
@@ -30,17 +41,58 @@ async def create_payment_order(payload: CreatePaymentIn):
         )
 
     client = _razorpay_client()
-    rp_order = client.order.create(
-        {"amount": amount_paise, "currency": "INR", "payment_capture": 1}
-    )
+    try:
+        rp_order = client.order.create(
+            {
+                "amount": amount_paise,
+                "currency": "INR",
+                "payment_capture": 1,
+                # Our own reference, so a payment can be traced back from the
+                # Razorpay dashboard without opening the database.
+                "receipt": payload.receipt or "",
+            }
+        )
+    except Exception as exc:
+        # Bad or revoked keys must not read as a transient outage — that
+        # distinction is what tells you to check credentials vs retry.
+        if _is_auth_error(exc):
+            log.error("Razorpay rejected our credentials: %s", exc)
+            raise HTTPException(
+                status_code=401, detail="Payment gateway authentication failed."
+            )
+        log.exception("Razorpay order creation failed")
+        raise HTTPException(
+            status_code=500, detail="Could not reach the payment gateway."
+        )
+
     return CreatePaymentOut(
         id=rp_order["id"], amount=amount_paise, currency="INR", live=True
     )
 
 
+def _is_auth_error(exc: Exception) -> bool:
+    """True when Razorpay refused the API key rather than the request."""
+    try:
+        import razorpay.errors as rp_errors
+
+        if isinstance(exc, getattr(rp_errors, "BadRequestError", ())):
+            return "authent" in str(exc).lower()
+    except Exception:
+        pass
+    text = str(exc).lower()
+    return "401" in text or "unauthor" in text or "authentication" in text
+
+
 @router.post("/verify")
 async def verify_payment(payload: VerifyPaymentIn):
     """Verify the Razorpay signature and mark our order paid."""
+    if not (
+        payload.razorpay_order_id
+        and payload.razorpay_payment_id
+        and payload.razorpay_signature
+    ):
+        raise HTTPException(status_code=400, detail="Missing payment fields")
+
     order = await prisma.order.find_unique(where={"id": payload.orderId})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")

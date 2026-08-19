@@ -104,6 +104,7 @@ class OrderOut(BaseModel):
 
 class CreatePaymentIn(BaseModel):
     amount: int  # rupees
+    receipt: Optional[str] = None  # our reference, shown in the Razorpay dashboard
 
 
 class CreatePaymentOut(BaseModel):
