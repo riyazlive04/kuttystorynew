@@ -8,6 +8,8 @@ import { Loader2, Lock, ShieldCheck } from "lucide-react";
 import { useCart } from "@/lib/cart";
 import { inr } from "@/lib/format";
 import { createOrder, verifyPayment } from "@/lib/api";
+import { INDIAN_STATES, INDIAN_UNION_TERRITORIES } from "@/lib/india";
+import { FormatSwitch } from "@/components/FormatSwitch";
 import { payWithRazorpay } from "@/lib/razorpay";
 import type { OrderInput } from "@/lib/types";
 
@@ -34,6 +36,7 @@ export default function CheckoutPage() {
   const discount = useCart((s) => s.discount());
   const promoCode = useCart((s) => s.promoCode);
   const clear = useCart((s) => s.clear);
+  const setFormat = useCart((s) => s.setFormat);
 
   useEffect(() => setMounted(true), []);
   if (!mounted) return <div className="container-x py-24" />;
@@ -145,7 +148,11 @@ export default function CheckoutPage() {
                   <Input label="Address line 2 (optional)" value={form.address2} onChange={(v) => set("address2", v)} />
                 </div>
                 <Input label="City" value={form.city} onChange={(v) => set("city", v)} />
-                <Input label="State" value={form.state} onChange={(v) => set("state", v)} />
+                <Select
+                  label="State"
+                  value={form.state}
+                  onChange={(v) => set("state", v)}
+                />
                 <Input label="PIN code" value={form.pincode} onChange={(v) => set("pincode", v)} />
               </div>
             </section>
@@ -172,8 +179,13 @@ export default function CheckoutPage() {
                   <div className="flex-1 text-sm">
                     <p className="font-semibold text-slate-deep">{i.storyTitle}</p>
                     <p className="text-xs text-slate-mutedText">
-                      {i.childName} · {i.format === "pdf" ? "PDF" : "Hardcover"} ×{i.quantity}
+                      {i.childName} · ×{i.quantity}
                     </p>
+                    <FormatSwitch
+                      value={i.format}
+                      onChange={(f) => setFormat(i.id, f)}
+                      compact
+                    />
                   </div>
                   <span className="text-sm font-bold text-slate-deep">
                     {inr(i.unitPrice * i.quantity)}
@@ -233,6 +245,45 @@ export default function CheckoutPage() {
         </aside>
       </div>
     </div>
+  );
+}
+
+function Select({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-sm font-semibold text-slate-deep">
+        {label}
+      </span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-primary"
+      >
+        <option value="">Select a state…</option>
+        <optgroup label="States">
+          {INDIAN_STATES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </optgroup>
+        <optgroup label="Union Territories">
+          {INDIAN_UNION_TERRITORIES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </optgroup>
+      </select>
+    </label>
   );
 }
 

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Minus, Plus, ShoppingBag, Tag, Trash2, X } from "lucide-react";
 import { useCart } from "@/lib/cart";
 import { inr, languageLabel } from "@/lib/format";
+import { FormatSwitch } from "@/components/FormatSwitch";
 
 export default function CartPage() {
   const [mounted, setMounted] = useState(false);
@@ -16,6 +17,7 @@ export default function CartPage() {
   const items = useCart((s) => s.items);
   const setQty = useCart((s) => s.setQty);
   const remove = useCart((s) => s.remove);
+  const setFormat = useCart((s) => s.setFormat);
   const subtotal = useCart((s) => s.subtotal());
   const discount = useCart((s) => s.discount());
   const promoCode = useCart((s) => s.promoCode);
@@ -76,10 +78,12 @@ export default function CartPage() {
                       {item.storyTitle}
                     </h3>
                     <p className="text-sm text-slate-mutedText">
-                      For {item.childName} ·{" "}
-                      {item.format === "pdf" ? "Instant PDF" : "Hardcover"} ·{" "}
-                      {languageLabel(item.language)}
+                      For {item.childName} · {languageLabel(item.language)}
                     </p>
+                    <FormatSwitch
+                      value={item.format}
+                      onChange={(f) => setFormat(item.id, f)}
+                    />
                   </div>
                   <button
                     onClick={() => remove(item.id)}

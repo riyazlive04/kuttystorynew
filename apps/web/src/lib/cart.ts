@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { CartItem } from "./types";
+import { priceFor } from "./pricing";
 
 export const PROMO_CODE = "STORY20";
 const PROMO_MIN_ITEMS = 2;
@@ -14,6 +15,7 @@ interface CartState {
   add: (item: CartItem) => void;
   remove: (id: string) => void;
   setQty: (id: string, qty: number) => void;
+  setFormat: (id: string, format: CartItem["format"]) => void;
   clear: () => void;
   applyPromo: (code: string) => { ok: boolean; message: string };
   removePromo: () => void;
@@ -55,6 +57,35 @@ export const useCart = create<CartState>()(
             i.id === id ? { ...i, quantity: Math.max(1, qty) } : i,
           ),
         })),
+      // Switching PDF <-> hardcover reprices the line. The id encodes the
+      // format, so it changes too — and if the cart already holds the same book
+      // in the target format the two lines merge rather than sitting as
+      // duplicates the customer has to reconcile.
+      setFormat: (id, format) =>
+        set((s) => {
+          const line = s.items.find((i) => i.id === id);
+          if (!line || line.format === format) return {};
+          const nextId = `${line.jobId}-${format}`;
+          const twin = s.items.find((i) => i.id !== id && i.id === nextId);
+          if (twin) {
+            return {
+              items: s.items
+                .filter((i) => i.id !== id)
+                .map((i) =>
+                  i.id === nextId
+                    ? { ...i, quantity: i.quantity + line.quantity }
+                    : i,
+                ),
+            };
+          }
+          return {
+            items: s.items.map((i) =>
+              i.id === id
+                ? { ...i, id: nextId, format, unitPrice: priceFor(format) }
+                : i,
+            ),
+          };
+        }),
       clear: () => set({ items: [], promoCode: null }),
       applyPromo: (code) => {
         const normalized = code.trim().toUpperCase();

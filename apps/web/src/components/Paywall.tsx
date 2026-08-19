@@ -3,8 +3,12 @@
 import { CheckCircle2, Download, Lock, Package } from "lucide-react";
 import { inr } from "@/lib/format";
 
-export const PAYWALL_PDF = 799;
-export const PAYWALL_PRINT = 1299;
+import { PDF_PRICE, PRINT_PRICE } from "@/lib/pricing";
+
+// Re-exported so existing imports keep working; the numbers live in lib/pricing
+// because the cart store needs them too and must not import a component.
+export const PAYWALL_PDF = PDF_PRICE;
+export const PAYWALL_PRINT = PRINT_PRICE;
 
 export function Paywall({
   onSelect,
