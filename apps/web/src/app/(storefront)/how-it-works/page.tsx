@@ -1,12 +1,14 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Steps } from "@/components/Marketing";
 import { Faq } from "@/components/Faq";
 import { ArrowRight, Truck, Palette, ShieldCheck, Globe2 } from "lucide-react";
 
-export const metadata = {
-  title: "How It Works | KuttyStory",
+export const metadata: Metadata = {
+  title: "How It Works - Personalized Storybooks in Minutes | KuttyStory",
   description:
-    "See how KuttyStory turns your child's photo and name into a beautiful personalized storybook in minutes.",
+    "See how KuttyStory turns your child's photo and name into a beautiful personalized storybook in minutes - free preview, then instant PDF or a printed hardcover delivered across India.",
+  alternates: { canonical: "/how-it-works" },
 };
 
 export default function HowItWorksPage() {

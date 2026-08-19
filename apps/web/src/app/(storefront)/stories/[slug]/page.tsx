@@ -1,52 +1,85 @@
-"use client";
-
-import { useEffect, useState } from "react";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Check, Loader2, Star } from "lucide-react";
-import { fetchStory } from "@/lib/api";
-import type { Story } from "@/lib/types";
-import { inr } from "@/lib/format";
+import { notFound } from "next/navigation";
+import { ArrowLeft, Check, Star } from "lucide-react";
+import { JsonLd } from "@/components/JsonLd";
 import { PersonalizeWizard } from "@/components/PersonalizeWizard";
+import { getStories, getStoryBySlug, STORY_REVALIDATE } from "@/lib/stories.server";
+import {
+  SITE_URL,
+  abs,
+  breadcrumbJsonLd,
+  socialImage,
+  storyJsonLd,
+} from "@/lib/seo";
+import { inr } from "@/lib/format";
 
-export default function StoryDetailPage({
-  params,
-}: {
-  params: { slug: string };
-}) {
-  const [story, setStory] = useState<Story | null | undefined>(undefined);
+export const revalidate = STORY_REVALIDATE;
+// Titles added in the CMS after a build still render, on demand.
+export const dynamicParams = true;
 
-  useEffect(() => {
-    // Backend is the source of truth (falls back to bundled sample data).
-    fetchStory(params.slug)
-      .then((s) => setStory(s ?? null))
-      .catch(() => setStory(null));
-  }, [params.slug]);
+type Props = { params: { slug: string } };
 
-  if (story === undefined) {
-    return (
-      <div className="container-x grid place-items-center py-32">
-        <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
-      </div>
-    );
+export async function generateStaticParams() {
+  const stories = await getStories();
+  return stories.map((s) => ({ slug: s.slug }));
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const story = await getStoryBySlug(params.slug);
+  if (!story) {
+    return { title: "Story not found | KuttyStory", robots: { index: false } };
   }
 
-  if (story === null) {
-    return (
-      <div className="container-x py-24 text-center">
-        <h1 className="text-2xl font-bold text-slate-deep">Story not found</h1>
-        <p className="mt-2 text-slate-mutedText">
-          This book may have been unpublished.
-        </p>
-        <Link href="/stories" className="btn-primary mt-6 inline-flex">
-          Browse the library
-        </Link>
-      </div>
-    );
-  }
+  const url = `${SITE_URL}/stories/${story.slug}`;
+  const title = `${story.title} - Personalized Storybook | KuttyStory`;
+  const description = `${story.tagline} ${story.ageRange}. Personalized with your child's name and face${
+    story.supportsTamil ? ", in English or Tamil" : ""
+  }. Free preview, then ${inr(story.pdfPrice)} PDF or ${inr(
+    story.printPrice,
+  )} printed hardcover.`;
+
+  const cover = socialImage(story.coverImage);
+
+  return {
+    title,
+    description,
+    alternates: { canonical: `/stories/${story.slug}` },
+    openGraph: {
+      title: `${story.title} - a storybook starring your child`,
+      description: story.tagline,
+      url,
+      type: "article",
+      // Omitted for SVG covers so the generated PNG card is used instead.
+      ...(cover ? { images: [{ url: cover, alt: story.title }] } : {}),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${story.title} | KuttyStory`,
+      description: story.tagline,
+      ...(cover ? { images: [cover] } : {}),
+    },
+  };
+}
+
+export default async function StoryDetailPage({ params }: Props) {
+  const story = await getStoryBySlug(params.slug);
+  if (!story) notFound();
 
   return (
     <div className="container-x py-8 md:py-12">
+      <JsonLd
+        data={[
+          storyJsonLd(story),
+          breadcrumbJsonLd([
+            { name: "Home", path: "/" },
+            { name: "Story Library", path: "/stories" },
+            { name: story.title, path: `/stories/${story.slug}` },
+          ]),
+        ]}
+      />
+
       <Link
         href="/stories"
         className="mb-6 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-mutedText transition hover:text-slate-deep"
@@ -60,7 +93,7 @@ export default function StoryDetailPage({
           <div className="relative aspect-square w-full overflow-hidden rounded-4xl border-4 border-white shadow-xl">
             <Image
               src={story.coverImage}
-              alt={story.title}
+              alt={`${story.title} - personalized children's storybook cover`}
               fill
               priority
               sizes="(max-width: 1024px) 100vw, 600px"
@@ -79,7 +112,7 @@ export default function StoryDetailPage({
               >
                 <Image
                   src={g}
-                  alt={`${story.title} preview ${i + 1}`}
+                  alt={`${story.title} inside page preview ${i + 1}`}
                   fill
                   sizes="200px"
                   className="object-cover"

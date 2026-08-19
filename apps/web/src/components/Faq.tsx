@@ -2,29 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
-
-const FAQS = [
-  {
-    q: "How does the personalization work?",
-    a: "You give us your child's name, age and a photo. Our illustration studio weaves them into a professionally written story so your child becomes the star of every page.",
-  },
-  {
-    q: "Is the preview really free?",
-    a: "Yes! You get an 8-page preview instantly with zero commitment. You only pay when you decide to unlock the full book as a PDF or order a printed copy.",
-  },
-  {
-    q: "Do you support Tamil?",
-    a: "Most of our titles are available in English and Tamil. Look for the தமிழ் ✓ badge on a story.",
-  },
-  {
-    q: "How long does printing and delivery take?",
-    a: "Printed hardcovers are produced within 2-3 business days and delivered free across India, typically within 4-7 days of your order.",
-  },
-  {
-    q: "What if I'm not happy with my book?",
-    a: "Because you approve the full preview before paying, surprises are rare - but if something's wrong with a printed copy, we'll reprint or refund it.",
-  },
-];
+import { FAQS } from "@/lib/faqs";
 
 export function Faq() {
   const [open, setOpen] = useState<number | null>(0);
@@ -41,6 +19,7 @@ export function Faq() {
               <div key={f.q} className="card overflow-hidden">
                 <button
                   onClick={() => setOpen(isOpen ? null : i)}
+                  aria-expanded={isOpen}
                   className="flex w-full items-center justify-between gap-4 px-6 py-5 text-left"
                 >
                   <span className="font-bold text-slate-deep">{f.q}</span>
@@ -50,11 +29,19 @@ export function Faq() {
                     }`}
                   />
                 </button>
-                {isOpen && (
-                  <p className="px-6 pb-5 text-sm leading-relaxed text-slate-mutedText">
-                    {f.a}
-                  </p>
-                )}
+                {/* Collapsed with CSS rather than unmounted, so every answer is
+                    in the crawled HTML and matches the FAQPage markup. */}
+                <div
+                  className={`grid transition-all duration-300 ${
+                    isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                  }`}
+                >
+                  <div className="overflow-hidden">
+                    <p className="px-6 pb-5 text-sm leading-relaxed text-slate-mutedText">
+                      {f.a}
+                    </p>
+                  </div>
+                </div>
               </div>
             );
           })}

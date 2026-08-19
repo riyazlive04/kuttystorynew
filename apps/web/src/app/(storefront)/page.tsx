@@ -1,6 +1,4 @@
-"use client";
-
-import { useEffect, useState } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Hero } from "@/components/Hero";
 import { StoryCard } from "@/components/StoryCard";
@@ -8,19 +6,29 @@ import { PricingTier } from "@/components/PricingTier";
 import { Steps, Reviews } from "@/components/Marketing";
 import { Faq } from "@/components/Faq";
 import { TrustBar } from "@/components/TrustBar";
-import { listStories } from "@/lib/api";
-import type { Story } from "@/lib/types";
+import { JsonLd } from "@/components/JsonLd";
+import { FAQS } from "@/lib/faqs";
+import { getStories, STORY_REVALIDATE } from "@/lib/stories.server";
+import { faqJsonLd, organizationJsonLd, websiteJsonLd } from "@/lib/seo";
 import { ArrowRight } from "lucide-react";
 
-export default function HomePage() {
-  const [featured, setFeatured] = useState<Story[]>([]);
-  useEffect(() => {
-    listStories()
-      .then((s) => setFeatured(s.slice(0, 6)))
-      .catch(() => {});
-  }, []);
+export const revalidate = STORY_REVALIDATE;
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
+
+export default async function HomePage() {
+  // Fetched on the server so the "Popular stories" grid is in the HTML a
+  // crawler receives, not painted in afterwards by an effect.
+  const featured = (await getStories()).slice(0, 6);
+
   return (
     <>
+      <JsonLd
+        data={[organizationJsonLd(), websiteJsonLd(), faqJsonLd(FAQS)]}
+      />
+
       <Hero />
 
       <TrustBar />

@@ -51,6 +51,8 @@ services:
       args:
         # Baked in at build time — must be the public origin, not localhost,
         # because this URL is fetched by the visitor's browser.
+        # Canonical origin for canonical tags, sitemap.xml and JSON-LD.
+        NEXT_PUBLIC_SITE_URL: https://kuttystory.co.in
         NEXT_PUBLIC_API_URL: https://kuttystory.co.in/api
         # PUBLISHABLE key id only (never the secret). Comes from the shell env
         # or /opt/kuttystory/.env. Without it the checkout refuses to run

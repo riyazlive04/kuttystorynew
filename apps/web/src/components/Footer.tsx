@@ -30,25 +30,22 @@ export function Footer() {
             { label: "Story Library", href: "/stories" },
             { label: "How It Works", href: "/how-it-works" },
             { label: "Pricing", href: "/#pricing" },
-            { label: "Gift Cards", href: "/stories" },
           ]}
         />
         <FooterCol
           title="Support"
           links={[
-            { label: "Track Order", href: "/cart" },
-            { label: "Shipping & Returns", href: "/how-it-works" },
+            { label: "Shipping & Returns", href: "/terms" },
             { label: "FAQ", href: "/#faq" },
-            { label: "Contact Us", href: "mailto:hello@kuttystory.in" },
+            { label: "Contact Us", href: "mailto:hello@kuttystory.co.in" },
           ]}
         />
         <FooterCol
           title="Company"
           links={[
             { label: "Our Story", href: "/how-it-works" },
-            { label: "Privacy Policy", href: "/#" },
-            { label: "Terms of Service", href: "/#" },
-            { label: "Careers", href: "/#" },
+            { label: "Privacy Policy", href: "/privacy" },
+            { label: "Terms of Service", href: "/terms" },
           ]}
         />
       </div>

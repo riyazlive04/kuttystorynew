@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import { Fredoka, Nunito, Baloo_Thambi_2 } from "next/font/google";
 import "./globals.css";
+import { SITE_NAME, SITE_URL } from "@/lib/seo";
 
 const GTM_ID = process.env.NEXT_PUBLIC_GTM_ID;
 
@@ -36,14 +37,29 @@ export const metadata: Metadata = {
     "custom story",
     "KuttyStory",
   ],
-  metadataBase: new URL("https://kuttystory.in"),
+  metadataBase: new URL(SITE_URL),
+  applicationName: SITE_NAME,
+  // Let Google show large image thumbnails and full text snippets — this is a
+  // visual, gift-driven product where the cover art is the hook.
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
   openGraph: {
     title: "KuttyStory - Personalized Storybooks Starring Your Child",
     description:
       "Create a beautiful, personalized children's book with your child as the hero. English & Tamil. Instant PDF or premium print.",
     type: "website",
     locale: "en_IN",
-    siteName: "KuttyStory",
+    url: SITE_URL,
+    siteName: SITE_NAME,
   },
   twitter: {
     card: "summary_large_image",

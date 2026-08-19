@@ -1,33 +1,56 @@
-"use client";
+import type { Metadata } from "next";
+import { StoryLibrary } from "@/components/StoryLibrary";
+import { JsonLd } from "@/components/JsonLd";
+import { getStories, STORY_REVALIDATE } from "@/lib/stories.server";
+import { SITE_URL, abs, breadcrumbJsonLd } from "@/lib/seo";
 
-import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
-import { StoryCard } from "@/components/StoryCard";
-import { CATEGORIES } from "@/lib/data";
-import { listStories } from "@/lib/api";
-import type { Story } from "@/lib/types";
+export const revalidate = STORY_REVALIDATE;
 
-export default function StoriesPage() {
-  const [active, setActive] = useState<string>("ALL");
-  const [stories, setStories] = useState<Story[]>([]);
-  const [loading, setLoading] = useState(true);
+export const metadata: Metadata = {
+  title: "Story Library - Personalized Children's Books | KuttyStory",
+  description:
+    "Browse every KuttyStory title - learning, adventure, imagination and bedtime books personalized with your child's name and face. English and Tamil, free preview on every story.",
+  alternates: { canonical: "/stories" },
+  openGraph: {
+    title: "The KuttyStory Library - Personalized Children's Books",
+    description:
+      "Every book is personalized with your child's name, face and language. Free preview on every story.",
+    url: `${SITE_URL}/stories`,
+    type: "website",
+  },
+};
 
-  useEffect(() => {
-    // Backend is the source of truth (only active books). Falls back to bundled
-    // sample data when no API is configured.
-    listStories()
-      .then(setStories)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  const filtered =
-    active === "ALL"
-      ? stories
-      : stories.filter((s) => s.categoryTag === active);
+export default async function StoriesPage() {
+  // Server-fetched: the catalogue ships in the HTML instead of behind a spinner.
+  const stories = await getStories();
 
   return (
     <div className="container-x py-12 md:py-16">
+      <JsonLd
+        data={[
+          breadcrumbJsonLd([
+            { name: "Home", path: "/" },
+            { name: "Story Library", path: "/stories" },
+          ]),
+          {
+            "@context": "https://schema.org",
+            "@type": "CollectionPage",
+            name: "The KuttyStory Library",
+            url: `${SITE_URL}/stories`,
+            mainEntity: {
+              "@type": "ItemList",
+              numberOfItems: stories.length,
+              itemListElement: stories.map((s, i) => ({
+                "@type": "ListItem",
+                position: i + 1,
+                name: s.title,
+                url: abs(`/stories/${s.slug}`),
+              })),
+            },
+          },
+        ]}
+      />
+
       <header className="mb-10 text-center">
         <h1 className="text-4xl font-bold text-slate-deep md:text-5xl">
           The Story Library
@@ -38,39 +61,7 @@ export default function StoriesPage() {
         </p>
       </header>
 
-      <div className="mb-10 flex flex-wrap justify-center gap-2">
-        {CATEGORIES.map((c) => (
-          <button
-            key={c.key}
-            onClick={() => setActive(c.key)}
-            className={`rounded-full border-2 px-5 py-2 text-sm font-bold transition ${
-              active === c.key
-                ? "border-brand-primary bg-brand-primary text-white"
-                : "border-slate-200 bg-white text-slate-mutedText hover:border-brand-primary"
-            }`}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="grid h-64 place-items-center">
-          <Loader2 className="h-7 w-7 animate-spin text-brand-primary" />
-        </div>
-      ) : (
-        <div className="grid justify-items-center gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((s) => (
-            <StoryCard key={s.id} story={s} />
-          ))}
-        </div>
-      )}
-
-      {!loading && filtered.length === 0 && (
-        <p className="py-16 text-center text-slate-mutedText">
-          No stories in this category yet - check back soon!
-        </p>
-      )}
+      <StoryLibrary stories={stories} />
     </div>
   );
 }
