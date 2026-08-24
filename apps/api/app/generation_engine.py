@@ -651,6 +651,59 @@ def _face_crop_box(
     return left, top, left + side, top + side
 
 
+def _openai_mask_png(
+    region: dict, plate_size: tuple[int, int], box: tuple[int, int, int, int]
+) -> Optional[bytes]:
+    """An RGBA mask for the crop: TRANSPARENT over the face, opaque elsewhere.
+
+    /images/edits reads a mask's fully transparent pixels as "edit here" and
+    leaves the rest, and with several inputs the mask applies to the FIRST image
+    — so the plate crop has to lead and the photo follows as reference. Without
+    this the model re-renders the whole crop and the result only lines up with
+    the artwork by luck, which is exactly how a swap ends up looking wrong.
+
+    Must match the crop's dimensions, so it is built in crop coordinates.
+    """
+    bounds = _region_bounds_pct(region)
+    if not bounds:
+        return None
+    cw, ch = plate_size
+    left, top, right, bottom = box
+    crop_w, crop_h = right - left, bottom - top
+    if crop_w <= 0 or crop_h <= 0:
+        return None
+
+    # Opaque = keep. Alpha 0 inside the face only.
+    mask = Image.new("RGBA", (crop_w, crop_h), (0, 0, 0, 255))
+    draw = ImageDraw.Draw(mask)
+
+    points = region.get("points")
+    if points and len(points) >= 3:
+        try:
+            poly = [
+                (float(px) / 100 * cw - left, float(py) / 100 * ch - top)
+                for px, py in points
+            ]
+        except (TypeError, ValueError):
+            return None
+        draw.polygon(poly, fill=(0, 0, 0, 0))
+    else:
+        x, y, w, h = bounds
+        draw.ellipse(
+            [
+                x / 100 * cw - left,
+                y / 100 * ch - top,
+                (x + w) / 100 * cw - left,
+                (y + h) / 100 * ch - top,
+            ],
+            fill=(0, 0, 0, 0),
+        )
+
+    buf = io.BytesIO()
+    mask.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def _openai_cache_path() -> str:
     return os.path.join(settings.storage_dir, "openai_face_cache.json")
 
@@ -700,6 +753,29 @@ def _openai_cache_put(key: str, url: str) -> None:
         print(f"[openai] cache write skipped: {e}", flush=True)
 
 
+def _openai_masked_prompt(style_prompt: Optional[str]) -> str:
+    """Instruction for the masked edit: plate first, photo second.
+
+    gpt-image-1 treats a mask as guidance rather than a hard boundary, and the
+    docs are explicit that masking is prompt-based — so the prompt has to say the
+    same thing the mask does.
+    """
+    style = (style_prompt or "").strip()
+    return (
+        "The first image is a crop of a children's storybook illustration, with "
+        "the character's face marked as the editable (transparent) area. The "
+        "second image is a reference photo of a real child. Repaint ONLY the "
+        "masked face so it is recognisably the child from the reference photo - "
+        "copy their face shape, eyes, eyebrows, nose, mouth and skin tone. The "
+        "illustrated character's original facial features must not survive. "
+        "Everything outside the mask - hair, clothing, background, the art style, "
+        "brushwork, colour palette and lighting - must stay exactly as it is in "
+        "the first image. Keep the new face a painted illustration in the same "
+        "style, not a photograph."
+        + (f" Art style: {style}." if style else "")
+    )
+
+
 def _openai_prompt(style_prompt: Optional[str], photo_first: bool = True) -> str:
     """One fixed instruction for every page. Deliberately identical across pages
     (only the page's own stylePrompt varies) so the model is never nudged toward
@@ -739,6 +815,7 @@ async def _openai_edit_call(
     quality: str,
     input_fidelity: Optional[str] = None,
     photo_first: bool = True,
+    mask_png: Optional[bytes] = None,
     attempts: int = 3,
 ) -> bytes:
     """POST one /images/edits call and return the produced PNG bytes.
@@ -762,14 +839,21 @@ async def _openai_edit_call(
     last_err: Exception | None = None
     async with httpx.AsyncClient(timeout=300) as client:
         for attempt in range(attempts):
-            # ORDER MATTERS. With input_fidelity="high" OpenAI preserves only
-            # the FIRST input image with extra richness. Sending the plate first
-            # therefore spends the fidelity budget locking the illustration's
-            # existing face — the one thing we are asking it to replace. The
-            # child's photo goes first so the richness lands on the identity.
+            # ORDER MATTERS, and the mask decides it. A mask applies to the
+            # FIRST image, so a masked edit must lead with the plate crop: the
+            # transparent face is the only region the model may repaint, and
+            # input_fidelity="high" then works FOR us by pinning the artwork
+            # around it. Unmasked, there is no boundary to protect, so the photo
+            # leads instead and takes the fidelity budget for the identity.
             scene_part = ("image[]", ("scene.png", scene_png, "image/png"))
             face_part = ("image[]", ("face.jpg", face_bytes, "image/jpeg"))
-            files = [face_part, scene_part] if photo_first else [scene_part, face_part]
+            files = (
+                [scene_part, face_part]
+                if (mask_png or not photo_first)
+                else [face_part, scene_part]
+            )
+            if mask_png:
+                files.append(("mask", ("mask.png", mask_png, "image/png")))
             try:
                 r = await client.post(
                     OPENAI_IMAGE_EDITS_URL, headers=headers, data=data, files=files
@@ -841,6 +925,7 @@ async def _openai_faceswap(
         quality,
         padding,
         photo_first,
+        "masked-v1",
     )
     cached = _openai_cache_get(cache_key)
     if cached:
@@ -855,13 +940,18 @@ async def _openai_faceswap(
         crop = plate.crop(box)
         buf = io.BytesIO()
         crop.save(buf, format="PNG")
+        # Mark the face inside the crop as the only editable area. With one, the
+        # prompt changes too: the mask is guidance for this model, not a hard
+        # boundary, so both have to say the same thing.
+        mask_png = _openai_mask_png(face_region or {}, plate.size, box)
         edited = await _openai_edit_call(
             scene_png=buf.getvalue(),
             face_bytes=face_bytes,
-            prompt=prompt,
+            prompt=_openai_masked_prompt(style_prompt) if mask_png else prompt,
             quality=quality,
             input_fidelity=fidelity,
             photo_first=photo_first,
+            mask_png=mask_png,
         )
         new_face = (
             Image.open(io.BytesIO(edited))
