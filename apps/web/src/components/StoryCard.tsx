@@ -6,13 +6,6 @@ import { BookOpen } from "lucide-react";
 import type { Story } from "@/lib/types";
 import { inr } from "@/lib/format";
 
-// The printed book is 210mm square (see pdf_service.PAGE_PX) with a 1cm spine,
-// so the spine is 10/210 of the cover's width. Derived rather than eyeballed —
-// if the trim size or the binding changes, change it here.
-const COVER_MM = 210;
-const SPINE_MM = 10;
-const SPINE_PCT = (SPINE_MM / COVER_MM) * 100; // 4.76%
-
 const CATEGORY_STYLES: Record<string, string> = {
   LEARNING: "bg-amber-500/90",
   ADVENTURE: "bg-indigo-500/90",
@@ -29,15 +22,15 @@ export function StoryCard({ story }: { story: Story }) {
     // title widens the card, and the square cover grows with it — which is why
     // one story's artwork sat lower than the rest of the row.
     <div className="flex h-full w-full max-w-sm transform flex-col overflow-hidden rounded-3xl border-2 border-slate-100 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
-      {/* The flat cover is presented as a hardcover: a shaded spine down the
-          left, a page block on the right and a ground shadow underneath. Pure
-          CSS over the existing artwork — nothing new to author. */}
       <button
         onClick={onPersonalize}
         className="group/book relative w-full bg-gradient-to-b from-slate-50 to-white px-5 pb-6 pt-6 text-left"
       >
         <div className="relative aspect-square w-full">
-          <div className="relative h-full w-full overflow-hidden rounded-l-[3px] rounded-r-xl shadow-[0_10px_24px_-8px_rgba(15,23,42,0.45)] ring-1 ring-slate-900/10 transition-transform duration-300 group-hover/book:-translate-y-0.5">
+          {/* The admin's cover artwork, flat and unretouched — no spine band,
+              fore edge or lighting on top of it. The only styling is the frame
+              around it: rounded corners, a hairline edge and a drop shadow. */}
+          <div className="relative h-full w-full overflow-hidden rounded-xl shadow-[0_10px_24px_-8px_rgba(15,23,42,0.45)] ring-1 ring-slate-900/10 transition-transform duration-300 group-hover/book:-translate-y-0.5">
             <Image
               src={story.coverImage}
               alt={story.title}
@@ -46,45 +39,10 @@ export function StoryCard({ story }: { story: Story }) {
               className="object-cover"
             />
 
-            {/* Spine. The admin's Spine artwork when there is one; otherwise
-                the cover itself slides under the band, which reads like a
-                wrapped cover rather than a hole. Either way the hinge shading
-                and crease sit on top so it still looks like a fold. */}
-            <div
-              className="pointer-events-none absolute inset-y-0 left-0 overflow-hidden"
-              style={{ width: `${SPINE_PCT}%` }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={story.spineImage || story.coverImage}
-                alt=""
-                aria-hidden="true"
-                className="h-full w-full object-cover"
-                style={
-                  story.spineImage ? undefined : { objectPosition: "left center" }
-                }
-              />
-            </div>
-            <div
-              className="pointer-events-none absolute inset-y-0 left-0 bg-gradient-to-r from-slate-950/55 via-slate-950/20 to-slate-950/5"
-              style={{ width: `${SPINE_PCT}%` }}
-            />
-            <div
-              className="pointer-events-none absolute inset-y-0 w-px bg-white/25"
-              style={{ left: `${SPINE_PCT}%` }}
-            />
-
-            {/* Page block along the fore edge. */}
-            <div className="pointer-events-none absolute inset-y-[1.5%] right-0 w-[1.8%] rounded-r-md bg-gradient-to-l from-white via-slate-200 to-slate-400/60" />
-
-            {/* Light falling across the board. */}
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/12 via-transparent to-slate-950/12" />
-
             <span
-              className={`chip absolute top-4 z-10 text-white backdrop-blur-sm ${
+              className={`chip absolute left-3 top-4 z-10 text-white backdrop-blur-sm ${
                 CATEGORY_STYLES[story.categoryTag] || "bg-slate-900/80"
               }`}
-              style={{ left: `calc(${SPINE_PCT}% + 0.75rem)` }}
             >
               {story.categoryTag}
             </span>
