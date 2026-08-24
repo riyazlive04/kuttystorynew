@@ -440,6 +440,31 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
     return buf.getvalue()
 
 
+def _segmind_mask_b64(target_src: str, region: dict) -> Optional[str]:
+    """A white-on-black PNG marking the face, sized to the plate, base64'd.
+
+    Segmind's faceswap takes an optional `mask_image` that confines the swap.
+    Verified against the live API: WHITE is the area it replaces, and everything
+    black comes back untouched — hair, dress, background, at the plate's own
+    resolution. That is strictly better than swapping the whole head and pasting
+    the face back afterwards, because the model blends inside the mask instead of
+    us feathering a circle over its output.
+    """
+    try:
+        from .reintegrate import _region_mask
+
+        plate = Image.open(io.BytesIO(_image_bytes(target_src))).convert("RGB")
+        mask = _region_mask(plate.size, region)
+        if mask is None:
+            return None
+        buf = io.BytesIO()
+        mask.convert("RGB").save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode()
+    except Exception as e:  # noqa: BLE001 — no mask just means the old behaviour
+        print(f"[segmind] mask build skipped: {e}", flush=True)
+        return None
+
+
 def current_segmind_key() -> str:
     """The active Segmind key: an admin-set encrypted secret if present, else the
     SEGMIND_API_KEY from the environment."""
@@ -476,6 +501,9 @@ async def _segmind_faceswap(
     headers = {"x-api-key": api_key, "Content-Type": "application/json"}
     source_b64 = _b64(face_src)     # the real child face
     target_b64 = _b64(target_src)   # the fixed illustrated page
+    # Constrain the swap at the SOURCE when we know where the face is, rather
+    # than repairing a full-head swap afterwards.
+    mask_b64 = _segmind_mask_b64(target_src, face_region) if face_region else None
     last_err: Exception | None = None
     async with httpx.AsyncClient(timeout=180) as client:
         for attempt in range(attempts):
@@ -488,15 +516,25 @@ async def _segmind_faceswap(
                 "cfg": 2,
                 "seed": seed + attempt * 1009,  # fresh seed each redo
                 "base64": False,
-                "output_format": "jpeg",
+                # PNG, not JPEG: the swap is re-encoded once more when it is
+                # composited into the plate, and the face oval is the one part
+                # of the page that would carry both generations of loss.
+                "output_format": "png",
+                "output_quality": 100,
             }
+            if mask_b64:
+                payload["mask_image"] = mask_b64
+                # A few pixels of slack so the jaw and hairline blend instead of
+                # ending on the ellipse.
+                payload["grow_mask"] = 12
             try:
                 r = await client.post(url, headers=headers, json=payload)
                 r.raise_for_status()
                 content = r.content
-                # Keep the template's hair: paste only the authored face oval from
-                # the full swap back onto the original template. (No face region →
-                # full-head swap as before.)
+                # Belt and braces. With a mask the swap already comes back with
+                # the plate's hair intact, so this composite is a no-op; without
+                # one (mask build failed, or the API ignored it) it is what keeps
+                # the artwork's hair. Cheap either way.
                 if face_region:
                     try:
                         content = _composite_face_region(
