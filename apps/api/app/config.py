@@ -102,6 +102,11 @@ class Settings(BaseSettings):
     # retry or a re-render of the same page never bills a second time.
     openai_cache_enabled: bool = True
 
+    # When a page has no traced face outline, detect one from the base art so the
+    # hair-keeping composite still has a region to work with. Off = untraced
+    # pages keep the old full-head swap.
+    face_autodetect_enabled: bool = True
+
     # --- Public A/B provider comparison (/compare) -----------------------------
     # Renders ONE demo page through every configured provider. It spends money on
     # an anonymous request, so it is rate limited per IP and can be switched off

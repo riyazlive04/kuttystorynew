@@ -158,6 +158,13 @@ async def _render_one(
                 "w": template.faceW,
                 "h": template.faceH,
             }
+        elif settings.face_autodetect_enabled:
+            # Nobody traced this page. Rather than fall through to a full-head
+            # swap (which takes the child's hair and mangles the artwork's),
+            # find the face ourselves and give the composite its oval.
+            from .face_detect import detect_face_region_for
+
+            face_region = detect_face_region_for(base_image_url)
 
     image_url = await render_page(
         scene_prompt=scene,

@@ -119,6 +119,12 @@ def _face_region(page) -> Optional[dict]:
         return {"points": path}
     if page.faceX is not None and page.faceW is not None:
         return {"x": page.faceX, "y": page.faceY, "w": page.faceW, "h": page.faceH}
+    if settings.face_autodetect_enabled:
+        # Same fallback the render pipeline uses, so a comparison shows what the
+        # book would actually produce rather than a rawer full-head swap.
+        from ..face_detect import detect_face_region_for
+
+        return detect_face_region_for(page.baseImageUrl)
     return None
 
 
