@@ -17,8 +17,14 @@ export default function CartPage() {
   const setFormat = useCart((s) => s.setFormat);
   const subtotal = useCart((s) => s.subtotal());
   const discount = useCart((s) => s.discount());
+  const revalidatePromo = useCart((s) => s.revalidatePromo);
 
   useEffect(() => setMounted(true), []);
+  // A persisted code is re-priced against the basket that is actually here, so
+  // a restored session can never show "applied" over a total that disagrees.
+  useEffect(() => {
+    if (mounted) revalidatePromo();
+  }, [mounted, revalidatePromo]);
   if (!mounted) return <div className="container-x py-24" />;
 
   const shipping = 0;

@@ -87,6 +87,10 @@ export interface PromoResult {
   code: string | null;
   message: string;
   total: number;
+  /** True when the server was never reached (network error / non-OK response),
+   *  as opposed to the server pricing the code and saying no. Callers that
+   *  re-check an already-applied code must not drop it over a blip. */
+  unreachable?: boolean;
 }
 
 /** Price a promo code on the server.
@@ -107,10 +111,25 @@ export async function validatePromo(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code, subtotal, quantity }),
     });
-    if (!res.ok) return { ok: false, discount: 0, code: null, message: "Couldn't check that code.", total: subtotal };
+    if (!res.ok)
+      return {
+        ok: false,
+        discount: 0,
+        code: null,
+        message: "Couldn't check that code.",
+        total: subtotal,
+        unreachable: true,
+      };
     return (await res.json()) as PromoResult;
   } catch {
-    return { ok: false, discount: 0, code: null, message: "Couldn't reach the server.", total: subtotal };
+    return {
+      ok: false,
+      discount: 0,
+      code: null,
+      message: "Couldn't reach the server.",
+      total: subtotal,
+      unreachable: true,
+    };
   }
 }
 

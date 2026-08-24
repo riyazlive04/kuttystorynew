@@ -31,6 +31,8 @@ interface CartState {
   setFormat: (id: string, format: CartItem["format"]) => void;
   clear: () => void;
   applyPromo: (code: string) => Promise<{ ok: boolean; message: string }>;
+  /** Re-price a persisted code against the basket as it stands right now. */
+  revalidatePromo: () => Promise<void>;
   removePromo: () => void;
   subtotal: () => number;
   discount: () => number;
@@ -138,6 +140,44 @@ export const useCart = create<CartState>()(
 
         set({ promoCode: normalized, promoDiscount: priced.discount });
         return { ok: true, message: priced.message };
+      },
+      // A discount is a rupee amount priced for one particular basket, and it
+      // is persisted alongside the items. Every mutator above resets it, but a
+      // RESTORED session (a reload, browser back into checkout, a second tab
+      // that changed the cart) can still surface a code applied to a basket
+      // that no longer earns it — the chip says "applied" while the total does
+      // not add up. So re-price it from the server whenever a page shows it.
+      revalidatePromo: async () => {
+        const { promoCode } = get();
+        if (!promoCode) return;
+
+        const subtotal = get().subtotal();
+        const quantity = get().count();
+        const priced = await validatePromo(promoCode, subtotal, quantity);
+
+        // The basket can change while the round trip is in flight; applying a
+        // stale answer would reintroduce the very mismatch this fixes.
+        if (get().promoCode !== promoCode) return;
+        if (get().subtotal() !== subtotal || get().count() !== quantity) return;
+
+        if (priced === null) {
+          // No backend (front-end demo): re-derive the one local rule.
+          const earned =
+            promoCode === LOCAL_PROMO_CODE && quantity >= LOCAL_PROMO_MIN_ITEMS;
+          set(
+            earned
+              ? { promoDiscount: Math.round(subtotal * LOCAL_PROMO_RATE) }
+              : { ...PROMO_RESET },
+          );
+          return;
+        }
+
+        // A blip is not a verdict: keep the code as-is if the server was never
+        // reached, and let the next page view (or the order call, which prices
+        // server-side anyway) settle it.
+        if (priced.unreachable) return;
+
+        set(priced.ok ? { promoDiscount: priced.discount } : { ...PROMO_RESET });
       },
       removePromo: () => set({ ...PROMO_RESET }),
       subtotal: () =>

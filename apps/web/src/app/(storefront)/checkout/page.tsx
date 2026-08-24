@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, Lock, ShieldCheck } from "lucide-react";
+import { Loader2, Lock, ShieldCheck, Trash2 } from "lucide-react";
 import { useCart } from "@/lib/cart";
 import { inr } from "@/lib/format";
 import { createOrder, verifyPayment } from "@/lib/api";
@@ -38,8 +38,15 @@ export default function CheckoutPage() {
   const promoCode = useCart((s) => s.promoCode);
   const clear = useCart((s) => s.clear);
   const setFormat = useCart((s) => s.setFormat);
+  const remove = useCart((s) => s.remove);
+  const revalidatePromo = useCart((s) => s.revalidatePromo);
 
   useEffect(() => setMounted(true), []);
+  // Same re-pricing as the cart: arriving here by browser back, a reload or a
+  // second tab must not show a code applied to a basket that no longer earns it.
+  useEffect(() => {
+    if (mounted) revalidatePromo();
+  }, [mounted, revalidatePromo]);
   if (!mounted) return <div className="container-x py-24" />;
 
   const hasPhysical = items.some((i) => i.format === "print");
@@ -191,9 +198,24 @@ export default function CheckoutPage() {
                       compact
                     />
                   </div>
-                  <span className="text-sm font-bold text-slate-deep">
-                    {inr(i.unitPrice * i.quantity)}
-                  </span>
+                  <div className="flex flex-col items-end justify-between">
+                    <span className="text-sm font-bold text-slate-deep">
+                      {inr(i.unitPrice * i.quantity)}
+                    </span>
+                    {/* Same affordance as the cart page: a shopper who changes
+                        their mind here shouldn't have to navigate back to drop
+                        a book. Removing the last one falls through to the
+                        "Nothing to check out" state above. */}
+                    <button
+                      type="button"
+                      onClick={() => remove(i.id)}
+                      className="mt-1 text-slate-300 transition hover:text-red-500"
+                      aria-label={`Remove ${i.storyTitle} for ${i.childName}`}
+                      title="Remove from cart"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
