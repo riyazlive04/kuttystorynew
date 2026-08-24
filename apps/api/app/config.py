@@ -77,6 +77,31 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
 
+    # --- OpenAI image personalization (admin-selectable alternative to Segmind) ---
+    # Chosen at runtime via the admin "Image provider" toggle (app_settings.
+    # imageProvider), NOT here — this block only holds the tuning knobs.
+    #
+    # Only the authored FACE REGION of a page is sent to OpenAI (cropped, squared,
+    # padded) and the result is composited back into the untouched base plate. So
+    # every pixel outside the face stays byte-identical to the authored art, which
+    # is what keeps the character/scene/style consistent page to page — the same
+    # property the Segmind path gets from _composite_face_region.
+    openai_image_model: str = "gpt-image-1"
+    # Square edge sent to /images/edits. The crop is a face, not a page, so the
+    # smallest supported tier is plenty and it is also the cheapest.
+    openai_image_size: str = "1024x1024"
+    # "low" | "medium" | "high". Free preview pages (1..free_preview_pages) render
+    # at `openai_preview_quality`; the paid/final render uses `openai_image_quality`.
+    # Previews dominate spend — 13 free pages are rendered for every visitor,
+    # including the ones who never buy — so they default a tier down.
+    openai_image_quality: str = "high"
+    openai_preview_quality: str = "low"
+    # Preserves likeness from the input photo instead of re-imagining the face.
+    openai_input_fidelity: str = "high"
+    # Cache personalized face crops keyed on (plate, photo, region, quality) so a
+    # retry or a re-render of the same page never bills a second time.
+    openai_cache_enabled: bool = True
+
     # Self-hosted ComfyUI API node
     comfyui_base_url: str = ""
     comfyui_api_key: str = ""

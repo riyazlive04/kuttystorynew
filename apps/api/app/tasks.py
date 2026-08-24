@@ -168,6 +168,8 @@ async def _render_one(
         style_prompt=style_prompt,
         face_region=face_region,
         seed=render_seed(page_number) if seed is None else seed,
+        # Free preview pages render a quality tier down on the OpenAI provider.
+        is_preview=is_free(page_number, FREE),
     )
 
     # Re-seat the swapped face into the FULL-RESOLUTION base art before any

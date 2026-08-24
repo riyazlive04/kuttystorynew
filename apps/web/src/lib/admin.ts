@@ -82,10 +82,20 @@ export interface StoryCreate {
   supportsTamil: boolean;
 }
 
+export type ImageProvider = "segmind" | "openai";
+
+export interface ProviderKeyStatus {
+  set: boolean;
+  last4: string;
+  source: "admin" | "env" | null;
+}
+
 export interface AdminSettings {
   faceOutlineEnabled: boolean;
   whatsappNumber: string;
-  segmind: { set: boolean; last4: string; source: "admin" | "env" | null };
+  imageProvider: ImageProvider;
+  segmind: ProviderKeyStatus;
+  openai: ProviderKeyStatus;
 }
 
 export interface AdminJob {
@@ -241,7 +251,9 @@ export const adminApi = {
   getSettings: (): Promise<AdminSettings> => req("/admin/settings"),
   updateSettings: (patch: {
     faceOutlineEnabled?: boolean;
+    imageProvider?: ImageProvider;
     segmindApiKey?: string;
+    openaiApiKey?: string;
     whatsappNumber?: string;
   }): Promise<AdminSettings> =>
     req("/admin/settings", { method: "PATCH", body: JSON.stringify(patch) }),

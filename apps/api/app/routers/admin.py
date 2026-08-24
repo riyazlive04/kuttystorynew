@@ -108,8 +108,11 @@ async def admin_delete_order(order_id: str):
 class SettingsPatch(BaseModel):
     faceOutlineEnabled: Optional[bool] = None
     whatsappNumber: Optional[str] = None
+    # "segmind" | "openai" — which service personalizes the child's face.
+    imageProvider: Optional[str] = None
     # Write-only. Provide to set a new key; "" clears it; omit to leave unchanged.
     segmindApiKey: Optional[str] = None
+    openaiApiKey: Optional[str] = None
 
 
 def _segmind_status() -> dict:
@@ -123,10 +126,25 @@ def _segmind_status() -> dict:
     return {"set": True, "last4": key[-4:], "source": "admin" if stored else "env"}
 
 
+def _openai_status() -> dict:
+    """Non-sensitive status of the effective OpenAI key — never the value."""
+    from ..secrets_store import get_secret
+
+    stored = get_secret("openai_api_key")
+    key = stored or settings.openai_api_key or ""
+    if not key:
+        return {"set": False, "last4": "", "source": None}
+    return {"set": True, "last4": key[-4:], "source": "admin" if stored else "env"}
+
+
 def _settings_response() -> dict:
     from ..app_settings import get_settings
 
-    return {**get_settings(), "segmind": _segmind_status()}
+    return {
+        **get_settings(),
+        "segmind": _segmind_status(),
+        "openai": _openai_status(),
+    }
 
 
 @router.get("/settings", dependencies=[Depends(require_admin)])
@@ -152,9 +170,33 @@ async def admin_update_settings(body: SettingsPatch):
                 detail="That doesn't look like a phone number with its country code.",
             )
         update_settings({"whatsappNumber": number})
-    # Secret handled separately (encrypted at rest, never echoed back).
+    if data.get("imageProvider") is not None:
+        from ..app_settings import IMAGE_PROVIDERS
+
+        provider = str(data["imageProvider"] or "").strip().lower()
+        if provider not in IMAGE_PROVIDERS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Image provider must be one of {', '.join(IMAGE_PROVIDERS)}",
+            )
+        # Refuse to switch to a provider that has no key — otherwise the next
+        # render fails mid-job instead of here, where the admin can see why.
+        if provider == "openai" and not _openai_status()["set"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Set an OpenAI API key before switching to the OpenAI provider.",
+            )
+        if provider == "segmind" and not _segmind_status()["set"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Set a Segmind API key before switching to the Segmind provider.",
+            )
+        update_settings({"imageProvider": provider})
+    # Secrets handled separately (encrypted at rest, never echoed back).
     if data.get("segmindApiKey") is not None:
         set_secret("segmind_api_key", (data["segmindApiKey"] or "").strip())
+    if data.get("openaiApiKey") is not None:
+        set_secret("openai_api_key", (data["openaiApiKey"] or "").strip())
     return _settings_response()
 
 

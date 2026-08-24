@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+import json
 import os
 from typing import Any, Optional
 
@@ -521,6 +522,320 @@ async def _segmind_faceswap(
     )
 
 
+# --------------------------------------------------------------------------- #
+#  OpenAI gpt-image-1 face personalization                                     #
+# --------------------------------------------------------------------------- #
+#
+#  Design notes — this path is optimised for COST and PAGE-TO-PAGE CONSISTENCY,
+#  which turn out to be the same decision here:
+#
+#  * Only the authored FACE REGION is sent. We crop a padded square around the
+#    page's faceX/Y/W/H box (or the facePath lasso's bounding box), personalize
+#    just that crop, paste it back, then run the SAME feathered-mask composite the
+#    Segmind path uses. Everything outside the face oval is therefore
+#    byte-identical to the authored plate — scene, character body, art style and
+#    hair cannot drift between pages, because they are never regenerated. A
+#    whole-page edit would re-render all of it and reintroduce exactly the drift
+#    the inpaint-over-template design exists to prevent.
+#  * A face crop needs no more than the smallest square tier, so output image
+#    tokens (the dominant cost) sit at the floor regardless of the plate's size.
+#  * Free preview pages render a quality tier down from the paid render. Previews
+#    are the bulk of spend — every visitor renders `free_preview_pages` of them,
+#    including everyone who never buys.
+#  * Identical inputs are served from a cache, so a retry, a re-render or a
+#    regenerated preview never bills twice.
+
+OPENAI_IMAGE_EDITS_URL = "https://api.openai.com/v1/images/edits"
+
+# How much context around the face box to include in the crop. The model needs
+# some hair/jaw/neck to blend the new face into, but every extra pixel is scene
+# it could alter, so this stays tight.
+FACE_CROP_PADDING = 0.6
+
+
+def current_openai_key() -> str:
+    """The active OpenAI key: an admin-set encrypted secret if present, else the
+    OPENAI_API_KEY from the environment."""
+    from .secrets_store import get_secret
+
+    return get_secret("openai_api_key") or settings.openai_api_key or ""
+
+
+def _region_bounds_pct(region: dict) -> Optional[tuple[float, float, float, float]]:
+    """Face region -> (x, y, w, h) in PERCENT, whether it is a freeform lasso or
+    an explicit box. Returns None if the region is unusable."""
+    points = (region or {}).get("points")
+    if points and len(points) >= 3:
+        try:
+            xs = [float(p[0]) for p in points]
+            ys = [float(p[1]) for p in points]
+        except (TypeError, ValueError, IndexError):
+            return None
+        return min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)
+    try:
+        x = float(region.get("x"))  # type: ignore[union-attr,arg-type]
+        y = float(region.get("y"))  # type: ignore[union-attr,arg-type]
+        w = float(region.get("w"))  # type: ignore[union-attr,arg-type]
+        h = float(region.get("h"))  # type: ignore[union-attr,arg-type]
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if w <= 0 or h <= 0:
+        return None
+    return x, y, w, h
+
+
+def _face_crop_box(
+    region: dict, size: tuple[int, int]
+) -> Optional[tuple[int, int, int, int]]:
+    """A padded SQUARE crop box in pixels around the authored face region.
+
+    Square because /images/edits renders to a square canvas — cropping square
+    keeps the face's aspect ratio intact through the round trip. Clamped to the
+    canvas, and shifted (not shrunk) when it would overhang an edge, so a face
+    near the border still gets its full context.
+    """
+    bounds = _region_bounds_pct(region)
+    if not bounds:
+        return None
+    cw, ch = size
+    x, y, w, h = bounds
+    px, py = x / 100 * cw, y / 100 * ch
+    pw, ph = w / 100 * cw, h / 100 * ch
+    cx, cy = px + pw / 2, py + ph / 2
+    edge = max(pw, ph) * (1 + FACE_CROP_PADDING)
+    edge = min(edge, float(min(cw, ch)))  # never larger than the canvas
+    half = edge / 2
+    left = int(round(min(max(cx - half, 0), cw - edge)))
+    top = int(round(min(max(cy - half, 0), ch - edge)))
+    side = int(round(edge))
+    return left, top, left + side, top + side
+
+
+def _openai_cache_path() -> str:
+    return os.path.join(settings.storage_dir, "openai_face_cache.json")
+
+
+def _openai_cache_key(*parts: Any) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    for p in parts:
+        h.update(p if isinstance(p, bytes) else repr(p).encode())
+        h.update(b"\x00")
+    return h.hexdigest()
+
+
+def _openai_cache_get(key: str) -> Optional[str]:
+    if not settings.openai_cache_enabled:
+        return None
+    try:
+        with open(_openai_cache_path(), "r", encoding="utf-8") as f:
+            url = (json.load(f) or {}).get(key)
+    except Exception:  # noqa: BLE001 — a missing/corrupt cache is just a miss
+        return None
+    if not url:
+        return None
+    # Only a hit if the file is still on the volume (retention sweeps delete it).
+    name = url.split("/uploads/", 1)[-1]
+    if not os.path.exists(os.path.join(settings.storage_dir, name)):
+        return None
+    return url
+
+
+def _openai_cache_put(key: str, url: str) -> None:
+    if not settings.openai_cache_enabled:
+        return
+    try:
+        path = _openai_cache_path()
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f) or {}
+        except Exception:  # noqa: BLE001
+            data = {}
+        data[key] = url
+        os.makedirs(settings.storage_dir, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except Exception as e:  # noqa: BLE001 — caching must never fail a render
+        print(f"[openai] cache write skipped: {e}", flush=True)
+
+
+def _openai_prompt(style_prompt: Optional[str]) -> str:
+    """One fixed instruction for every page. Deliberately identical across pages
+    (only the page's own stylePrompt varies) so the model is never nudged toward
+    a different reading of the character from one page to the next."""
+    style = (style_prompt or "").strip()
+    return (
+        "The first image is a crop of a children's storybook illustration. The "
+        "second image is a reference photo of a child. Redraw ONLY the face in "
+        "the first image so it is recognisably the same child as in the reference "
+        "photo - keep their face shape, eyes, eyebrows, nose, mouth and skin tone. "
+        "Keep the illustration's exact art style, brushwork, colour palette, "
+        "lighting direction and the character's existing hair, head angle and "
+        "expression. Do not render the face photorealistically; it must stay a "
+        "painted illustration. Change nothing else in the image."
+        + (f" Art style: {style}." if style else "")
+    )
+
+
+def _openai_quality(is_preview: bool) -> str:
+    """Previews render a tier down — they are the bulk of spend."""
+    q = settings.openai_preview_quality if is_preview else settings.openai_image_quality
+    return (q or "medium").strip().lower()
+
+
+async def _openai_edit_call(
+    *,
+    scene_png: bytes,
+    face_bytes: bytes,
+    prompt: str,
+    quality: str,
+    attempts: int = 3,
+) -> bytes:
+    """POST one /images/edits call and return the produced PNG bytes.
+
+    Retries transient failures (429 / 5xx / network) with backoff. A content-policy
+    rejection is NOT retried — it is deterministic for the same inputs, so retrying
+    only burns time before the same refusal.
+    """
+    api_key = current_openai_key()
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY not set")
+    headers = {"Authorization": f"Bearer {api_key}"}
+    data = {
+        "model": settings.openai_image_model,
+        "prompt": prompt,
+        "size": settings.openai_image_size,
+        "quality": quality,
+        "input_fidelity": settings.openai_input_fidelity,
+        "n": "1",
+    }
+    last_err: Exception | None = None
+    async with httpx.AsyncClient(timeout=300) as client:
+        for attempt in range(attempts):
+            files = [
+                ("image[]", ("scene.png", scene_png, "image/png")),
+                ("image[]", ("face.jpg", face_bytes, "image/jpeg")),
+            ]
+            try:
+                r = await client.post(
+                    OPENAI_IMAGE_EDITS_URL, headers=headers, data=data, files=files
+                )
+                if r.status_code == 400:
+                    # Surface moderation refusals as themselves. This is the known
+                    # failure mode for identity-preserving edits of a child's photo,
+                    # and an operator needs to see it, not a generic 400.
+                    try:
+                        detail = (r.json().get("error") or {}).get("message", "")
+                    except Exception:  # noqa: BLE001
+                        detail = (r.text or "")[:300]
+                    raise RuntimeError(f"OpenAI rejected the edit: {detail}")
+                r.raise_for_status()
+                items = r.json().get("data") or []
+                if not items or not items[0].get("b64_json"):
+                    raise RuntimeError("OpenAI returned no image")
+                return base64.b64decode(items[0]["b64_json"])
+            except RuntimeError:
+                raise  # policy refusal / empty response — deterministic, don't retry
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                body = ""
+                if isinstance(e, httpx.HTTPStatusError):
+                    body = (e.response.text or "")[:300]
+                print(
+                    f"[openai] edit attempt {attempt + 1}/{attempts} failed: {e} {body}",
+                    flush=True,
+                )
+                if attempt < attempts - 1:
+                    await asyncio.sleep(2.0 * (attempt + 1))
+    raise RuntimeError(f"OpenAI image edit failed after {attempts} attempts: {last_err}")
+
+
+async def _openai_faceswap(
+    *,
+    target_src: str,
+    face_src: str,
+    style_prompt: Optional[str] = None,
+    face_region: Optional[dict] = None,
+    is_preview: bool = False,
+) -> str:
+    """Personalize a child's face onto an ILLUSTRATED base page via gpt-image-1.
+
+    Face-region crop -> /images/edits -> paste back -> feathered-mask composite.
+    Returns the saved /uploads URL. See the design notes at the top of this block
+    for why only the crop is sent.
+    """
+    plate_bytes = _image_bytes(target_src)
+    face_bytes = _image_bytes(face_src)
+    quality = _openai_quality(is_preview)
+
+    cache_key = _openai_cache_key(
+        plate_bytes,
+        face_bytes,
+        json.dumps(face_region or {}, sort_keys=True),
+        style_prompt or "",
+        settings.openai_image_model,
+        settings.openai_image_size,
+        settings.openai_input_fidelity,
+        quality,
+    )
+    cached = _openai_cache_get(cache_key)
+    if cached:
+        print(f"[openai] cache hit ({quality}) -> {cached}", flush=True)
+        return cached
+
+    plate = Image.open(io.BytesIO(plate_bytes)).convert("RGB")
+    box = _face_crop_box(face_region, plate.size) if face_region else None
+    prompt = _openai_prompt(style_prompt)
+
+    if box:
+        crop = plate.crop(box)
+        buf = io.BytesIO()
+        crop.save(buf, format="PNG")
+        edited = await _openai_edit_call(
+            scene_png=buf.getvalue(),
+            face_bytes=face_bytes,
+            prompt=prompt,
+            quality=quality,
+        )
+        new_face = (
+            Image.open(io.BytesIO(edited))
+            .convert("RGB")
+            .resize((box[2] - box[0], box[3] - box[1]))
+        )
+        swapped = plate.copy()
+        swapped.paste(new_face, (box[0], box[1]))
+    else:
+        # No authored face region — edit the whole page. Consistency then depends
+        # on the model rather than on the compositor, so this is the weaker path;
+        # author a face region on the page to get the guarantee back.
+        buf = io.BytesIO()
+        plate.save(buf, format="PNG")
+        edited = await _openai_edit_call(
+            scene_png=buf.getvalue(),
+            face_bytes=face_bytes,
+            prompt=prompt,
+            quality=quality,
+        )
+        swapped = Image.open(io.BytesIO(edited)).convert("RGB").resize(plate.size)
+
+    out = io.BytesIO()
+    swapped.save(out, format="JPEG", quality=95)
+    content = out.getvalue()
+
+    # Same feathered mask as the Segmind path: take only the authored face oval /
+    # lasso from the edit, keeping the plate's hair and everything else untouched.
+    if face_region:
+        try:
+            content = _composite_face_region(target_src, content, face_region)
+        except Exception as ce:  # noqa: BLE001
+            print(f"[openai] face composite skipped: {ce}", flush=True)
+
+    url = _save_bytes(content, prefix="page")
+    _openai_cache_put(cache_key, url)
+    return url
+
+
 def _is_raster(url: str) -> bool:
     """A base illustration must be a real raster to be a face-swap target.
     SVG placeholders (the demo /covers/*.svg) can't be swapped into."""
@@ -737,8 +1052,13 @@ async def render_page(
     style_prompt: Optional[str] = None,
     face_region: Optional[dict] = None,
     seed: int = 0,
+    is_preview: bool = False,
 ) -> str:
     """Render one page (no text) and return its image URL.
+
+    `is_preview` marks a free-preview page so the OpenAI provider can render it a
+    quality tier down — previews are rendered for every visitor, including those
+    who never buy, so they dominate spend.
 
     If the page has a base illustration -> inpaint-over-template (FaceDetailer +
     PuLID): the scene is preserved and only the face is swapped to the child.
@@ -758,7 +1078,33 @@ async def render_page(
             and face_image_name
         )
         if can_faceswap:
-            if settings.faceswap_provider == "segmind" and current_segmind_key():
+            # Which service personalizes the face is an ADMIN RUNTIME toggle
+            # (Settings -> Image provider), not an env var, so the two can be
+            # A/B'd on the same deploy. Falls back to the env-configured
+            # faceswap_provider only for the non-segmind/openai options.
+            from .app_settings import image_provider
+
+            active = image_provider()
+            if active == "openai" and not current_openai_key():
+                # Do NOT quietly fall through to another swapper: the admin chose
+                # this provider, and a silent switch would make an A/B comparison
+                # meaningless while looking like it worked.
+                raise RuntimeError(
+                    "Image provider is set to OpenAI but no OpenAI API key is set "
+                    "(Settings -> OpenAI API key)."
+                )
+            if active == "openai":
+                # Same contract as the segmind branch below: a page WITH base art
+                # must be personalized by the swapper, so a terminal failure
+                # surfaces rather than silently rendering unpersonalized art.
+                return await _openai_faceswap(
+                    target_src=base_image_url,  # type: ignore[arg-type]
+                    face_src=face_image_name,
+                    style_prompt=style_prompt,
+                    face_region=face_region,
+                    is_preview=is_preview,
+                )
+            if active == "segmind" and current_segmind_key():
                 # A page WITH base art must be personalized by the swapper. Retries
                 # happen INSIDE _segmind_faceswap (fresh seed each redo). We do NOT
                 # fall back to txt2img or the unswapped base art here — that would
