@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -13,12 +13,27 @@ import {
   Lock,
   Sparkles,
   Upload,
+  X,
 } from "lucide-react";
 import type { Personalization, Story } from "@/lib/types";
 import { createJob, uploadPhoto } from "@/lib/api";
 import { languageLabel, previewPath } from "@/lib/format";
 
 const STEPS = ["Child", "Photo", "Review"] as const;
+const MAX_PHOTOS = 3;
+
+// Shown (and agreed to) before the first photo is picked — a bad source photo
+// is the single biggest cause of a weak likeness.
+const PHOTO_GUIDELINES = [
+  "For the best acceptance, we kindly request that the photo be shared without a bindi.",
+  "Please make sure no hair falls over your child's forehead or covers the face.",
+  "Please share a clear, well-lit photo with good, even lighting.",
+  "Make sure your child's face is clearly visible and facing the camera.",
+  "Avoid blurry, dark, or heavily filtered photos.",
+];
+
+// One picked photo: previewed locally the moment it is chosen, then uploaded.
+type PhotoItem = { id: number; dataUrl: string; url?: string };
 
 export function PersonalizeWizard({ story }: { story: Story }) {
   const router = useRouter();
@@ -50,26 +65,86 @@ export function PersonalizeWizard({ story }: { story: Story }) {
     setData((d) => ({ ...d, [key]: value }));
   }
 
+  // Every photo the customer picked, in order. Picking again adds to the set
+  // (up to MAX_PHOTOS) instead of throwing the earlier photos away.
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
+  const nextPhotoId = useRef(0);
+
+  // Mirror the picked photos into the personalization payload: the first is
+  // primary, the rest strengthen identity.
+  useEffect(() => {
+    const urls = photos
+      .map((p) => p.url)
+      .filter((u): u is string => Boolean(u));
+    setData((d) => ({
+      ...d,
+      photoDataUrl: photos[0]?.dataUrl,
+      photoUrl: urls[0],
+      photoUrls: urls.length ? urls : undefined,
+    }));
+  }, [photos]);
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files || []).slice(0, 3); // a few photos
+    const picked = Array.from(e.target.files || []);
+    // Clear the input so re-picking the same file after a remove still fires.
+    e.target.value = "";
+    const files = picked.slice(0, Math.max(0, MAX_PHOTOS - photos.length));
     if (!files.length) return;
-    // Preview the first photo immediately.
-    const reader = new FileReader();
-    reader.onload = () => update("photoDataUrl", reader.result as string);
-    reader.readAsDataURL(files[0]);
-    // Upload all; the first is primary, the rest strengthen identity.
-    setUploadingCount(files.length);
-    Promise.all(files.map((f) => uploadPhoto(f).catch(() => undefined)))
-      .then((urls) => {
-        const ok = urls.filter((u): u is string => Boolean(u));
-        if (ok.length) {
-          update("photoUrl", ok[0]);
-          update("photoUrls", ok);
-        }
-      })
-      .finally(() => setUploadingCount(0));
+
+    setUploadingCount((n) => n + files.length);
+    for (const file of files) {
+      const id = nextPhotoId.current++;
+      const reader = new FileReader();
+      reader.onload = () =>
+        setPhotos((prev) =>
+          // Slot the preview in by id; the tile may already carry its URL.
+          prev.some((p) => p.id === id)
+            ? prev.map((p) =>
+                p.id === id ? { ...p, dataUrl: reader.result as string } : p,
+              )
+            : [...prev, { id, dataUrl: reader.result as string }],
+        );
+      reader.readAsDataURL(file);
+
+      uploadPhoto(file)
+        .then((url) =>
+          setPhotos((prev) =>
+            prev.some((p) => p.id === id)
+              ? prev.map((p) => (p.id === id ? { ...p, url } : p))
+              : [...prev, { id, dataUrl: "", url }],
+          ),
+        )
+        // A failed upload leaves the tile as preview-only; it just won't be sent.
+        .catch(() => undefined)
+        .finally(() => setUploadingCount((n) => Math.max(0, n - 1)));
+    }
+  }
+
+  function removePhoto(id: number) {
+    setPhotos((prev) => prev.filter((p) => p.id !== id));
+  }
+
+  // The guidelines are shown once per session, before the first picker opens;
+  // `pendingSource` remembers which picker to open after the customer agrees.
+  const [guidelinesAgreed, setGuidelinesAgreed] = useState(false);
+  const [pendingSource, setPendingSource] = useState<
+    "gallery" | "camera" | null
+  >(null);
+
+  function openPicker(source: "gallery" | "camera") {
+    if (!guidelinesAgreed) {
+      setPendingSource(source);
+      return;
+    }
+    (source === "camera" ? cameraRef : fileRef).current?.click();
+  }
+
+  function agreeToGuidelines() {
+    const source = pendingSource;
+    setGuidelinesAgreed(true);
+    setPendingSource(null);
+    (source === "camera" ? cameraRef : fileRef).current?.click();
   }
 
   // Nav (Back/Continue) only shows on Child(0) & Photo(1); Review(2) has its own
@@ -218,9 +293,16 @@ export function PersonalizeWizard({ story }: { story: Story }) {
             <p className="text-sm text-slate-mutedText">
               1–3 clear, front-facing photos work best — more angles give a
               stronger likeness on every page.{" "}
-              {data.photoUrls && data.photoUrls.length > 1 && (
+              {photos.length > 0 && (
                 <span className="font-semibold text-emerald-600">
-                  {data.photoUrls.length} photos added ✓
+                  {photos.length} {photos.length === 1 ? "photo" : "photos"}{" "}
+                  added ✓
+                </span>
+              )}
+              {uploadingCount > 0 && (
+                <span className="ml-1 inline-flex items-center gap-1 font-semibold text-slate-mutedText">
+                  <Loader2 className="h-3 w-3 animate-spin" /> uploading
+                  {uploadingCount > 1 ? ` ${uploadingCount}` : ""}…
                 </span>
               )}
             </p>
@@ -242,18 +324,11 @@ export function PersonalizeWizard({ story }: { story: Story }) {
               onChange={onFile}
               className="hidden"
             />
-            <button
-              onClick={() => fileRef.current?.click()}
-              className="group relative grid h-64 w-full place-items-center overflow-hidden rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 transition hover:border-brand-primary"
-            >
-              {data.photoDataUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={data.photoDataUrl}
-                  alt="Uploaded child"
-                  className="h-full w-full object-contain"
-                />
-              ) : (
+            {photos.length === 0 ? (
+              <button
+                onClick={() => openPicker("gallery")}
+                className="group relative grid h-64 w-full place-items-center overflow-hidden rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 transition hover:border-brand-primary"
+              >
                 <div className="flex flex-col items-center gap-2 text-slate-400">
                   <span className="grid h-14 w-14 place-items-center rounded-2xl bg-white shadow-sm">
                     <Camera className="h-6 w-6 text-brand-primary" />
@@ -263,23 +338,131 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                   </span>
                   <span className="text-xs">PNG or JPG, up to 10MB</span>
                 </div>
-              )}
-            </button>
+              </button>
+            ) : (
+              /* One tile per picked photo, plus an add tile while there is room. */
+              <div className="grid grid-cols-3 gap-3">
+                {photos.map((photo, i) => (
+                  <div
+                    key={photo.id}
+                    className="relative aspect-square overflow-hidden rounded-2xl border-2 border-slate-100 bg-slate-50"
+                  >
+                    {photo.dataUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={photo.dataUrl}
+                        alt={`Photo ${i + 1} of ${data.childName || "your child"}`}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <span className="grid h-full w-full place-items-center">
+                        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+                      </span>
+                    )}
+                    {i === 0 && (
+                      <span className="absolute bottom-1 left-1 rounded-md bg-slate-deep/70 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                        Main
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(photo.id)}
+                      aria-label={`Remove photo ${i + 1}`}
+                      className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-slate-deep/70 text-white transition hover:bg-slate-deep"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {photos.length < MAX_PHOTOS && (
+                  <button
+                    onClick={() => openPicker("gallery")}
+                    aria-label="Add another photo"
+                    className="grid aspect-square place-items-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 text-slate-400 transition hover:border-brand-primary hover:text-brand-primary"
+                  >
+                    <span className="flex flex-col items-center gap-1">
+                      <Upload className="h-5 w-5" />
+                      <span className="text-xs font-semibold">Add photo</span>
+                    </span>
+                  </button>
+                )}
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-3">
               <button
-                onClick={() => cameraRef.current?.click()}
-                className="inline-flex items-center gap-2 rounded-xl border-2 border-brand-primary px-4 py-2 text-sm font-bold text-brand-primary transition hover:bg-brand-primary/5"
+                onClick={() => openPicker("camera")}
+                disabled={photos.length >= MAX_PHOTOS}
+                className="inline-flex items-center gap-2 rounded-xl border-2 border-brand-primary px-4 py-2 text-sm font-bold text-brand-primary transition hover:bg-brand-primary/5 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Camera className="h-4 w-4" /> Take a photo
               </button>
               <button
-                onClick={() => fileRef.current?.click()}
-                className="inline-flex items-center gap-2 rounded-xl border-2 border-brand-borderAccent px-4 py-2 text-sm font-bold text-slate-deep transition hover:border-brand-primary hover:text-brand-primary"
+                onClick={() => openPicker("gallery")}
+                disabled={photos.length >= MAX_PHOTOS}
+                className="inline-flex items-center gap-2 rounded-xl border-2 border-brand-borderAccent px-4 py-2 text-sm font-bold text-slate-deep transition hover:border-brand-primary hover:text-brand-primary disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Upload className="h-4 w-4" />{" "}
-                {data.photoDataUrl ? "Replace / upload" : "Upload from gallery"}
+                {photos.length ? "Add another photo" : "Upload from gallery"}
               </button>
+              {photos.length >= MAX_PHOTOS && (
+                <span className="text-xs text-slate-mutedText">
+                  Remove one to swap in a different photo.
+                </span>
+              )}
             </div>
+            <button
+              type="button"
+              onClick={() => setPendingSource("gallery")}
+              className="text-xs font-semibold text-brand-primary underline underline-offset-2"
+            >
+              Photo guidelines for best results
+            </button>
+
+            {pendingSource && (
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="photo-guidelines-title"
+                className="fixed inset-0 z-50 grid place-items-center bg-slate-deep/50 p-4"
+                onClick={() => setPendingSource(null)}
+              >
+                <div
+                  className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-6 shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h3
+                    id="photo-guidelines-title"
+                    className="text-lg font-bold text-slate-deep"
+                  >
+                    Photo guidelines for best results
+                  </h3>
+                  <ul className="mt-4 space-y-3 text-sm text-slate-mutedText">
+                    {PHOTO_GUIDELINES.map((rule) => (
+                      <li key={rule} className="flex gap-2">
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-primary" />
+                        <span>{rule}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setPendingSource(null)}
+                      className="rounded-xl border-2 border-slate-200 px-4 py-2 text-sm font-bold text-slate-mutedText transition hover:border-slate-300"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={agreeToGuidelines}
+                      className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-bold text-white transition hover:opacity-90"
+                    >
+                      I understand — choose photo
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -306,7 +489,7 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                 <Summary k="Language" v={languageLabel(data.language)} />
                 <Summary
                   k="Photo"
-                  v={data.photoDataUrl ? "Uploaded ✓" : "Skipped"}
+                  v={photos.length ? `${photos.length} uploaded ✓` : "Skipped"}
                 />
                 <Summary k="Pages" v={`${story.pages}`} />
               </dl>
