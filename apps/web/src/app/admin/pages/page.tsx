@@ -4,8 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { BookOpen, ImagePlus, Loader2, Plus, Save, Sparkles, Trash2 } from "lucide-react";
+import ProviderCompare from "@/components/ProviderCompare";
 import {
   adminApi,
+  getToken,
   BACK_COVER,
   FRONT_COVER,
   SPINE,
@@ -1463,6 +1465,20 @@ export default function AdminPagesEditor() {
               Then PIL burns this text at ({page.textX}%, {page.textY}%).
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Provider A/B on this book's demo page. Admin view: vendor names,
+          elapsed time and indicative per-image cost. */}
+      {slug && (
+        <div className="mt-8">
+          <ProviderCompare
+            slug={slug}
+            variant={variant}
+            adminToken={getToken()}
+            title="Compare image providers"
+            blurb="Upload a test photo to render this book's demo page through every configured provider. Same base plate, same face region — the provider is the only difference."
+          />
         </div>
       )}
 

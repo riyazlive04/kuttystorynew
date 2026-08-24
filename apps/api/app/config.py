@@ -102,6 +102,14 @@ class Settings(BaseSettings):
     # retry or a re-render of the same page never bills a second time.
     openai_cache_enabled: bool = True
 
+    # --- Public A/B provider comparison (/compare) -----------------------------
+    # Renders ONE demo page through every configured provider. It spends money on
+    # an anonymous request, so it is rate limited per IP and can be switched off
+    # entirely. Admins (valid admin token) bypass the limit.
+    compare_enabled: bool = True
+    compare_rate_limit: int = 3
+    compare_rate_window_seconds: int = 3600
+
     # Self-hosted ComfyUI API node
     comfyui_base_url: str = ""
     comfyui_api_key: str = ""

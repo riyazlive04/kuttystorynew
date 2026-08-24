@@ -836,6 +836,88 @@ async def _openai_faceswap(
     return url
 
 
+# --------------------------------------------------------------------------- #
+#  Explicit per-provider personalization (used by the A/B compare endpoint)     #
+# --------------------------------------------------------------------------- #
+
+# Human labels + indicative per-image cost in USD. ADMIN-FACING ONLY — the
+# storefront never sees vendor names or our unit economics.
+PROVIDER_LABELS: dict[str, str] = {
+    "segmind": "Segmind FaceSwap-Comic",
+    "openai": "OpenAI gpt-image-1",
+}
+
+# Indicative only; the authority is each vendor's pricing page. Used to put a
+# number beside each tile in the admin comparison so a quality difference can be
+# judged against what it costs.
+PROVIDER_EST_COST_USD: dict[str, Any] = {
+    "segmind": 0.065,
+    # gpt-image-1 bills per output image token, so cost tracks the quality tier.
+    "openai": {"low": 0.011, "medium": 0.042, "high": 0.167},
+}
+
+
+def provider_est_cost(provider: str, quality: Optional[str] = None) -> Optional[float]:
+    entry = PROVIDER_EST_COST_USD.get(provider)
+    if isinstance(entry, dict):
+        return entry.get((quality or "").lower())
+    return entry
+
+
+def available_providers() -> list[str]:
+    """Providers that actually have a key configured, in a STABLE order.
+
+    Stable because the storefront labels tiles "Style A"/"Style B" positionally —
+    the ordering must not shuffle between requests or the labels stop meaning
+    anything across two uploads.
+    """
+    out = []
+    if current_segmind_key():
+        out.append("segmind")
+    if current_openai_key():
+        out.append("openai")
+    return out
+
+
+async def personalize_with(
+    provider: str,
+    *,
+    target_src: str,
+    face_src: str,
+    style_prompt: Optional[str] = None,
+    face_region: Optional[dict] = None,
+    seed: int = 0,
+    is_preview: bool = True,
+) -> str:
+    """Personalize one page with a NAMED provider, ignoring the admin toggle.
+
+    render_page() picks the provider from settings; this is the explicit form the
+    comparison endpoint needs to run the same inputs through each of them. Both
+    paths share the underlying implementations, so a tile in the comparison is
+    the same image the pipeline would produce with that provider selected.
+    """
+    if provider == "segmind":
+        if not current_segmind_key():
+            raise RuntimeError("SEGMIND_API_KEY not set")
+        return await _segmind_faceswap(
+            target_src=target_src,
+            face_src=face_src,
+            seed=seed,
+            face_region=face_region,
+        )
+    if provider == "openai":
+        if not current_openai_key():
+            raise RuntimeError("OPENAI_API_KEY not set")
+        return await _openai_faceswap(
+            target_src=target_src,
+            face_src=face_src,
+            style_prompt=style_prompt,
+            face_region=face_region,
+            is_preview=is_preview,
+        )
+    raise RuntimeError(f"Unknown image provider: {provider}")
+
+
 def _is_raster(url: str) -> bool:
     """A base illustration must be a real raster to be a face-swap target.
     SVG placeholders (the demo /covers/*.svg) can't be swapped into."""

@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Check, Star } from "lucide-react";
 import { JsonLd } from "@/components/JsonLd";
 import { PersonalizeWizard } from "@/components/PersonalizeWizard";
+import ProviderCompare from "@/components/ProviderCompare";
 import { getStories, getStoryBySlug, STORY_REVALIDATE } from "@/lib/stories.server";
 import {
   SITE_URL,
@@ -162,6 +163,12 @@ export default async function StoryDetailPage({ params }: Props) {
         <div className="lg:sticky lg:top-24 lg:self-start">
           <PersonalizeWizard story={story} />
         </div>
+      </div>
+
+      {/* Try-before-you-buy: one page from this book, rendered from a photo the
+          visitor uploads. Anonymous callers are rate limited by the API. */}
+      <div className="mt-12">
+        <ProviderCompare slug={story.slug} />
       </div>
     </div>
   );
