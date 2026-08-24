@@ -62,9 +62,9 @@ async def create_payment_order(payload: CreatePaymentIn):
                 "amount": amount_paise,
                 "currency": "INR",
                 "payment_capture": 1,
-                # Our own reference, so a payment can be traced back from the
+                # Our own order id, so a payment can be traced back from the
                 # Razorpay dashboard without opening the database.
-                "receipt": payload.receipt or "",
+                "receipt": order.id,
             }
         )
     except Exception as exc:

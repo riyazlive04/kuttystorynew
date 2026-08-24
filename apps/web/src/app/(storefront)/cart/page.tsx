@@ -3,39 +3,26 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Minus, Plus, ShoppingBag, Tag, Trash2, X } from "lucide-react";
+import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useCart } from "@/lib/cart";
 import { inr, languageLabel } from "@/lib/format";
 import { FormatSwitch } from "@/components/FormatSwitch";
+import { PromoField } from "@/components/PromoField";
 
 export default function CartPage() {
   const [mounted, setMounted] = useState(false);
-  const [code, setCode] = useState("");
-  const [promoMsg, setPromoMsg] = useState<{ ok: boolean; text: string } | null>(
-    null,
-  );
   const items = useCart((s) => s.items);
   const setQty = useCart((s) => s.setQty);
   const remove = useCart((s) => s.remove);
   const setFormat = useCart((s) => s.setFormat);
   const subtotal = useCart((s) => s.subtotal());
   const discount = useCart((s) => s.discount());
-  const promoCode = useCart((s) => s.promoCode);
-  const applyPromo = useCart((s) => s.applyPromo);
-  const removePromo = useCart((s) => s.removePromo);
 
   useEffect(() => setMounted(true), []);
   if (!mounted) return <div className="container-x py-24" />;
 
   const shipping = 0;
   const total = subtotal - discount + shipping;
-
-  async function handleApply() {
-    // Server-priced now, so this is a round trip rather than a local lookup.
-    const res = await applyPromo(code);
-    setPromoMsg({ ok: res.ok, text: res.message });
-    if (res.ok) setCode("");
-  }
 
   if (items.length === 0) {
     return (
@@ -127,52 +114,7 @@ export default function CartPage() {
               Order summary
             </h2>
             {/* Promo code */}
-            <div className="mb-4">
-              {promoCode ? (
-                <div className="flex items-center justify-between rounded-xl border border-brand-mint bg-emerald-50/60 px-3 py-2.5">
-                  <span className="inline-flex items-center gap-1.5 text-sm font-bold text-emerald-700">
-                    <Tag className="h-4 w-4" /> {promoCode} applied
-                  </span>
-                  <button
-                    onClick={() => {
-                      removePromo();
-                      setPromoMsg(null);
-                    }}
-                    className="text-emerald-700/70 hover:text-emerald-900"
-                    aria-label="Remove promo"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="flex gap-2">
-                    <input
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleApply()}
-                      placeholder="Promo code (STORY20)"
-                      className="w-full rounded-xl border-2 border-brand-borderAccent bg-white px-3 py-2 text-sm uppercase outline-none transition focus:border-brand-primary"
-                    />
-                    <button
-                      onClick={handleApply}
-                      className="shrink-0 rounded-xl border-2 border-brand-primary px-4 py-2 text-sm font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white"
-                    >
-                      Apply
-                    </button>
-                  </div>
-                  {promoMsg && (
-                    <p
-                      className={`mt-1.5 text-xs font-semibold ${
-                        promoMsg.ok ? "text-emerald-600" : "text-red-500"
-                      }`}
-                    >
-                      {promoMsg.text}
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
+            <PromoField />
 
             <dl className="space-y-2.5 text-sm">
               <Row k="Subtotal" v={inr(subtotal)} />

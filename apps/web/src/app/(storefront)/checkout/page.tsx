@@ -10,6 +10,7 @@ import { inr } from "@/lib/format";
 import { createOrder, verifyPayment } from "@/lib/api";
 import { INDIAN_STATES, INDIAN_UNION_TERRITORIES } from "@/lib/india";
 import { FormatSwitch } from "@/components/FormatSwitch";
+import { PromoField } from "@/components/PromoField";
 import { payWithRazorpay } from "@/lib/razorpay";
 import type { OrderInput } from "@/lib/types";
 
@@ -197,6 +198,9 @@ export default function CheckoutPage() {
               ))}
             </ul>
             <div className="my-4 border-t border-slate-100" />
+            {/* Same entry point as the cart: a shopper who reaches checkout
+                without applying their code shouldn't have to navigate back. */}
+            <PromoField />
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between text-slate-mutedText">
                 <dt>Subtotal</dt>
