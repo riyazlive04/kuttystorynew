@@ -585,7 +585,7 @@ def _region_bounds_pct(region: dict) -> Optional[tuple[float, float, float, floa
 
 
 def _face_crop_box(
-    region: dict, size: tuple[int, int]
+    region: dict, size: tuple[int, int], padding: Optional[float] = None
 ) -> Optional[tuple[int, int, int, int]]:
     """A padded SQUARE crop box in pixels around the authored face region.
 
@@ -602,7 +602,9 @@ def _face_crop_box(
     px, py = x / 100 * cw, y / 100 * ch
     pw, ph = w / 100 * cw, h / 100 * ch
     cx, cy = px + pw / 2, py + ph / 2
-    edge = max(pw, ph) * (1 + FACE_CROP_PADDING)
+    edge = max(pw, ph) * (
+        1 + (FACE_CROP_PADDING if padding is None else padding)
+    )
     edge = min(edge, float(min(cw, ch)))  # never larger than the canvas
     half = edge / 2
     left = int(round(min(max(cx - half, 0), cw - edge)))
@@ -660,20 +662,27 @@ def _openai_cache_put(key: str, url: str) -> None:
         print(f"[openai] cache write skipped: {e}", flush=True)
 
 
-def _openai_prompt(style_prompt: Optional[str]) -> str:
+def _openai_prompt(style_prompt: Optional[str], photo_first: bool = True) -> str:
     """One fixed instruction for every page. Deliberately identical across pages
     (only the page's own stylePrompt varies) so the model is never nudged toward
-    a different reading of the character from one page to the next."""
+    a different reading of the character from one page to the next.
+
+    The wording follows the image order, because the model is told which input is
+    which by position — see _openai_edit_call for why the photo goes first.
+    """
     style = (style_prompt or "").strip()
+    photo, plate = ("first", "second") if photo_first else ("second", "first")
     return (
-        "The first image is a crop of a children's storybook illustration. The "
-        "second image is a reference photo of a child. Redraw ONLY the face in "
-        "the first image so it is recognisably the same child as in the reference "
-        "photo - keep their face shape, eyes, eyebrows, nose, mouth and skin tone. "
-        "Keep the illustration's exact art style, brushwork, colour palette, "
-        "lighting direction and the character's existing hair, head angle and "
-        "expression. Do not render the face photorealistically; it must stay a "
-        "painted illustration. Change nothing else in the image."
+        f"The {photo} image is a reference photo of a real child. The {plate} "
+        "image is a crop of a children's storybook illustration. Redraw ONLY the "
+        f"face in the {plate} image so it is recognisably the same child as in "
+        "the reference photo - copy their face shape, eyes, eyebrows, nose, mouth "
+        "and skin tone. This is a face replacement: the illustrated character's "
+        "original facial features must not survive the edit. Keep the "
+        "illustration's exact art style, brushwork, colour palette, lighting "
+        "direction and the character's existing hair, head angle and expression. "
+        "Do not render the face photorealistically; it must stay a painted "
+        "illustration. Change nothing else in the image."
         + (f" Art style: {style}." if style else "")
     )
 
@@ -690,6 +699,8 @@ async def _openai_edit_call(
     face_bytes: bytes,
     prompt: str,
     quality: str,
+    input_fidelity: Optional[str] = None,
+    photo_first: bool = True,
     attempts: int = 3,
 ) -> bytes:
     """POST one /images/edits call and return the produced PNG bytes.
@@ -707,16 +718,20 @@ async def _openai_edit_call(
         "prompt": prompt,
         "size": settings.openai_image_size,
         "quality": quality,
-        "input_fidelity": settings.openai_input_fidelity,
+        "input_fidelity": input_fidelity or settings.openai_input_fidelity,
         "n": "1",
     }
     last_err: Exception | None = None
     async with httpx.AsyncClient(timeout=300) as client:
         for attempt in range(attempts):
-            files = [
-                ("image[]", ("scene.png", scene_png, "image/png")),
-                ("image[]", ("face.jpg", face_bytes, "image/jpeg")),
-            ]
+            # ORDER MATTERS. With input_fidelity="high" OpenAI preserves only
+            # the FIRST input image with extra richness. Sending the plate first
+            # therefore spends the fidelity budget locking the illustration's
+            # existing face — the one thing we are asking it to replace. The
+            # child's photo goes first so the richness lands on the identity.
+            scene_part = ("image[]", ("scene.png", scene_png, "image/png"))
+            face_part = ("image[]", ("face.jpg", face_bytes, "image/jpeg"))
+            files = [face_part, scene_part] if photo_first else [scene_part, face_part]
             try:
                 r = await client.post(
                     OPENAI_IMAGE_EDITS_URL, headers=headers, data=data, files=files
@@ -758,6 +773,10 @@ async def _openai_faceswap(
     style_prompt: Optional[str] = None,
     face_region: Optional[dict] = None,
     is_preview: bool = False,
+    quality: Optional[str] = None,
+    input_fidelity: Optional[str] = None,
+    photo_first: bool = True,
+    crop_padding: Optional[float] = None,
 ) -> str:
     """Personalize a child's face onto an ILLUSTRATED base page via gpt-image-1.
 
@@ -767,7 +786,11 @@ async def _openai_faceswap(
     """
     plate_bytes = _image_bytes(target_src)
     face_bytes = _image_bytes(face_src)
-    quality = _openai_quality(is_preview)
+    # Explicit overrides come from the admin A/B tool; the pipeline passes none
+    # and gets the configured behaviour.
+    quality = (quality or _openai_quality(is_preview)).strip().lower()
+    fidelity = (input_fidelity or settings.openai_input_fidelity).strip().lower()
+    padding = FACE_CROP_PADDING if crop_padding is None else crop_padding
 
     cache_key = _openai_cache_key(
         plate_bytes,
@@ -776,8 +799,10 @@ async def _openai_faceswap(
         style_prompt or "",
         settings.openai_image_model,
         settings.openai_image_size,
-        settings.openai_input_fidelity,
+        fidelity,
         quality,
+        padding,
+        photo_first,
     )
     cached = _openai_cache_get(cache_key)
     if cached:
@@ -785,8 +810,8 @@ async def _openai_faceswap(
         return cached
 
     plate = Image.open(io.BytesIO(plate_bytes)).convert("RGB")
-    box = _face_crop_box(face_region, plate.size) if face_region else None
-    prompt = _openai_prompt(style_prompt)
+    box = _face_crop_box(face_region, plate.size, padding) if face_region else None
+    prompt = _openai_prompt(style_prompt, photo_first)
 
     if box:
         crop = plate.crop(box)
@@ -797,6 +822,8 @@ async def _openai_faceswap(
             face_bytes=face_bytes,
             prompt=prompt,
             quality=quality,
+            input_fidelity=fidelity,
+            photo_first=photo_first,
         )
         new_face = (
             Image.open(io.BytesIO(edited))
@@ -816,6 +843,8 @@ async def _openai_faceswap(
             face_bytes=face_bytes,
             prompt=prompt,
             quality=quality,
+            input_fidelity=fidelity,
+            photo_first=photo_first,
         )
         swapped = Image.open(io.BytesIO(edited)).convert("RGB").resize(plate.size)
 
@@ -852,12 +881,58 @@ PROVIDER_LABELS: dict[str, str] = {
 # judged against what it costs.
 PROVIDER_EST_COST_USD: dict[str, Any] = {
     "segmind": 0.065,
-    # gpt-image-1 bills per output image token, so cost tracks the quality tier.
-    "openai": {"low": 0.011, "medium": 0.042, "high": 0.167},
 }
 
+# gpt-image-1 token prices, USD per 1M tokens.
+OPENAI_IMAGE_INPUT_USD_PER_MTOK = 10.0
+OPENAI_IMAGE_OUTPUT_USD_PER_MTOK = 40.0
 
-def provider_est_cost(provider: str, quality: Optional[str] = None) -> Optional[float]:
+# Output image tokens for a 1024x1024 square, per quality tier. This is the part
+# people quote as "the price of an image".
+OPENAI_OUTPUT_TOKENS = {"low": 272, "medium": 1056, "high": 4160}
+
+# ...but an EDIT also pays for what it reads. Each square input image costs a 65
+# base + 129 per 512px tile (4 tiles at 1024px), and input_fidelity="high" adds a
+# flat ~4160 tokens per square image on top. At $10/1M that surcharge alone is
+# ~$0.042 an image — four times the entire low-tier output cost, which is why a
+# quote of "$0.011 per image" is only true at low fidelity.
+OPENAI_INPUT_TOKENS_PER_IMAGE = 65 + 129 * 4
+OPENAI_HIGH_FIDELITY_TOKENS_SQUARE = 4160
+
+
+def openai_est_cost(
+    quality: Optional[str] = None,
+    input_fidelity: Optional[str] = None,
+    n_input_images: int = 2,
+) -> float:
+    """Indicative cost of ONE gpt-image-1 edit, input tokens included.
+
+    A face swap sends two images (the child's photo and the plate crop) and gets
+    one back, so the input side is not a rounding error — at high fidelity it is
+    the majority of the bill.
+    """
+    q = (quality or settings.openai_image_quality or "medium").strip().lower()
+    fid = (input_fidelity or settings.openai_input_fidelity or "low").strip().lower()
+
+    out_tokens = OPENAI_OUTPUT_TOKENS.get(q, OPENAI_OUTPUT_TOKENS["medium"])
+    in_tokens = OPENAI_INPUT_TOKENS_PER_IMAGE * max(n_input_images, 1)
+    if fid == "high":
+        in_tokens += OPENAI_HIGH_FIDELITY_TOKENS_SQUARE * max(n_input_images, 1)
+
+    return round(
+        out_tokens * OPENAI_IMAGE_OUTPUT_USD_PER_MTOK / 1_000_000
+        + in_tokens * OPENAI_IMAGE_INPUT_USD_PER_MTOK / 1_000_000,
+        4,
+    )
+
+
+def provider_est_cost(
+    provider: str,
+    quality: Optional[str] = None,
+    input_fidelity: Optional[str] = None,
+) -> Optional[float]:
+    if provider == "openai":
+        return openai_est_cost(quality, input_fidelity)
     entry = PROVIDER_EST_COST_USD.get(provider)
     if isinstance(entry, dict):
         return entry.get((quality or "").lower())
@@ -888,6 +963,7 @@ async def personalize_with(
     face_region: Optional[dict] = None,
     seed: int = 0,
     is_preview: bool = True,
+    tuning: Optional[dict] = None,
 ) -> str:
     """Personalize one page with a NAMED provider, ignoring the admin toggle.
 
@@ -908,12 +984,17 @@ async def personalize_with(
     if provider == "openai":
         if not current_openai_key():
             raise RuntimeError("OPENAI_API_KEY not set")
+        t = tuning or {}
         return await _openai_faceswap(
             target_src=target_src,
             face_src=face_src,
             style_prompt=style_prompt,
             face_region=face_region,
             is_preview=is_preview,
+            quality=t.get("quality"),
+            input_fidelity=t.get("fidelity"),
+            photo_first=t.get("photo_first", True),
+            crop_padding=t.get("crop_padding"),
         )
     raise RuntimeError(f"Unknown image provider: {provider}")
 

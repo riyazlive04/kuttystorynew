@@ -31,7 +31,18 @@ export default function ProviderCompare({
   title?: string;
   blurb?: string;
 }) {
+  // Admin tuning presets. gpt-image-1's identity transfer and its price both
+  // move with these, and the only way to know which combination is worth paying
+  // for is to render the same face through several of them at once.
+  const OPENAI_PRESETS: { spec: string; label: string; note: string }[] = [
+    { spec: "low:low:photo", label: "low q · low fidelity", note: "~$0.02" },
+    { spec: "low:high:photo", label: "low q · high fidelity", note: "~$0.11" },
+    { spec: "medium:high:photo", label: "medium q · high fidelity", note: "~$0.14" },
+    { spec: "high:high:photo", label: "high q · high fidelity", note: "~$0.26" },
+  ];
+
   const [busy, setBusy] = useState(false);
+  const [presets, setPresets] = useState<string[]>([]);
   const [result, setResult] = useState<CompareResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -51,7 +62,15 @@ export default function ProviderCompare({
       return URL.createObjectURL(file);
     });
     try {
-      setResult(await compareProviders({ file, slug, variant, adminToken }));
+      setResult(
+        await compareProviders({
+          file,
+          slug,
+          variant,
+          adminToken,
+          openaiVariants: presets,
+        }),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
@@ -65,6 +84,41 @@ export default function ProviderCompare({
     <section className="card p-6">
       <h2 className="text-xl font-bold text-slate-deep">{title}</h2>
       <p className="mt-1 text-sm text-slate-mutedText">{blurb}</p>
+
+      {isAdmin && (
+        <div className="mt-4 rounded-xl border-2 border-brand-borderAccent p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-mutedText">
+            OpenAI tuning — each ticked preset is one extra paid render
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {OPENAI_PRESETS.map((p) => {
+              const on = presets.includes(p.spec);
+              return (
+                <button
+                  key={p.spec}
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    setPresets((cur) =>
+                      cur.includes(p.spec)
+                        ? cur.filter((x) => x !== p.spec)
+                        : [...cur, p.spec],
+                    )
+                  }
+                  className={`rounded-lg border-2 px-2.5 py-1 text-xs font-bold transition disabled:opacity-50 ${
+                    on
+                      ? "border-brand-primary bg-brand-lilac/40 text-slate-deep"
+                      : "border-brand-borderAccent text-slate-mutedText hover:border-brand-primary/50"
+                  }`}
+                >
+                  {p.label}{" "}
+                  <span className="font-normal opacity-70">{p.note}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button

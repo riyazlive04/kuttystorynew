@@ -43,6 +43,36 @@ MAX_BYTES = 12 * 1024 * 1024  # a face photo; far below the 40MB base-art cap
 # stable ordering, so "Style A" means the same provider across two uploads.
 NEUTRAL_LABELS = ["Style A", "Style B", "Style C", "Style D"]
 
+# An admin may ask for extra OpenAI tiles rendered with different knobs, to see
+# what identity transfer actually costs before committing to the provider. Each
+# spec is "quality:fidelity:order" — e.g. "low:low:photo". Capped, because every
+# tile is a paid render.
+MAX_VARIANTS = 4
+
+
+def _parse_variants(raw: str) -> list[dict]:
+    """"low:high:photo,medium:low:plate" -> [{quality, fidelity, photo_first}].
+
+    Anything unrecognised is dropped rather than rejected: this is an admin
+    tuning aid, and a typo should cost a missing tile, not a failed comparison.
+    """
+    out: list[dict] = []
+    for chunk in (raw or "").split(","):
+        parts = [p.strip().lower() for p in chunk.split(":") if p.strip()]
+        if not parts:
+            continue
+        quality = parts[0] if parts[0] in ("low", "medium", "high") else None
+        if not quality:
+            continue
+        fidelity = parts[1] if len(parts) > 1 and parts[1] in ("low", "high") else "low"
+        photo_first = not (len(parts) > 2 and parts[2].startswith("plate"))
+        out.append(
+            {"quality": quality, "fidelity": fidelity, "photo_first": photo_first}
+        )
+        if len(out) >= MAX_VARIANTS:
+            break
+    return out
+
 
 def _is_admin(authorization: Optional[str], x_admin_token: Optional[str]) -> bool:
     token = None
@@ -98,6 +128,9 @@ async def compare_providers(
     file: UploadFile = File(...),
     slug: str = Form(...),
     variant: str = Form("boy"),
+    # Admin-only OpenAI tuning specs; ignored for anonymous callers so the
+    # storefront can never be talked into rendering four paid tiles.
+    variants: str = Form(""),
     authorization: Optional[str] = Header(default=None),
     x_admin_token: Optional[str] = Header(default=None),
 ):
@@ -146,6 +179,7 @@ async def compare_providers(
     from ..generation_engine import (
         PROVIDER_LABELS,
         available_providers,
+        current_openai_key,
         personalize_with,
         provider_est_cost,
     )
@@ -158,7 +192,7 @@ async def compare_providers(
 
     region = _face_region(page)
 
-    async def run(provider: str) -> dict:
+    async def run(provider: str, tuning: Optional[dict] = None) -> dict:
         started = time.monotonic()
         try:
             url = await personalize_with(
@@ -170,26 +204,43 @@ async def compare_providers(
                 seed=0,
                 # A comparison is a preview, not a paid render: bill the cheap tier.
                 is_preview=True,
+                tuning=tuning,
             )
-            return {"provider": provider, "url": url, "ms": int((time.monotonic() - started) * 1000)}
+            return {
+                "provider": provider,
+                "url": url,
+                "ms": int((time.monotonic() - started) * 1000),
+                "tuning": tuning,
+            }
         except Exception as e:  # noqa: BLE001 — one provider failing must not
             # sink the whole comparison; the tile reports its own error instead.
             return {
                 "provider": provider,
                 "url": None,
                 "ms": int((time.monotonic() - started) * 1000),
+                "tuning": tuning,
                 "error": str(e)[:300],
             }
 
-    results = await asyncio.gather(*(run(p) for p in providers))
+    jobs = [run(p) for p in providers]
+    tunings = (
+        _parse_variants(variants) if admin and current_openai_key() else []
+    )
+    jobs += [run("openai", t) for t in tunings]
+    results = await asyncio.gather(*jobs)
 
     tiles = []
     for i, r in enumerate(results):
+        t = r.get("tuning")
+        label = PROVIDER_LABELS.get(r["provider"], r["provider"])
+        if t:
+            order = "photo-first" if t["photo_first"] else "plate-first"
+            label = f"{label} · {t['quality']} q · {t['fidelity']} fidelity · {order}"
         tile = {
-            "id": r["provider"] if admin else f"style-{i}",
-            "label": PROVIDER_LABELS.get(r["provider"], r["provider"])
+            "id": (f"{r['provider']}-{i}" if t else r["provider"])
             if admin
-            else NEUTRAL_LABELS[i % len(NEUTRAL_LABELS)],
+            else f"style-{i}",
+            "label": label if admin else NEUTRAL_LABELS[i % len(NEUTRAL_LABELS)],
             "url": r["url"],
         }
         if r.get("error"):
@@ -198,8 +249,12 @@ async def compare_providers(
             tile["error"] = r["error"] if admin else "This style couldn't be generated."
         if admin:
             tile["ms"] = r["ms"]
+            # Cost the tile as it was actually rendered, input tokens included —
+            # the whole point of the tuning tiles is an honest price comparison.
             tile["estCostUsd"] = provider_est_cost(
-                r["provider"], settings.openai_preview_quality
+                r["provider"],
+                (t or {}).get("quality") or settings.openai_preview_quality,
+                (t or {}).get("fidelity"),
             )
         tiles.append(tile)
 

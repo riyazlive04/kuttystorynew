@@ -41,12 +41,21 @@ export async function compareProviders(opts: {
   slug: string;
   variant?: string;
   adminToken?: string;
+  /**
+   * Admin-only extra OpenAI tiles, as "quality:fidelity:order" specs — e.g.
+   * ["low:low:photo", "medium:high:plate"]. Each one is a paid render, and the
+   * API ignores them for anonymous callers.
+   */
+  openaiVariants?: string[];
 }): Promise<CompareResult> {
   if (!API) throw new Error("Backend not configured (set NEXT_PUBLIC_API_URL).");
   const body = new FormData();
   body.append("file", opts.file);
   body.append("slug", opts.slug);
   body.append("variant", opts.variant || "boy");
+  if (opts.openaiVariants?.length) {
+    body.append("variants", opts.openaiVariants.join(","));
+  }
 
   const res = await fetch(`${API}/compare`, {
     method: "POST",
