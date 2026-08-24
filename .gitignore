@@ -40,3 +40,9 @@ apps/api/celerybeat-schedule
 
 # local-only docker overrides (e.g. dev port remaps)
 docker-compose.override.yml
+
+# Generated proof PDFs dropped in the repo root by the pdf service
+/*.pdf
+
+# Editor-local settings
+.vscode/
