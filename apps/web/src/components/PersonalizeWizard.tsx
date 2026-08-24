@@ -15,6 +15,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { CameraCapture } from "@/components/CameraCapture";
 import type { Personalization, Story } from "@/lib/types";
 import { createJob, uploadPhoto } from "@/lib/api";
 import { languageLabel, previewPath } from "@/lib/format";
@@ -31,6 +32,15 @@ const PHOTO_GUIDELINES = [
   "Make sure your child's face is clearly visible and facing the camera.",
   "Avoid blurry, dark, or heavily filtered photos.",
 ];
+
+// Phones hand `<input capture>` to the native camera app, which beats anything
+// we can build. Desktop browsers ignore `capture` and silently fall back to the
+// file dialog, so there we drive the webcam ourselves.
+function nativeCameraLikely() {
+  if (typeof navigator === "undefined") return true;
+  if (!navigator.mediaDevices?.getUserMedia) return true;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
 
 // One picked photo: previewed locally the moment it is chosen, then uploaded.
 type PhotoItem = { id: number; dataUrl: string; url?: string };
@@ -89,6 +99,10 @@ export function PersonalizeWizard({ story }: { story: Story }) {
     const picked = Array.from(e.target.files || []);
     // Clear the input so re-picking the same file after a remove still fires.
     e.target.value = "";
+    addFiles(picked);
+  }
+
+  function addFiles(picked: File[]) {
     const files = picked.slice(0, Math.max(0, MAX_PHOTOS - photos.length));
     if (!files.length) return;
 
@@ -132,19 +146,30 @@ export function PersonalizeWizard({ story }: { story: Story }) {
     "gallery" | "camera" | null
   >(null);
 
+  const [cameraOpen, setCameraOpen] = useState(false);
+
+  function launchSource(source: "gallery" | "camera") {
+    if (source === "camera") {
+      if (nativeCameraLikely()) cameraRef.current?.click();
+      else setCameraOpen(true);
+      return;
+    }
+    fileRef.current?.click();
+  }
+
   function openPicker(source: "gallery" | "camera") {
     if (!guidelinesAgreed) {
       setPendingSource(source);
       return;
     }
-    (source === "camera" ? cameraRef : fileRef).current?.click();
+    launchSource(source);
   }
 
   function agreeToGuidelines() {
-    const source = pendingSource;
+    const source = pendingSource ?? "gallery";
     setGuidelinesAgreed(true);
     setPendingSource(null);
-    (source === "camera" ? cameraRef : fileRef).current?.click();
+    launchSource(source);
   }
 
   // Nav (Back/Continue) only shows on Child(0) & Photo(1); Review(2) has its own
@@ -417,6 +442,17 @@ export function PersonalizeWizard({ story }: { story: Story }) {
             >
               Photo guidelines for best results
             </button>
+
+            {cameraOpen && (
+              <CameraCapture
+                onCapture={(file) => addFiles([file])}
+                onClose={() => setCameraOpen(false)}
+                onUseGallery={() => {
+                  setCameraOpen(false);
+                  fileRef.current?.click();
+                }}
+              />
+            )}
 
             {pendingSource && (
               <div
