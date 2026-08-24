@@ -94,8 +94,11 @@ class Settings(BaseSettings):
     # at `openai_preview_quality`; the paid/final render uses `openai_image_quality`.
     # Previews dominate spend — 13 free pages are rendered for every visitor,
     # including the ones who never buy — so they default a tier down.
-    openai_image_quality: str = "high"
-    openai_preview_quality: str = "low"
+    openai_image_quality: str = "medium"
+    # Medium too, not a tier down: at input_fidelity="high" the input tokens
+    # dominate the bill, so low only saves ~30% (~$0.106 vs ~$0.137 a page) while
+    # visibly costing likeness — and the preview is what the customer judges.
+    openai_preview_quality: str = "medium"
     # Preserves likeness from the input photo instead of re-imagining the face.
     openai_input_fidelity: str = "high"
     # Cache personalized face crops keyed on (plate, photo, region, quality) so a
