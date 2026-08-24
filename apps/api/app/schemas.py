@@ -81,6 +81,20 @@ class CustomerIn(BaseModel):
     pincode: Optional[str] = None
 
 
+class ValidatePromoIn(BaseModel):
+    code: str
+    subtotal: int
+    quantity: int = 1
+
+
+class ValidatePromoOut(BaseModel):
+    ok: bool
+    discount: int = 0
+    code: Optional[str] = None
+    message: str
+    total: int
+
+
 class OrderIn(BaseModel):
     items: list[CartItemIn]
     customer: CustomerIn

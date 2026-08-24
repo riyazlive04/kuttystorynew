@@ -81,6 +81,39 @@ function deriveMockJob(raw: any): Job {
 /*  Public API                                                         */
 /* ------------------------------------------------------------------ */
 
+export interface PromoResult {
+  ok: boolean;
+  discount: number;
+  code: string | null;
+  message: string;
+  total: number;
+}
+
+/** Price a promo code on the server.
+ *
+ * Discount rules live server-side so private codes never have to ship in the
+ * JS bundle. `null` means there is no backend at all (the pure front-end demo),
+ * which the caller handles with its own local fallback.
+ */
+export async function validatePromo(
+  code: string,
+  subtotal: number,
+  quantity: number,
+): Promise<PromoResult | null> {
+  if (!API) return null;
+  try {
+    const res = await fetch(`${API}/promo/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, subtotal, quantity }),
+    });
+    if (!res.ok) return { ok: false, discount: 0, code: null, message: "Couldn't check that code.", total: subtotal };
+    return (await res.json()) as PromoResult;
+  } catch {
+    return { ok: false, discount: 0, code: null, message: "Couldn't reach the server.", total: subtotal };
+  }
+}
+
 export async function uploadPhoto(file: File): Promise<string | undefined> {
   // Uploads the child's photo to the backend; returns the rawPhotoUrl.
   // In no-backend mode there's nothing to upload to, so returns undefined.

@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     razorpay_key_secret: str = ""
     razorpay_webhook_secret: str = ""
 
+    # Private admin promo code: collapses any cart to `admin_test_promo_total`
+    # rupees so a real payment can be pushed through the LIVE gateway cheaply.
+    # Blank disables it entirely — there is no default, so a deploy that never
+    # sets it simply has no such code. Never expose this to the client bundle.
+    admin_test_promo_code: str = ""
+    admin_test_promo_total: int = 5
+
     # GPU provider: "mock" | "runpod" | "replicate" | "comfyui"
     gpu_provider: str = "mock"
 

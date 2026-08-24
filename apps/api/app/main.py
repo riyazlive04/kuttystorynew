@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import connect, disconnect, prisma
-from .routers import stories, jobs, orders, payments, admin, uploads
+from .routers import stories, jobs, orders, payments, promo, admin, uploads
 
 
 @asynccontextmanager
@@ -70,6 +70,7 @@ app.include_router(stories.router)
 app.include_router(jobs.router)
 app.include_router(orders.router)
 app.include_router(payments.router)
+app.include_router(promo.router)
 app.include_router(admin.router)
 app.include_router(uploads.router)
 

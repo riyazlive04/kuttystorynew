@@ -30,8 +30,9 @@ export default function CartPage() {
   const shipping = 0;
   const total = subtotal - discount + shipping;
 
-  function handleApply() {
-    const res = applyPromo(code);
+  async function handleApply() {
+    // Server-priced now, so this is a round trip rather than a local lookup.
+    const res = await applyPromo(code);
     setPromoMsg({ ok: res.ok, text: res.message });
     if (res.ok) setCode("");
   }
