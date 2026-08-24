@@ -8,12 +8,13 @@ const KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
 const API = process.env.NEXT_PUBLIC_API_URL;
 
 export interface PayArgs {
-  amount: number; // in INR (rupees)
+  /** Our order id. The server prices it — the browser never quotes an amount,
+   *  so a tampered client can't decide what a book costs. */
+  orderId: string;
   name: string;
   email: string;
   phone: string;
   orderTitle: string;
-  receipt?: string; // our reference, echoed into the Razorpay dashboard
 }
 
 export interface PayResult {
@@ -65,11 +66,12 @@ export async function payWithRazorpay(args: PayArgs): Promise<PayResult> {
   const ok = await loadScript("https://checkout.razorpay.com/v1/checkout.js");
   if (!ok) throw new Error("Failed to load Razorpay. Check your connection.");
 
-  // Ask the backend to create a Razorpay order (amount in paise handled server-side).
+  // Ask the backend to create a Razorpay order. We send only which order to
+  // pay for; the server reads the price off the order it stored.
   const res = await fetch(`${API}/payments/create-order`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ amount: args.amount, receipt: args.receipt }),
+    body: JSON.stringify({ orderId: args.orderId }),
   });
   if (!res.ok) {
     const detail = await res
@@ -78,7 +80,16 @@ export async function payWithRazorpay(args: PayArgs): Promise<PayResult> {
       .catch(() => null);
     throw new Error(detail || "Could not start payment.");
   }
-  const rp = await res.json(); // { id, amount, currency }
+  const rp = await res.json(); // { id, amount, currency, live }
+
+  // We hold a real key but the backend has none, so it handed back a fake order
+  // id. Forwarding that to Razorpay fails with an opaque error; say what is
+  // actually wrong instead.
+  if (rp.live === false) {
+    throw new Error(
+      "Payments are misconfigured: the server is in mock mode and has no Razorpay credentials.",
+    );
+  }
 
   return new Promise<PayResult>((resolve, reject) => {
     const rzp = new (window as any).Razorpay({

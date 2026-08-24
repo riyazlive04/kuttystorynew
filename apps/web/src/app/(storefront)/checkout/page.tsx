@@ -61,15 +61,10 @@ export default function CheckoutPage() {
     setError(null);
     setPaying(true);
     try {
-      const payment = await payWithRazorpay({
-        amount: total,
-        name: form.name,
-        email: form.email,
-        phone: form.phone,
-        orderTitle: `KuttyStory · ${items.length} book(s)`,
-        receipt: `kutty_${Date.now()}`,
-      });
-
+      // Order FIRST, payment second. The server reprices the cart as it stores
+      // the order, and that stored total is what the gateway then charges — so
+      // the amount is never the browser's to choose. It also means we can no
+      // longer take money for an order that failed to save.
       const input: OrderInput = {
         items,
         customer: form,
@@ -80,6 +75,14 @@ export default function CheckoutPage() {
         total,
       };
       const order = await createOrder(input);
+
+      const payment = await payWithRazorpay({
+        orderId: order.id,
+        name: form.name,
+        email: form.email,
+        phone: form.phone,
+        orderTitle: `KuttyStory · ${items.length} book(s)`,
+      });
 
       // Verify server-side before treating the order as paid: the signature is
       // the only proof the payment is genuine, and it can only be checked with

@@ -117,8 +117,9 @@ class OrderOut(BaseModel):
 
 
 class CreatePaymentIn(BaseModel):
-    amount: int  # rupees
-    receipt: Optional[str] = None  # our reference, shown in the Razorpay dashboard
+    # Names the order to pay for. Deliberately carries NO amount: the price is
+    # whatever the server already stored against this order.
+    orderId: str
 
 
 class CreatePaymentOut(BaseModel):

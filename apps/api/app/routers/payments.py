@@ -26,8 +26,23 @@ def _razorpay_client():
 
 @router.post("/create-order", response_model=CreatePaymentOut)
 async def create_payment_order(payload: CreatePaymentIn):
-    """Create a Razorpay order. Amount arrives in rupees, Razorpay wants paise."""
-    amount_paise = payload.amount * 100
+    """Create a Razorpay order for an order WE already priced.
+
+    The amount is read from the stored order and never from the request. The
+    browser gets to say *which* order it is paying for, not what it costs —
+    otherwise a tampered client could pay ₹1 for a hardcover.
+    """
+    order = await prisma.order.find_unique(where={"id": payload.orderId})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status != "pending":
+        # Already paid, or beyond payment. Charging again would take money for
+        # nothing, so refuse rather than create a second gateway order.
+        raise HTTPException(
+            status_code=409, detail="This order is not awaiting payment."
+        )
+
+    amount_paise = order.total * 100
     if amount_paise < MIN_PAISE:
         raise HTTPException(
             status_code=400,
@@ -37,7 +52,7 @@ async def create_payment_order(payload: CreatePaymentIn):
     if not settings.payments_live:
         # Mock mode — no credentials configured.
         return CreatePaymentOut(
-            id=f"order_mock_{payload.amount}", amount=amount_paise, live=False
+            id=f"order_mock_{order.id}", amount=amount_paise, live=False
         )
 
     client = _razorpay_client()
@@ -64,6 +79,13 @@ async def create_payment_order(payload: CreatePaymentIn):
         raise HTTPException(
             status_code=500, detail="Could not reach the payment gateway."
         )
+
+    # Record the gateway's order id NOW rather than at verify time. The webhook
+    # reconciles on this field, so without it a customer who closes the tab
+    # before /verify runs could never be matched to their payment.
+    await prisma.order.update(
+        where={"id": order.id}, data={"razorpayOrderId": rp_order["id"]}
+    )
 
     return CreatePaymentOut(
         id=rp_order["id"], amount=amount_paise, currency="INR", live=True
@@ -96,6 +118,14 @@ async def verify_payment(payload: VerifyPaymentIn):
     order = await prisma.order.find_unique(where={"id": payload.orderId})
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+
+    # The signature proves the payment is genuine; this proves it is genuine
+    # *for this order*. Without it, a cheap order's payment could be replayed
+    # to settle an expensive one.
+    if order.razorpayOrderId and order.razorpayOrderId != payload.razorpay_order_id:
+        raise HTTPException(
+            status_code=400, detail="Payment does not belong to this order."
+        )
 
     if settings.payments_live:
         expected = hmac.new(
