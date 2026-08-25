@@ -105,6 +105,11 @@ class Settings(BaseSettings):
     # retry or a re-render of the same page never bills a second time.
     openai_cache_enabled: bool = True
 
+    # Admin-triggered SAM3 auto-tracing of a page's face outline. Off = the
+    # button is refused; renders are unaffected either way, since a trace is
+    # stored as an ordinary facePath.
+    sam3_autotrace_enabled: bool = True
+
     # When a page has no traced face outline, detect one from the base art so the
     # hair-keeping composite still has a region to work with. Off = untraced
     # pages keep the old full-head swap.

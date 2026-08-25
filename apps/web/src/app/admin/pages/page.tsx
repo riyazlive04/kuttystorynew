@@ -348,6 +348,49 @@ export default function AdminPagesEditor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [warpKey]);
   const [tracing, setTracing] = useState(false);
+
+  // SAM3 auto-tracing. Slow (minutes per page) and paid, so the button reports
+  // what happened per page rather than silently succeeding or failing.
+  const [autoTracing, setAutoTracing] = useState(false);
+  const [autoTraceMsg, setAutoTraceMsg] = useState<string | null>(null);
+
+  async function autoTrace(scope: "page" | "book") {
+    if (autoTracing || !page) return;
+    const pages = scope === "page" ? [page.pageNumber] : undefined;
+    const cost = scope === "page" ? "~$0.40" : "~$0.40 per page";
+    if (
+      !confirm(
+        scope === "page"
+          ? `Trace this page's face with SAM3?\n\nTakes 2-5 minutes and costs ${cost} in Segmind credits.`
+          : `Trace every untraced page in this ${variant} book?\n\nEach page takes 2-5 minutes and costs ${cost}. Pages that already have an outline are skipped.`,
+      )
+    )
+      return;
+
+    setAutoTracing(true);
+    setAutoTraceMsg("Tracing… this takes a few minutes per page.");
+    try {
+      const res = await adminApi.autoTraceFaces(slug, {
+        variant,
+        pageNumbers: pages,
+        overwrite: scope === "page",
+      });
+      const failed = res.pages.filter((p) => p.status === "failed");
+      setAutoTraceMsg(
+        `Traced ${res.traced} page${res.traced === 1 ? "" : "s"}` +
+          (failed.length
+            ? ` · ${failed.length} failed (${failed[0].detail ?? "unknown"})`
+            : ""),
+      );
+      // Re-read: the outlines now live on the server, not in local state.
+      const fresh = await adminApi.pages(slug, variant);
+      setPages(fresh);
+    } catch (e) {
+      setAutoTraceMsg(e instanceof Error ? e.message : "Auto-trace failed");
+    } finally {
+      setAutoTracing(false);
+    }
+  }
   const [livePath, setLivePath] = useState<number[][]>([]);
   const r1 = (n: number) => Math.round(n * 10) / 10;
 
@@ -980,6 +1023,39 @@ export default function AdminPagesEditor() {
                   >
                     Clear outline
                   </button>
+                )}
+              </div>
+
+              {/* Auto-trace. Worth the wait and the credits because an outline
+                  is authored once and then every render of every customer's
+                  book uses it. */}
+              <div className="mt-3 rounded-xl border-2 border-dashed border-brand-borderAccent p-3">
+                <p className="text-xs text-slate-mutedText">
+                  Or let <b>SAM3</b> trace it: it follows the real hairline and
+                  jaw. Takes <b>2–5 minutes</b> and costs <b>~$0.40</b> a page in
+                  Segmind credits, so it runs once per plate and is saved like a
+                  hand-traced outline.
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => autoTrace("page")}
+                    disabled={autoTracing || !page.baseImageUrl}
+                    className="rounded-xl border-2 border-brand-primary px-3 py-1.5 text-xs font-bold text-brand-primary transition hover:bg-brand-primary/5 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {autoTracing ? "Tracing…" : "Auto-trace this page"}
+                  </button>
+                  <button
+                    onClick={() => autoTrace("book")}
+                    disabled={autoTracing}
+                    className="rounded-xl border-2 border-brand-borderAccent px-3 py-1.5 text-xs font-bold text-slate-mutedText transition hover:border-brand-primary hover:text-brand-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Trace all untraced pages
+                  </button>
+                </div>
+                {autoTraceMsg && (
+                  <p className="mt-2 text-xs font-semibold text-slate-deep">
+                    {autoTraceMsg}
+                  </p>
                 )}
               </div>
             </Field>

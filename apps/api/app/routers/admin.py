@@ -611,6 +611,72 @@ class PageUpsert(BaseModel):
     textBox: Optional[dict] = None
 
 
+class AutoTraceIn(BaseModel):
+    variant: Literal["boy", "girl"] = "boy"
+    pageNumbers: Optional[list[int]] = None  # None = every page missing an outline
+    overwrite: bool = False                  # re-trace pages that already have one
+
+
+@router.post("/stories/{slug}/autotrace", dependencies=[Depends(require_admin)])
+async def admin_autotrace_faces(slug: str, body: AutoTraceIn):
+    """Trace face outlines with SAM3 and store them as ordinary facePaths.
+
+    Deliberately sequential and deliberately slow: each page is a ~150-280s
+    Segmind call costing real credits, so this reports what it did per page
+    rather than failing the batch on one bad plate. Existing outlines are left
+    alone unless `overwrite` is set — a hand-traced one is better than anything
+    here and must never be silently replaced.
+    """
+    from ..sam3 import sam3_enabled, trace_face
+
+    if not sam3_enabled():
+        raise HTTPException(status_code=400, detail="SAM3 auto-tracing is turned off")
+
+    story = await prisma.story.find_unique(where={"slug": slug})
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    variant = normalize_variant(body.variant)
+    pages = await prisma.pagetemplate.find_many(
+        where={"bookTemplateId": story.id, "variant": variant},
+        order={"pageNumber": "asc"},
+    )
+
+    results = []
+    for page in pages:
+        if body.pageNumbers is not None and page.pageNumber not in body.pageNumbers:
+            continue
+        if not (page.baseImageUrl or "").strip():
+            results.append({"pageNumber": page.pageNumber, "status": "no base art"})
+            continue
+        existing = getattr(page, "facePath", None)
+        if existing and len(existing) >= 3 and not body.overwrite:
+            results.append({"pageNumber": page.pageNumber, "status": "already traced"})
+            continue
+
+        traced = await trace_face(page.baseImageUrl, variant=variant)
+        if traced.get("error"):
+            results.append(
+                {"pageNumber": page.pageNumber, "status": "failed", "detail": traced["error"]}
+            )
+            continue
+
+        await prisma.pagetemplate.update(
+            where={"id": page.id}, data={"facePath": Json(traced["points"])}
+        )
+        results.append(
+            {
+                "pageNumber": page.pageNumber,
+                "status": "traced",
+                "points": len(traced["points"]),
+                "creditsLeft": traced.get("credits"),
+            }
+        )
+
+    traced_count = sum(1 for r in results if r["status"] == "traced")
+    return {"variant": variant, "traced": traced_count, "pages": results}
+
+
 @router.get("/stories/{slug}/pages", dependencies=[Depends(require_admin)])
 async def admin_list_pages(slug: str, variant: str = "boy"):
     """One gender variant's pages. The book is authored twice — the Page Editor

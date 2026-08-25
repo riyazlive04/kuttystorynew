@@ -233,6 +233,18 @@ export interface AdminFont {
   custom?: boolean; // admin-installed, living on the storage volume
 }
 
+export interface AutoTraceResult {
+  variant: string;
+  traced: number;
+  pages: {
+    pageNumber: number;
+    status: "traced" | "failed" | "already traced" | "no base art";
+    points?: number;
+    detail?: string;
+    creditsLeft?: string | null;
+  }[];
+}
+
 export const adminApi = {
   stats: (): Promise<AdminStats> => req("/admin/stats"),
   orders: (status?: string): Promise<Order[]> =>
@@ -268,6 +280,25 @@ export const adminApi = {
   ): Promise<{ ok: boolean; slug: string; forced?: boolean }> =>
     req(`/admin/stories/${slug}${force ? "?force=true" : ""}`, {
       method: "DELETE",
+    }),
+  /**
+   * Trace face outlines with SAM3 and store them as ordinary facePaths.
+   *
+   * SLOW and PAID: ~150-280s and ~0.38 Segmind credits per page, run
+   * sequentially. Pages that already have an outline are skipped unless
+   * `overwrite` is set — a hand-traced outline beats a generated one.
+   */
+  autoTraceFaces: (
+    slug: string,
+    body: {
+      variant: "boy" | "girl";
+      pageNumbers?: number[];
+      overwrite?: boolean;
+    },
+  ): Promise<AutoTraceResult> =>
+    req(`/admin/stories/${slug}/autotrace`, {
+      method: "POST",
+      body: JSON.stringify(body),
     }),
   fonts: (): Promise<AdminFont[]> => req("/admin/fonts"),
   // Compose the page's text over its base art with the REAL renderer and hand
