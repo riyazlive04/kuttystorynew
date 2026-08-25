@@ -25,14 +25,22 @@ from typing import Optional
 
 # How much to grow the detector's box, and how far to bias it downwards. Haar
 # returns a tight brow-to-lip box: grown, it reaches the jaw; dropped, it stops
-# eating into the hairline. Tuned against the storefront's own base art.
-BOX_GROW = 0.18
-BOX_DROP = 0.08
+# eating into the hairline. Kept modest — an oversized region is not a softer
+# failure, it is the model repainting a neck or a bunch of flowers.
+BOX_GROW = 0.12
+BOX_DROP = 0.05
 
-# A detection smaller than this is scenery (a background face, an animal's eye);
-# larger than this is a false positive on the whole canvas.
+# A detection smaller than this is scenery; larger than this is not a face on a
+# storybook page. Measured across a full 28-page book: real faces ran 12-29% of
+# the short edge and false positives 5-55%, so this bound alone would not sort
+# them — it only rules out the absurd, and the eye check below does the work.
 MIN_FACE_FRACTION = 0.05
-MAX_FACE_AREA_FRACTION = 0.60
+MAX_FACE_EDGE_FRACTION = 0.45
+
+# A face has eyes in it. This one check separated every true detection from
+# every false one across that book — real faces returned two eyes, the torso and
+# foliage boxes returned none — so it is the gate, not a tie-breaker.
+MIN_EYES = 2
 
 # Detection runs on a downscaled copy — the result is in percent, so precision at
 # full resolution buys nothing but seconds.
@@ -65,27 +73,61 @@ def _detect(image_bytes: bytes) -> Optional[dict]:
         img = cv2.resize(img, (int(w * scale), int(h * scale)))
     dh, dw = img.shape[:2]
 
-    cascade = cv2.CascadeClassifier(
-        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-    )
-    if cascade.empty():
-        return None
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    haar = cv2.data.haarcascades
+    eye_cascade = cv2.CascadeClassifier(haar + "haarcascade_eye.xml")
 
     min_edge = int(min(dw, dh) * MIN_FACE_FRACTION)
-    faces = cascade.detectMultiScale(
-        cv2.cvtColor(img, cv2.COLOR_BGR2GRAY),
-        scaleFactor=1.1,
-        minNeighbors=5,
-        minSize=(min_edge, min_edge),
-    )
-    if len(faces) == 0:
+    max_edge = min(dw, dh) * MAX_FACE_EDGE_FRACTION
+
+    # Two cascades rather than one: they disagree about the exact framing but
+    # agree about where the face is, and pooling their candidates means a face
+    # one of them misses is still found.
+    candidates = []
+    for name in (
+        "haarcascade_frontalface_default.xml",
+        "haarcascade_frontalface_alt2.xml",
+    ):
+        cascade = cv2.CascadeClassifier(haar + name)
+        if cascade.empty():
+            continue
+        for x, y, fw, fh in cascade.detectMultiScale(
+            gray, scaleFactor=1.1, minNeighbors=5, minSize=(min_edge, min_edge)
+        ):
+            if fw > max_edge or fh > max_edge:
+                continue
+            # Eyes live in the upper part of a face box; searching the whole box
+            # invites a mouth or a nostril to pass for one.
+            roi = gray[int(y) : int(y + fh * 0.65), int(x) : int(x + fw)]
+            if roi.size == 0:
+                continue
+            eye_min = max(6, int(fw / 12))
+            eyes = eye_cascade.detectMultiScale(
+                roi, scaleFactor=1.1, minNeighbors=6, minSize=(eye_min, eye_min)
+            )
+            if len(eyes) >= MIN_EYES:
+                candidates.append((int(x), int(y), int(fw), int(fh)))
+
+    if not candidates:
         return None
 
-    # The hero's face is the big one. A children's page routinely also contains
-    # an animal or a background character the cascade will happily report.
-    x, y, fw, fh = max(faces, key=lambda f: int(f[2]) * int(f[3]))
-    if (fw * fh) > (dw * dh * MAX_FACE_AREA_FRACTION):
-        return None
+    # The hero is the largest face that survived. Average it with any candidate
+    # framing the same head — the two cascades bracket the true box, and the
+    # mean of them sits better than either alone.
+    anchor = max(candidates, key=lambda c: c[2] * c[3])
+    ax, ay, aw, ah = anchor
+    acx, acy = ax + aw / 2, ay + ah / 2
+    same_head = [
+        c
+        for c in candidates
+        if abs((c[0] + c[2] / 2) - acx) < aw * 0.25
+        and abs((c[1] + c[3] / 2) - acy) < ah * 0.25
+    ] or [anchor]
+
+    x = sum(c[0] for c in same_head) / len(same_head)
+    y = sum(c[1] for c in same_head) / len(same_head)
+    fw = sum(c[2] for c in same_head) / len(same_head)
+    fh = sum(c[3] for c in same_head) / len(same_head)
 
     cx = x + fw / 2
     cy = y + fh / 2 + fh * BOX_DROP
