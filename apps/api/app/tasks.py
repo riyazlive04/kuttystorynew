@@ -668,9 +668,20 @@ async def _purge() -> int:
             }
         )
         for job in expired:
-            # Delete the raw uploaded face photo.
-            if job.photoUrl and "/uploads/" in job.photoUrl:
-                _safe_unlink(os.path.join(settings.storage_dir, job.photoUrl.split("/uploads/")[1]))
+            # Delete the raw uploaded face photos -- ALL of them.
+            #
+            # This used to unlink job.photoUrl alone. The wizard accepts up to
+            # three photos and stores every one in photoUrls[], uploads are named
+            # {uuid}.jpg so the {job.id}_* glob below never matched them, and the
+            # row scrub left photoUrls populated. Every customer who uploaded
+            # more than one photo therefore kept the extras on disk for good,
+            # with the database still pointing at them -- past the retention the
+            # privacy page promises them, and they are photographs of children.
+            for photo in {job.photoUrl, *(getattr(job, "photoUrls", None) or [])}:
+                if photo and "/uploads/" in photo:
+                    _safe_unlink(
+                        os.path.join(settings.storage_dir, photo.split("/uploads/")[1])
+                    )
             # Delete cached preview page assets for this session.
             for f in glob.glob(os.path.join(settings.storage_dir, f"{job.id}_*")):
                 _safe_unlink(f)
@@ -680,6 +691,7 @@ async def _purge() -> int:
                 data={
                     "purged": True,
                     "photoUrl": None,
+                    "photoUrls": [],
                     "identityVectors": Json(None),
                     "pages": Json([]),
                 },
