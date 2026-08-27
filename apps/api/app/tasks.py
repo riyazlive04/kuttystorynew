@@ -166,10 +166,17 @@ async def _render_one(
 
             face_region = detect_face_region_for(base_image_url)
 
+    # Which of the customer's photos drives the swap. The wizard takes up to
+    # three and this used to take whichever was first, which is only the best one
+    # by luck; scoring them costs nothing but reading files we already have.
+    from .face_detect import best_photo
+
+    photo_src = best_photo(list(getattr(job, "photoUrls", None) or [])) or job.photoUrl
+
     image_url = await render_page(
         scene_prompt=scene,
         identity_vectors=job.identityVectors,
-        face_image_name=job.photoUrl,
+        face_image_name=photo_src,
         base_image=base_image,
         base_image_url=base_image_url,
         style_prompt=style_prompt,
