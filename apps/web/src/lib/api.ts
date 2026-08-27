@@ -133,16 +133,37 @@ export async function validatePromo(
   }
 }
 
-export async function uploadPhoto(file: File): Promise<string | undefined> {
-  // Uploads the child's photo to the backend; returns the rawPhotoUrl.
+// What the backend thinks of a photo as a face source. `verdict` is the reason,
+// `message` is the sentence to show the parent; both are advisory and never
+// block an upload.
+export type PhotoQuality = {
+  ok: boolean;
+  score: number;
+  verdict: "good" | "soft" | "blurry" | "small" | "no_face";
+  message: string;
+  sharpness: number | null;
+  faceFraction: number;
+};
+
+export type UploadedPhoto = { url: string; quality?: PhotoQuality };
+
+export async function uploadPhoto(
+  file: File,
+  analyze = false,
+): Promise<UploadedPhoto | undefined> {
+  // Uploads the child's photo to the backend; returns the rawPhotoUrl and,
+  // when asked, what the backend makes of it as a face source.
   // In no-backend mode there's nothing to upload to, so returns undefined.
   if (!API) return undefined;
   const fd = new FormData();
   fd.append("file", file);
-  const res = await fetch(`${API}/upload`, { method: "POST", body: fd });
+  const res = await fetch(`${API}/upload${analyze ? "?analyze=true" : ""}`, {
+    method: "POST",
+    body: fd,
+  });
   if (!res.ok) return undefined;
   const json = await res.json();
-  return `${API}${json.url}`;
+  return { url: `${API}${json.url}`, quality: json.quality };
 }
 
 // Diffrun-style: re-roll a single page's face with a fresh seed ("fine-tune").

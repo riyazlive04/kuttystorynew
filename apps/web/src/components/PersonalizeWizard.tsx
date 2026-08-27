@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Camera,
+  AlertTriangle,
   Check,
   Loader2,
   Lock,
@@ -18,6 +19,7 @@ import {
 import { CameraCapture } from "@/components/CameraCapture";
 import type { Personalization, Story } from "@/lib/types";
 import { createJob, uploadPhoto } from "@/lib/api";
+import type { PhotoQuality } from "@/lib/api";
 import { languageLabel, previewPath } from "@/lib/format";
 
 const STEPS = ["Child", "Photo", "Review"] as const;
@@ -43,7 +45,27 @@ function nativeCameraLikely() {
 }
 
 // One picked photo: previewed locally the moment it is chosen, then uploaded.
-type PhotoItem = { id: number; dataUrl: string; url?: string };
+type PhotoItem = {
+  id: number;
+  dataUrl: string;
+  url?: string;
+  quality?: PhotoQuality;
+};
+
+// Which photo drives the book. The backend scores each upload and the best one
+// is chosen automatically -- but the choice is SHOWN, on the tile, and the
+// parent can override it by tapping another photo. Choosing for them is fine;
+// choosing for them silently is not, because a low score is a judgement about a
+// picture of their child and they are entitled to disagree with it.
+function bestPhotoId(photos: PhotoItem[]): number | undefined {
+  const usable = photos.filter((p) => p.url);
+  if (!usable.length) return undefined;
+  // No scores yet (analysis off, or still uploading) -> the first one, as before.
+  if (!usable.some((p) => p.quality)) return usable[0].id;
+  return usable.reduce((best, p) =>
+    (p.quality?.score ?? -1) > (best.quality?.score ?? -1) ? p : best,
+  ).id;
+}
 
 export function PersonalizeWizard({ story }: { story: Story }) {
   const router = useRouter();
@@ -80,20 +102,36 @@ export function PersonalizeWizard({ story }: { story: Story }) {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
   const nextPhotoId = useRef(0);
+  // Set only when the parent overrides the automatic pick, so that adding a
+  // better photo afterwards still moves the choice unless they had an opinion.
+  const [chosenPhotoId, setChosenPhotoId] = useState<number | undefined>();
 
-  // Mirror the picked photos into the personalization payload: the first is
-  // primary, the rest strengthen identity.
+  const autoPickId = bestPhotoId(photos);
+  const primaryId =
+    chosenPhotoId !== undefined && photos.some((p) => p.id === chosenPhotoId)
+      ? chosenPhotoId
+      : autoPickId;
+  const primary = photos.find((p) => p.id === primaryId);
+
+  // Mirror the picked photos into the personalization payload. photoUrl is the
+  // one that actually renders the book -- the clearest one, or whichever the
+  // parent chose instead -- and it leads the list so any consumer reading
+  // photoUrls[0] agrees with it.
   useEffect(() => {
-    const urls = photos
+    const ordered = [
+      ...photos.filter((p) => p.id === primaryId),
+      ...photos.filter((p) => p.id !== primaryId),
+    ];
+    const urls = ordered
       .map((p) => p.url)
       .filter((u): u is string => Boolean(u));
     setData((d) => ({
       ...d,
-      photoDataUrl: photos[0]?.dataUrl,
+      photoDataUrl: primary?.dataUrl ?? photos[0]?.dataUrl,
       photoUrl: urls[0],
       photoUrls: urls.length ? urls : undefined,
     }));
-  }, [photos]);
+  }, [photos, primaryId, primary]);
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files || []);
@@ -121,12 +159,19 @@ export function PersonalizeWizard({ story }: { story: Story }) {
         );
       reader.readAsDataURL(file);
 
-      uploadPhoto(file)
-        .then((url) =>
+      uploadPhoto(file, true)
+        .then((res) =>
           setPhotos((prev) =>
             prev.some((p) => p.id === id)
-              ? prev.map((p) => (p.id === id ? { ...p, url } : p))
-              : [...prev, { id, dataUrl: "", url }],
+              ? prev.map((p) =>
+                  p.id === id
+                    ? { ...p, url: res?.url, quality: res?.quality }
+                    : p,
+                )
+              : [
+                  ...prev,
+                  { id, dataUrl: "", url: res?.url, quality: res?.quality },
+                ],
           ),
         )
         // A failed upload leaves the tile as preview-only; it just won't be sent.
@@ -137,6 +182,9 @@ export function PersonalizeWizard({ story }: { story: Story }) {
 
   function removePhoto(id: number) {
     setPhotos((prev) => prev.filter((p) => p.id !== id));
+    // Otherwise the override points at a photo that is gone and the automatic
+    // pick never comes back.
+    setChosenPhotoId((cur) => (cur === id ? undefined : cur));
   }
 
   // The guidelines are shown once per session, before the first picker opens;
@@ -316,8 +364,8 @@ export function PersonalizeWizard({ story }: { story: Story }) {
               Add a few photos of {data.childName || "your child"}
             </h2>
             <p className="text-sm text-slate-mutedText">
-              1–3 clear, front-facing photos work best — more angles give a
-              stronger likeness on every page.{" "}
+              1–3 clear, front-facing photos — we use the clearest one for every
+              page, and you can pick a different one.{" "}
               {photos.length > 0 && (
                 <span className="font-semibold text-emerald-600">
                   {photos.length} {photos.length === 1 ? "photo" : "photos"}{" "}
@@ -370,7 +418,11 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                 {photos.map((photo, i) => (
                   <div
                     key={photo.id}
-                    className="relative aspect-square overflow-hidden rounded-2xl border-2 border-slate-100 bg-slate-50"
+                    className={`relative aspect-square overflow-hidden rounded-2xl border-2 bg-slate-50 ${
+                      photo.id === primaryId
+                        ? "border-brand-primary"
+                        : "border-slate-100"
+                    }`}
                   >
                     {photo.dataUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -384,9 +436,32 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                         <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
                       </span>
                     )}
-                    {i === 0 && (
-                      <span className="absolute bottom-1 left-1 rounded-md bg-slate-deep/70 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                        Main
+                    {/* Tapping a tile makes it the one the book is built from.
+                        The automatic pick is the clearest photo, but it is the
+                        parent's photo and their call. */}
+                    {photo.url && photo.id !== primaryId && (
+                      <button
+                        type="button"
+                        onClick={() => setChosenPhotoId(photo.id)}
+                        aria-label={`Use photo ${i + 1} for the book`}
+                        className="absolute inset-0 grid place-items-end bg-slate-deep/0 pb-1 opacity-0 transition hover:bg-slate-deep/30 hover:opacity-100 focus:opacity-100"
+                      >
+                        <span className="rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-slate-deep">
+                          Use this one
+                        </span>
+                      </button>
+                    )}
+                    {photo.id === primaryId && (
+                      <span className="absolute bottom-1 left-1 rounded-md bg-brand-primary px-1.5 py-0.5 text-[10px] font-bold text-white">
+                        Used for the book
+                      </span>
+                    )}
+                    {photo.quality && !photo.quality.ok && (
+                      <span
+                        title={photo.quality.message}
+                        className="absolute left-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-amber-400 text-slate-deep"
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5" />
                       </span>
                     )}
                     <button
@@ -412,6 +487,28 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                   </button>
                 )}
               </div>
+            )}
+            {/* Say it in words, not just a badge. A parent who uploaded a
+                blurry photo should find out here, where another one is a tap
+                away, rather than from a finished book that does not look like
+                their child. Nothing is blocked — they can carry on. */}
+            {photos.some((p) => p.quality && !p.quality.ok) && (
+              <ul className="space-y-2 rounded-2xl bg-amber-50 p-4 text-sm text-slate-deep">
+                {photos.map((photo, i) =>
+                  photo.quality && !photo.quality.ok ? (
+                    <li key={photo.id} className="flex gap-2">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                      <span>
+                        <span className="font-semibold">Photo {i + 1}:</span>{" "}
+                        {photo.quality.message}
+                        {photo.id === primaryId && photos.length > 1 && (
+                          <> It is the one being used — tap another to switch.</>
+                        )}
+                      </span>
+                    </li>
+                  ) : null,
+                )}
+              </ul>
             )}
             <div className="flex flex-wrap items-center gap-3">
               <button

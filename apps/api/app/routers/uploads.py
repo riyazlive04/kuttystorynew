@@ -5,7 +5,7 @@ Saved into the shared storage volume and served back via /uploads/<name>.
 import os
 import uuid
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from ..config import settings
 
@@ -20,7 +20,20 @@ MAX_BYTES = 40 * 1024 * 1024  # 40 MB
 
 
 @router.post("")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(
+    file: UploadFile = File(...),
+    analyze: bool = Query(
+        False,
+        description=(
+            "Judge the photo's usability as a face source and return the "
+            "verdict alongside the URL. The personalize wizard asks for this so "
+            "it can tell the parent about a blurry or distant photo while they "
+            "still have the phone in hand. Off by default: admin base-art "
+            "uploads are illustrations, and running face detection over a "
+            "2480px plate on every upload would cost seconds for nothing."
+        ),
+    ),
+):
     if file.content_type not in ALLOWED:
         raise HTTPException(status_code=400, detail="Only JPG, PNG or WEBP images")
     data = await file.read()
@@ -37,4 +50,15 @@ async def upload_file(file: UploadFile = File(...)):
     os.makedirs(settings.storage_dir, exist_ok=True)
     with open(os.path.join(settings.storage_dir, name), "wb") as f:
         f.write(data)
-    return {"url": f"/uploads/{name}", "filename": name}
+    result = {"url": f"/uploads/{name}", "filename": name}
+    if analyze:
+        # Never fatal. A photo we could not judge is a photo that uploads
+        # normally and gets no caveat -- the upload is the thing the parent
+        # asked for, and our opinion of it is a bonus.
+        try:
+            from ..face_detect import analyse_photo
+
+            result["quality"] = analyse_photo(data)
+        except Exception as e:  # noqa: BLE001
+            print(f"[upload] photo analysis skipped: {e}", flush=True)
+    return result
