@@ -59,6 +59,22 @@ class Settings(BaseSettings):
     faceswap_provider: str = "segmind"
     segmind_api_key: str = ""
     segmind_faceswap_model: str = "faceswap-comic"  # segmind model slug
+    # How hard the swap pushes the child's own features against the drawn ones.
+    # These are the dial to turn if a book comes back "close, but not him": the
+    # geometry fixes (region shape, single feather) decide how MUCH of the face
+    # is the child's, and these decide how strongly it is theirs within it.
+    # Raised from 0.85 — a storybook plate is a stylised face, and the swap has
+    # to overcome its drawn proportions, not blend politely into them.
+    segmind_face_strength: float = 0.95
+    # Held down against face_strength: this is how much of the ILLUSTRATION's
+    # look survives, so pushing it up is exactly what makes a swap stop looking
+    # like the child.
+    segmind_style_strength: float = 0.6
+    segmind_steps: int = 16
+    # How far to relight the swapped face toward the plate's own lighting, 0-1.
+    # Tone only — it cannot affect how much the face looks like the child, only
+    # whether it looks lit by the same lamp. 0 disables it.
+    segmind_tone_match: float = 0.55
     # Hosted Replicate face-swap model (used when faceswap_provider=replicate).
     # Known input schemas are auto-mapped:
     #   fofr/face-swap-with-ideogram -> target_image + character_image + prompt

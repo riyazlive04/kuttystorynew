@@ -23,12 +23,27 @@ from __future__ import annotations
 import hashlib
 from typing import Optional
 
-# How much to grow the detector's box, and how far to bias it downwards. Haar
-# returns a tight brow-to-lip box: grown, it reaches the jaw; dropped, it stops
-# eating into the hairline. Kept modest — an oversized region is not a softer
-# failure, it is the model repainting a neck or a bunch of flowers.
-BOX_GROW = 0.12
-BOX_DROP = 0.05
+# How much to grow the detector's box, and how far to bias it downwards.
+#
+# A Haar frontal box spans roughly EYEBROW to UPPER LIP — it is not a face, it
+# is the middle of one. Grown uniformly it stays that shape, and the region then
+# excludes the chin, the jawline and the forehead: exactly the geometry a viewer
+# reads as "that's him". Swapping only the inside of it leaves the illustration's
+# own jaw and chin in place, and the result looks like the character wearing the
+# child's eyes rather than the child.
+#
+# So the growth is anisotropic — a face is taller than the box, not wider — and
+# the drop puts most of the extra height below the lip, where the chin is,
+# instead of up into the hair. Verified by overlay on a storefront plate and on a
+# customer photo: brow-to-lip before, hairline-to-chin after.
+#
+# This is safe to grow now in a way it was not when these values were first set.
+# Back then an oversized region meant a false positive (a torso, foliage) got
+# painted; the eye gate below has since made every surviving candidate a real
+# face, and growth around a real face lands on more face.
+BOX_GROW_W = 0.18
+BOX_GROW_H = 0.44
+BOX_DROP = 0.11
 
 # A detection smaller than this is scenery; larger than this is not a face on a
 # storybook page. Measured across a full 28-page book: real faces ran 12-29% of
@@ -131,8 +146,8 @@ def _detect(image_bytes: bytes) -> Optional[dict]:
 
     cx = x + fw / 2
     cy = y + fh / 2 + fh * BOX_DROP
-    bw = fw * (1 + BOX_GROW)
-    bh = fh * (1 + BOX_GROW)
+    bw = fw * (1 + BOX_GROW_W)
+    bh = fh * (1 + BOX_GROW_H)
     left = max(0.0, cx - bw / 2)
     top = max(0.0, cy - bh / 2)
     bw = min(bw, dw - left)
