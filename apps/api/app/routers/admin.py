@@ -203,14 +203,35 @@ async def admin_update_settings(body: SettingsPatch):
 # --------------------------- Previews (jobs) ------------------------------
 
 @router.get("/jobs", dependencies=[Depends(require_admin)])
-async def admin_list_jobs(limit: int = 200, purchased: Optional[bool] = None):
-    """List generated preview sessions (newest first) so admin can review and
-    download any preview — not just the ones that became orders."""
+async def admin_list_jobs(
+    limit: int = 25,
+    offset: int = 0,
+    purchased: Optional[bool] = None,
+):
+    """One page of generated preview sessions, newest first, so admin can review
+    and download any preview — not just the ones that became orders.
+
+    Paged at the database, not in the browser. Every visitor who opens the wizard
+    creates a job, so this table only ever grows; it used to return the most
+    recent 200 with no way to reach anything older, which for the oldest previews
+    was indistinguishable from them not existing.
+
+    `total` comes back with the rows because a pager cannot draw itself without
+    knowing how many pages there are.
+    """
     where: dict = {}
     if purchased is not None:
         where["isPurchased"] = purchased
+    # Clamped: these arrive from the query string, and an unbounded limit is a
+    # way to ask the server to load every job it has into memory at once.
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    total = await prisma.job.count(where=where or None)
     jobs = await prisma.job.find_many(
-        where=where or None, order={"createdAt": "desc"}, take=limit
+        where=where or None,
+        order={"createdAt": "desc"},
+        take=limit,
+        skip=offset,
     )
     out = []
     for j in jobs:
@@ -240,7 +261,7 @@ async def admin_list_jobs(limit: int = 200, purchased: Optional[bool] = None):
                 "createdAt": j.createdAt.isoformat(),
             }
         )
-    return out
+    return {"items": out, "total": total, "limit": limit, "offset": offset}
 
 
 # ------------------------- Full test render -------------------------------

@@ -256,9 +256,14 @@ export const adminApi = {
     }),
   deleteOrder: (id: string): Promise<{ ok: boolean; id: string }> =>
     req(`/admin/orders/${id}`, { method: "DELETE" }),
-  jobs: (purchased?: boolean): Promise<AdminJob[]> =>
+  jobs: (
+    purchased?: boolean,
+    offset = 0,
+    limit = 25,
+  ): Promise<{ items: AdminJob[]; total: number }> =>
     req(
-      `/admin/jobs${purchased === undefined ? "" : `?purchased=${purchased}`}`,
+      `/admin/jobs?offset=${offset}&limit=${limit}` +
+        (purchased === undefined ? "" : `&purchased=${purchased}`),
     ),
   getSettings: (): Promise<AdminSettings> => req("/admin/settings"),
   updateSettings: (patch: {

@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Download, ExternalLink, Loader2, Sparkles } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  ExternalLink,
+  Loader2,
+  Sparkles,
+} from "lucide-react";
 import {
   adminApi,
   VARIANTS,
@@ -14,6 +21,9 @@ import { previewPdfUrl } from "@/lib/api";
 import { previewPath } from "@/lib/format";
 
 type Filter = "all" | "purchased";
+
+// Enough to scan without scrolling, few enough that a page is one quick query.
+const PAGE_SIZE = 25;
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
@@ -31,6 +41,12 @@ export default function AdminPreviews() {
   const [filter, setFilter] = useState<Filter>("all");
   const [showTest, setShowTest] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
+  const to = Math.min(total, (page + 1) * PAGE_SIZE);
 
   // The spinner belongs to a load the admin ASKED for -- first paint, or a
   // different filter. The poll below reuses this same effect, and setting
@@ -41,14 +57,23 @@ export default function AdminPreviews() {
   // what is on screen.
   useEffect(() => {
     setLoading(true);
+  }, [filter, page]);
+
+  // A different filter is a different result set, so page 3 of the old one is
+  // not a meaningful place to land -- and if it is past the end of the new one,
+  // the table would come back empty and look broken.
+  useEffect(() => {
+    setPage(0);
   }, [filter]);
 
   useEffect(() => {
     let cancelled = false;
     adminApi
-      .jobs(filter === "purchased" ? true : undefined)
-      .then((j) => {
-        if (!cancelled) setJobs(j);
+      .jobs(filter === "purchased" ? true : undefined, page * PAGE_SIZE, PAGE_SIZE)
+      .then((res) => {
+        if (cancelled) return;
+        setJobs(res.items);
+        setTotal(res.total);
       })
       .catch(() => {
         if (!cancelled) setJobs([]);
@@ -59,9 +84,12 @@ export default function AdminPreviews() {
     return () => {
       cancelled = true;
     };
-  }, [filter, refresh]);
+  }, [filter, refresh, page]);
 
-  // A render in flight? Poll so progress ticks without a manual reload.
+  // A render in flight on the page being looked at? Poll so progress ticks
+  // without a manual reload. Deliberately scoped to the visible rows: polling
+  // because something is rendering on page 7 would query forever for a number
+  // nobody is watching.
   useEffect(() => {
     if (!jobs.some((j) => j.status === "queued" || j.status === "rendering" || j.status === "processing"))
       return;
@@ -188,6 +216,39 @@ export default function AdminPreviews() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!loading && total > 0 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-slate-mutedText">
+            Showing <span className="font-bold text-slate-deep">{from}</span>–
+            <span className="font-bold text-slate-deep">{to}</span> of{" "}
+            <span className="font-bold text-slate-deep">{total}</span>
+          </p>
+          {pageCount > 1 && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((n) => Math.max(0, n - 1))}
+                disabled={page === 0}
+                className="inline-flex items-center gap-1 rounded-xl border-2 border-brand-borderAccent px-3 py-2 text-sm font-bold text-slate-deep transition hover:border-brand-primary hover:text-brand-primary disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" /> Previous
+              </button>
+              <span className="px-1 text-sm font-semibold text-slate-mutedText">
+                Page {page + 1} of {pageCount}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((n) => Math.min(pageCount - 1, n + 1))}
+                disabled={page >= pageCount - 1}
+                className="inline-flex items-center gap-1 rounded-xl border-2 border-brand-borderAccent px-3 py-2 text-sm font-bold text-slate-deep transition hover:border-brand-primary hover:text-brand-primary disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </div>
       )}
 
