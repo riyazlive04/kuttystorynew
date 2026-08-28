@@ -433,7 +433,28 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
         )
 
     # Feather the edge so the swapped face blends into the template's hairline.
-    mask = mask.filter(ImageFilter.GaussianBlur(radius=max(3, int(min(cw, ch) * 0.02))))
+    #
+    # Narrow, and scaled to the FACE rather than to the page. Two percent of the
+    # page is a 24px blur on a 1200px plate, and a Gaussian that wide spreads its
+    # transition about +/-2r -- across a 213px-wide face oval that left only 34%
+    # of it fully swapped. At the eye line, 202 of the 296 pixels it touched were
+    # a BLEND of the child's face and the illustrated character's.
+    #
+    # Two faces at 50% each is a double exposure, and the illustration's eyes are
+    # not where the child's are: its lower lash line lands under the child's eye
+    # and reads as a dark line, its brow lands beside the child's and reads as a
+    # doubled brow. That is the "black lines below the eyes" on a finished book.
+    #
+    # The feather only has to hide a seam, which takes a few pixels, not a third
+    # of the face. At 3% of the region's span the eyes, nose and mouth are all
+    # inside the fully-swapped core and only the rim blends.
+    span = max(cw, ch)
+    bbox = mask.getbbox()
+    if bbox:
+        span = max(bbox[2] - bbox[0], bbox[3] - bbox[1])
+    mask = mask.filter(
+        ImageFilter.GaussianBlur(radius=max(3.0, min(span * 0.03, 16.0)))
+    )
     out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
     buf = io.BytesIO()
     out.save(buf, format="JPEG", quality=95)
