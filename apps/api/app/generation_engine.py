@@ -381,12 +381,12 @@ def _b64(src: str) -> str:
     return base64.b64encode(_image_bytes(src)).decode()
 
 
-def _save_bytes(data: bytes, prefix: str = "swap", ext: str = "jpg") -> str:
+def _save_bytes(data: bytes, prefix: str = "swap") -> str:
     """Persist raw image bytes to the shared volume, return its /uploads URL."""
     import uuid
 
     os.makedirs(settings.storage_dir, exist_ok=True)
-    name = f"{prefix}_{uuid.uuid4().hex[:12]}.{ext}"
+    name = f"{prefix}_{uuid.uuid4().hex[:12]}.jpg"
     with open(os.path.join(settings.storage_dir, name), "wb") as f:
         f.write(data)
     return f"/uploads/{name}"
@@ -433,251 +433,11 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
         )
 
     # Feather the edge so the swapped face blends into the template's hairline.
-    #
-    # Scaled to the FACE, not to the page. Two percent of a 1200px plate is a
-    # 24px blur across a 234px face -- a ~48px crossfade, a fifth of the face's
-    # width, applied exactly where identity lives: the jawline, the chin, the
-    # cheek contour. The result reads as the child's features fading back into
-    # the character's. Six percent of the region's own span hides the seam just
-    # as well and leaves the face itself the child's.
-    bbox = mask.getbbox()
-    span = max(bbox[2] - bbox[0], bbox[3] - bbox[1]) if bbox else min(cw, ch)
-    mask = mask.filter(
-        ImageFilter.GaussianBlur(radius=max(2.0, min(span * 0.06, 24.0)))
-    )
+    mask = mask.filter(ImageFilter.GaussianBlur(radius=max(3, int(min(cw, ch) * 0.02))))
     out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
     buf = io.BytesIO()
-    out.save(buf, format="PNG")
+    out.save(buf, format="JPEG", quality=95)
     return buf.getvalue()
-
-
-def _hard_region_mask(size: tuple[int, int], region: dict) -> Optional[Image.Image]:
-    """A BINARY white-on-black mask for the face region — no feathering.
-
-    reintegrate._region_mask blurs its edge because that mask crossfades two of
-    our own images. Handing the same soft mask to the API is a different thing:
-    every grey pixel is one the model is only partly allowed to touch, so the
-    entire rim of the face comes back half-swapped and half-illustration. The API
-    grows and softens the boundary itself (`grow_mask`), so what it wants from us
-    is a crisp statement of where the face is.
-    """
-    W, H = size
-    mask = Image.new("L", (W, H), 0)
-    draw = ImageDraw.Draw(mask)
-    points = region.get("points")
-    if points and len(points) >= 3:
-        try:
-            poly = [(float(x) / 100.0 * W, float(y) / 100.0 * H) for x, y in points]
-        except (TypeError, ValueError, IndexError):
-            return None
-        draw.polygon(poly, fill=255)
-        return mask
-    bounds = _region_bounds_pct(region)
-    if not bounds:
-        return None
-    x, y, w, h = bounds
-    draw.ellipse(
-        (x / 100 * W, y / 100 * H, (x + w) / 100 * W, (y + h) / 100 * H), fill=255
-    )
-    return mask
-
-
-def _segmind_mask_b64(target_src: str, region: dict) -> Optional[tuple[str, int]]:
-    """The face mask as base64 PNG, plus the `grow_mask` slack to send with it.
-
-    Segmind's faceswap takes an optional `mask_image` that confines the swap.
-    Verified against the live API: WHITE is the area it replaces, and everything
-    black comes back untouched — hair, dress, background, at the plate's own
-    resolution. That is strictly better than swapping the whole head and pasting
-    the face back afterwards, because the model blends inside the mask instead of
-    us feathering a circle over its output.
-
-    The slack scales with the face rather than being a flat 12px: twelve pixels
-    is a visible ring around a 234px face on a 1200px plate and nothing at all
-    around the same face on a 2500px one, and only one of those is the blend we
-    tuned.
-    """
-    try:
-        plate = Image.open(io.BytesIO(_image_bytes(target_src))).convert("RGB")
-        mask = _hard_region_mask(plate.size, region)
-        if mask is None:
-            return None
-        box = mask.getbbox()
-        if not box:
-            return None
-        span = max(box[2] - box[0], box[3] - box[1])
-        grow = int(max(4, min(span * 0.05, 40)))
-        buf = io.BytesIO()
-        mask.convert("RGB").save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode(), grow
-    except Exception as e:  # noqa: BLE001 — no mask just means the old behaviour
-        print(f"[segmind] mask build skipped: {e}", flush=True)
-        return None
-
-
-def _match_face_tone(
-    target_src: str, result: bytes, region: dict, strength: float
-) -> bytes:
-    """Relight the swapped face to the light the plate's own face was drawn in.
-
-    A swap strong enough to carry the child's features also carries the phone
-    photo's flat indoor light, and a storybook page is not lit that way. On a
-    night-time plate the swapped face measured 61% brighter than the face it
-    replaced — the features were right and it still read as pasted on.
-
-    This corrects TONE only: a per-channel mean/spread match, applied inside the
-    face and at partial strength. Shape, features and expression — everything a
-    parent actually recognises — are untouched, because none of them are a
-    function of exposure. Partial rather than exact on purpose: an exact match to
-    a stylised painted face would hand back the illustration's complexion along
-    with its lighting, and the child's own colouring is part of the likeness.
-    """
-    if strength <= 0:
-        return result
-    try:
-        from PIL import ImageStat
-
-        plate = Image.open(io.BytesIO(_image_bytes(target_src))).convert("RGB")
-        out = Image.open(io.BytesIO(result)).convert("RGB")
-        if out.size != plate.size:
-            out = out.resize(plate.size)
-        mask = _hard_region_mask(plate.size, region)
-        if mask is None:
-            return result
-        # Measure the CORE of the face, not its rim: the rim is the blend, and
-        # on a plate it is hair and background, which would drag the reference
-        # toward whatever happens to surround the head.
-        core = mask.filter(ImageFilter.MinFilter(9)).filter(ImageFilter.MinFilter(9))
-        if not core.getbbox():
-            core = mask
-        want = ImageStat.Stat(plate, mask=core)
-        have = ImageStat.Stat(out, mask=core)
-
-        matched = []
-        for ch in range(3):
-            band = out.split()[ch]
-            hm, hs = have.mean[ch], have.stddev[ch]
-            wm, ws = want.mean[ch], want.stddev[ch]
-            # Clamp the spread ratio: a near-flat channel would otherwise be
-            # multiplied into posterised banding.
-            gain = 1.0 if hs < 1.0 else max(0.6, min(ws / hs, 1.6))
-            gain = 1.0 + (gain - 1.0) * strength
-            bias = (wm - hm) * strength
-            matched.append(band.point(lambda v, g=gain, m=hm, b=bias: max(0, min(255, int(
-                (v - m) * g + m + b
-            )))))
-        toned = Image.merge("RGB", matched)
-
-        # Feathered, so the correction fades out where the face does.
-        box = mask.getbbox()
-        span = max(box[2] - box[0], box[3] - box[1]) if box else min(plate.size)
-        blend = mask.filter(ImageFilter.GaussianBlur(max(2.0, span * 0.08)))
-        out = Image.composite(toned, out, blend)
-        buf = io.BytesIO()
-        out.save(buf, format="PNG")
-        return buf.getvalue()
-    except Exception as e:  # noqa: BLE001 — an unrelit face still looks like the child
-        print(f"[segmind] tone match skipped: {e}", flush=True)
-        return result
-
-
-def _mask_was_honoured(target_src: str, result: bytes, region: dict) -> bool:
-    """Did the API actually confine the swap to the mask?
-
-    This answers the only question the composite that follows needs answered. If
-    everything OUTSIDE the face came back as the plate we sent, the mask was
-    honoured and there is nothing left to keep — compositing anyway would feather
-    the face a second time for no gain, softening the jaw and chin back toward
-    the illustration. If the frame came back changed all over (mask ignored, or a
-    downscaled full-head swap), the composite is what keeps the artwork and it
-    has to run.
-    """
-    try:
-        from PIL import ImageChops, ImageStat
-
-        plate = Image.open(io.BytesIO(_image_bytes(target_src))).convert("RGB")
-        out = Image.open(io.BytesIO(result)).convert("RGB")
-        if out.size != plate.size:
-            return False  # a reframed result was never confined to anything
-        mask = _hard_region_mask(plate.size, region)
-        if mask is None:
-            return False
-        # Ignore a generous ring around the face — that is the blend, and it is
-        # supposed to differ. Everything beyond it should still be the plate.
-        box = mask.getbbox()
-        span = max(box[2] - box[0], box[3] - box[1]) if box else 0
-        ring = mask.filter(ImageFilter.GaussianBlur(max(4.0, span * 0.15)))
-        outside = ring.point(lambda v: 0 if v > 4 else 255)
-        diff = ImageChops.difference(plate, out).convert("L")
-        mean = ImageStat.Stat(diff, mask=outside).mean[0]
-        print(f"[segmind] mean delta outside the face: {mean:.2f}", flush=True)
-        return mean < 2.0
-    except Exception as e:  # noqa: BLE001 — unsure means run the composite
-        print(f"[segmind] mask check skipped: {e}", flush=True)
-        return False
-
-
-# A customer photo is a phone snapshot: the child is somewhere in a 1200x1600
-# frame, the head is tilted, and the face is a fifth of the width. The swapper
-# reads identity from that face, so what it actually gets to work with is a few
-# hundred pixels found inside a much larger picture. Cropping to the head first
-# hands it the same face several times larger, upright, and with nothing else in
-# frame that could be mistaken for the subject.
-#
-# Padding is generous on purpose: these models align on the whole head, so the
-# crop keeps hair, ears and a little neck rather than cutting to the features.
-SOURCE_CROP_PADDING = 0.9
-SOURCE_MIN_EDGE = 768
-
-
-def _source_face_b64(face_src: str) -> str:
-    """The child's photo, cropped to the head and upright, as base64.
-
-    Falls back to the whole photo whenever anything is unclear — no detection, a
-    face too small to crop around, an unreadable file. A worse crop than none is
-    the one failure this must not produce.
-    """
-    raw = _image_bytes(face_src)
-    try:
-        from PIL import ImageOps
-
-        from .face_detect import detect_face_region
-
-        photo = Image.open(io.BytesIO(raw))
-        # Phones record orientation in EXIF rather than in the pixels. Left
-        # unapplied, a portrait photo reaches the swapper on its side, where a
-        # frontal face detector does not find a frontal face.
-        photo = ImageOps.exif_transpose(photo).convert("RGB")
-
-        buf = io.BytesIO()
-        photo.save(buf, format="JPEG", quality=95)
-        upright = buf.getvalue()
-
-        region = detect_face_region(upright)
-        if not region:
-            return base64.b64encode(upright).decode()
-
-        box = _face_crop_box(region, photo.size, padding=SOURCE_CROP_PADDING)
-        if not box:
-            return base64.b64encode(upright).decode()
-
-        crop = photo.crop(box)
-        # Upscaling adds no detail, but the swapper's own preprocessing
-        # downsamples to a fixed size; arriving under it costs detail that the
-        # original photo actually had.
-        if crop.width < SOURCE_MIN_EDGE:
-            crop = crop.resize((SOURCE_MIN_EDGE, SOURCE_MIN_EDGE), Image.LANCZOS)
-
-        out = io.BytesIO()
-        crop.save(out, format="JPEG", quality=95)
-        print(
-            f"[segmind] source cropped to the face: {photo.size} -> {crop.size}",
-            flush=True,
-        )
-        return base64.b64encode(out.getvalue()).decode()
-    except Exception as e:  # noqa: BLE001 — the whole photo still swaps
-        print(f"[segmind] source crop skipped: {e}", flush=True)
-        return base64.b64encode(raw).decode()
 
 
 def current_segmind_key() -> str:
@@ -715,11 +475,8 @@ async def _segmind_faceswap(
     # cfg default is ~1.6 so we stay low to avoid over-cooking the face.
     url = f"https://api.segmind.com/v1/{settings.segmind_faceswap_model}"
     headers = {"x-api-key": api_key, "Content-Type": "application/json"}
-    source_b64 = _source_face_b64(face_src)  # the real child face, cropped to it
-    target_b64 = _b64(target_src)            # the fixed illustrated page
-    # Constrain the swap at the SOURCE when we know where the face is, rather
-    # than repairing a full-head swap afterwards.
-    mask = _segmind_mask_b64(target_src, face_region) if face_region else None
+    source_b64 = _b64(face_src)     # the real child face
+    target_b64 = _b64(target_src)   # the fixed illustrated page
     last_err: Exception | None = None
     async with httpx.AsyncClient(timeout=180) as client:
         for attempt in range(attempts):
@@ -732,45 +489,24 @@ async def _segmind_faceswap(
                 "cfg": 2,
                 "seed": seed + attempt * 1009,  # fresh seed each redo
                 "base64": False,
-                # Ask for PNG so the face carries one encode rather than two if
-                # it goes on to be composited. (Observed: the API answers with
-                # JPEG regardless. Asking costs nothing and it may start
-                # honouring it.)
-                "output_format": "png",
-                "output_quality": 100,
+                "output_format": "jpeg",
             }
-            if mask:
-                payload["mask_image"] = mask[0]
-                # Slack so the jaw and hairline blend instead of ending on the
-                # ellipse, sized to the face rather than to the page.
-                payload["grow_mask"] = mask[1]
             try:
                 r = await client.post(url, headers=headers, json=payload)
                 r.raise_for_status()
                 content = r.content
-                # The composite is the FALLBACK, not a belt-and-braces pass. It
-                # was described as a no-op once the mask worked, and it is not:
-                # it crossfades the returned face back into the plate around its
-                # whole rim, so a honoured mask got feathered twice and the child
-                # lost the jaw and chin that make the face recognisably theirs.
-                # Run it only when the mask did not hold.
-                if face_region and not (
-                    mask and _mask_was_honoured(target_src, content, face_region)
-                ):
+                # Keep the template's hair: paste only the AUTHORED face oval from
+                # the full swap back onto the original template. No authored
+                # region -> the full-head swap is used as it comes back, which is
+                # the configuration that was personalising faces well.
+                if face_region:
                     try:
                         content = _composite_face_region(
                             target_src, content, face_region
                         )
                     except Exception as ce:  # noqa: BLE001
                         print(f"[segmind] face composite skipped: {ce}", flush=True)
-                if face_region:
-                    content = _match_face_tone(
-                        target_src,
-                        content,
-                        face_region,
-                        settings.segmind_tone_match,
-                    )
-                return _save_bytes(content, prefix="page", ext="png")
+                return _save_bytes(content, prefix="page")
             except Exception as e:  # noqa: BLE001 — redo the swap on any failure
                 last_err = e
                 body = ""
@@ -1210,15 +946,13 @@ async def _openai_faceswap(
 
     # Same feathered mask as the Segmind path: take only the authored face oval /
     # lasso from the edit, keeping the plate's hair and everything else untouched.
-    ext = "jpg"
     if face_region:
         try:
             content = _composite_face_region(target_src, content, face_region)
-            ext = "png"  # the composite hands back PNG, so don't name it .jpg
         except Exception as ce:  # noqa: BLE001
             print(f"[openai] face composite skipped: {ce}", flush=True)
 
-    url = _save_bytes(content, prefix="page", ext=ext)
+    url = _save_bytes(content, prefix="page")
     _openai_cache_put(cache_key, url)
     return url
 
