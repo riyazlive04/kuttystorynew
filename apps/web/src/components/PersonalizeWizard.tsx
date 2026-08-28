@@ -17,6 +17,8 @@ import {
   X,
 } from "lucide-react";
 import { CameraCapture } from "@/components/CameraCapture";
+import { useStoryGender } from "@/components/StoryGender";
+import { coverFor } from "@/lib/covers";
 import type { Personalization, Story } from "@/lib/types";
 import { createJob, uploadPhoto } from "@/lib/api";
 import type { PhotoQuality } from "@/lib/api";
@@ -81,16 +83,19 @@ export function PersonalizeWizard({ story }: { story: Story }) {
     story.genderLock ? [story.genderLock] : ["boy", "girl"]
   ) as ("boy" | "girl")[];
 
-  const [data, setData] = useState<Personalization>({
+  // Held one level up, because the cover art beside the wizard is drawn per
+  // gender and has to change with this picker.
+  const { gender, setGender } = useStoryGender();
+
+  const [data, setData] = useState<Omit<Personalization, "gender">>({
     storySlug: story.slug,
     childName: "",
-    gender: allowedGenders[0],
     ageYears: 4,
     language: "en",
     skinTone: "medium",
   });
 
-  function update<K extends keyof Personalization>(
+  function update<K extends keyof Omit<Personalization, "gender">>(
     key: K,
     value: Personalization[K],
   ) {
@@ -236,7 +241,7 @@ export function PersonalizeWizard({ story }: { story: Story }) {
   async function handleCreate() {
     setSubmitting(true);
     try {
-      const job = await createJob(data);
+      const job = await createJob({ ...data, gender });
       router.push(previewPath(job.id, job.childName, job.storyTitle));
     } catch (e) {
       setSubmitting(false);
@@ -340,9 +345,9 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                   {allowedGenders.map((g) => (
                     <button
                       key={g}
-                      onClick={() => update("gender", g)}
+                      onClick={() => setGender(g)}
                       className={`rounded-xl border-2 py-2.5 text-sm font-semibold capitalize transition ${
-                        data.gender === g
+                        gender === g
                           ? "border-brand-primary bg-brand-primary/5 text-brand-primaryDark"
                           : "border-slate-200 text-slate-mutedText hover:border-slate-300"
                       }`}
@@ -608,7 +613,7 @@ export function PersonalizeWizard({ story }: { story: Story }) {
             <div className="flex gap-4 rounded-2xl bg-brand-cream p-4">
               <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl">
                 <Image
-                  src={story.coverImage}
+                  src={coverFor(story, gender)}
                   alt={story.title}
                   fill
                   sizes="96px"

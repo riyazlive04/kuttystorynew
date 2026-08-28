@@ -17,6 +17,9 @@ export interface Story {
   bilingualAddon: number;
   pages: number;
   coverImage: string;
+  // The girl variant's front-cover art, for a book authored for both genders.
+  // null/absent = coverImage is shown to everyone. Read it via coverFor().
+  coverImageGirl?: string | null;
   gallery: string[];
   themeColor: string; // hex used for gradient accents
   supportsTamil: boolean;

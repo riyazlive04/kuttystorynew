@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Check, Star } from "lucide-react";
 import { JsonLd } from "@/components/JsonLd";
 import { PersonalizeWizard } from "@/components/PersonalizeWizard";
+import { StoryCover, StoryGenderProvider } from "@/components/StoryGender";
 import ProviderCompare from "@/components/ProviderCompare";
 import { getStories, getStoryBySlug, STORY_REVALIDATE } from "@/lib/stories.server";
 import {
@@ -88,82 +89,79 @@ export default async function StoryDetailPage({ params }: Props) {
         <ArrowLeft className="h-4 w-4" /> Back to library
       </Link>
 
-      <div className="grid gap-10 lg:grid-cols-2">
-        {/* Left: story presentation */}
-        <div>
-          <div className="relative aspect-square w-full overflow-hidden rounded-4xl border-4 border-white shadow-xl">
-            <Image
-              src={story.coverImage}
-              alt={`${story.title} - personalized children's storybook cover`}
-              fill
-              priority
-              sizes="(max-width: 1024px) 100vw, 600px"
-              className="object-cover"
-            />
-            <span className="chip absolute left-5 top-5 bg-slate-900/80 text-white backdrop-blur">
-              {story.categoryTag}
-            </span>
-          </div>
-
-          <div className="mt-6 grid grid-cols-3 gap-3">
-            {story.gallery.map((g, i) => (
-              <div
-                key={i}
-                className="relative aspect-square overflow-hidden rounded-2xl border-2 border-slate-100"
-              >
-                <Image
-                  src={g}
-                  alt={`${story.title} inside page preview ${i + 1}`}
-                  fill
-                  sizes="200px"
-                  className="object-cover"
-                />
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-8">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="text-sm font-semibold text-slate-400">
-                {story.ageRange}
-              </span>
-              <span className="text-slate-300">·</span>
-              <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-500">
-                <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> 4.9
+      {/* The cover and the wizard's Boy/Girl picker share one choice, so a
+          both-gender book shows the artwork the child will actually get. */}
+      <StoryGenderProvider story={story}>
+        <div className="grid gap-10 lg:grid-cols-2">
+          {/* Left: story presentation */}
+          <div>
+            <div className="relative aspect-square w-full overflow-hidden rounded-4xl border-4 border-white shadow-xl">
+              <StoryCover story={story} />
+              <span className="chip absolute left-5 top-5 bg-slate-900/80 text-white backdrop-blur">
+                {story.categoryTag}
               </span>
             </div>
-            <h1 className="text-3xl font-bold text-slate-deep md:text-4xl">
-              {story.title}
-            </h1>
-            <p className="mt-4 leading-relaxed text-slate-mutedText">
-              {story.description}
-            </p>
 
-            <ul className="mt-6 space-y-2.5">
-              {story.highlights.map((h) => (
-                <li
-                  key={h}
-                  className="flex items-center gap-2.5 text-sm text-slate-700"
+            <div className="mt-6 grid grid-cols-3 gap-3">
+              {story.gallery.map((g, i) => (
+                <div
+                  key={i}
+                  className="relative aspect-square overflow-hidden rounded-2xl border-2 border-slate-100"
                 >
-                  <Check className="h-5 w-5 shrink-0 text-emerald-500" />
-                  {h}
-                </li>
+                  <Image
+                    src={g}
+                    alt={`${story.title} inside page preview ${i + 1}`}
+                    fill
+                    sizes="200px"
+                    className="object-cover"
+                  />
+                </div>
               ))}
-            </ul>
+            </div>
 
-            <div className="mt-6 flex gap-4 rounded-2xl border-2 border-brand-borderAccent bg-brand-cream p-4 text-sm">
-              <PriceBadge label="PDF" price={inr(story.pdfPrice)} />
-              <div className="w-px bg-amber-200" />
-              <PriceBadge label="Premium Print" price={inr(story.printPrice)} />
+            <div className="mt-8">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-400">
+                  {story.ageRange}
+                </span>
+                <span className="text-slate-300">·</span>
+                <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-500">
+                  <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> 4.9
+                </span>
+              </div>
+              <h1 className="text-3xl font-bold text-slate-deep md:text-4xl">
+                {story.title}
+              </h1>
+              <p className="mt-4 leading-relaxed text-slate-mutedText">
+                {story.description}
+              </p>
+
+              <ul className="mt-6 space-y-2.5">
+                {story.highlights.map((h) => (
+                  <li
+                    key={h}
+                    className="flex items-center gap-2.5 text-sm text-slate-700"
+                  >
+                    <Check className="h-5 w-5 shrink-0 text-emerald-500" />
+                    {h}
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mt-6 flex gap-4 rounded-2xl border-2 border-brand-borderAccent bg-brand-cream p-4 text-sm">
+                <PriceBadge label="PDF" price={inr(story.pdfPrice)} />
+                <div className="w-px bg-amber-200" />
+                <PriceBadge label="Premium Print" price={inr(story.printPrice)} />
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Right: wizard */}
-        <div className="lg:sticky lg:top-24 lg:self-start">
-          <PersonalizeWizard story={story} />
+          {/* Right: wizard */}
+          <div className="lg:sticky lg:top-24 lg:self-start">
+            <PersonalizeWizard story={story} />
+          </div>
         </div>
-      </div>
+      </StoryGenderProvider>
 
       {/* Try-before-you-buy: one page from this book, rendered from a photo the
           visitor uploads. Anonymous callers are rate limited by the API. */}

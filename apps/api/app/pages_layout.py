@@ -37,6 +37,39 @@ def normalize_variant(value) -> str:
 def other_variant(variant: str) -> str:
     return "girl" if normalize_variant(variant) == "boy" else "boy"
 
+
+def primary_variant(gender_lock) -> str:
+    """The variant whose artwork represents the book in the catalog.
+
+    A locked book only has the one; an unlocked book leads with the boy art
+    because that is what every single-variant book was authored as.
+    """
+    return normalize_variant(gender_lock or "")
+
+
+def catalog_field(page_number: int, variant: str, primary: str) -> str | None:
+    """Which Story column this page's base art doubles as, if any.
+
+    The front cover's art IS the shop image, so it is mirrored onto the Story
+    row. A book authored for both genders has two front covers and needs two
+    shop images, or a girl's book would be sold under a boy's cover:
+
+      coverImage      the primary variant (the locked gender, else boy)
+      coverImageGirl  the girl variant of a book that is not locked to girl
+      spineImage      the primary variant's spine
+
+    Returns None for pages that are not mirrored anywhere.
+    """
+    variant = normalize_variant(variant)
+    primary = normalize_variant(primary)
+    if page_number == FRONT_COVER:
+        if variant == primary:
+            return "coverImage"
+        return "coverImageGirl" if variant == "girl" else None
+    if page_number == SPINE and variant == primary:
+        return "spineImage"
+    return None
+
 KIND_FRONT = "front_cover"
 KIND_BACK = "back_cover"
 KIND_SPINE = "spine"

@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     # authored catalog cover. Reconcile books whose front cover was drawn before
     # that became automatic (idempotent: only writes when they differ).
     try:
-        from .pages_layout import FRONT_COVER, SPINE
+        from .pages_layout import FRONT_COVER, SPINE, catalog_field, primary_variant
 
         rows = await prisma.pagetemplate.find_many(
             where={"pageNumber": {"in": [FRONT_COVER, SPINE]}},
@@ -39,8 +39,14 @@ async def lifespan(app: FastAPI):
         for r in rows:
             if not (r.baseImageUrl and r.book):
                 continue
-            field = "coverImage" if r.pageNumber == FRONT_COVER else "spineImage"
-            if getattr(r.book, field, None) != r.baseImageUrl:
+            # Each variant maps to its own column, so a both-gender book's girl
+            # cover lands beside the boy one instead of overwriting it.
+            field = catalog_field(
+                r.pageNumber,
+                getattr(r, "variant", ""),
+                primary_variant(getattr(r.book, "genderLock", None)),
+            )
+            if field and getattr(r.book, field, None) != r.baseImageUrl:
                 await prisma.story.update(
                     where={"id": r.bookTemplateId},
                     data={field: r.baseImageUrl},

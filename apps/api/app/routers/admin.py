@@ -17,9 +17,11 @@ from ..db import prisma
 from ..pages_layout import (
     FRONT_COVER,
     SPINE,
+    catalog_field,
     kind_of,
     label_of,
     normalize_variant,
+    primary_variant,
     sort_key,
 )
 from ..serializers import order_dict, story_dict
@@ -423,6 +425,11 @@ async def admin_set_gender_lock(slug: str, body: GenderLockPatch):
     )
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
+    # The lock decides which variant is the shop image, so locking a book to
+    # girl has to move the girl cover into coverImage — otherwise the catalog
+    # keeps selling it under the boy artwork.
+    await _resync_catalog_covers(story.id)
+    story = await prisma.story.find_unique(where={"slug": slug})
     return {**story_dict(story), "active": story.active}
 
 
@@ -481,22 +488,49 @@ async def _sync_catalog_cover(
     but it's never authored by hand: saving or generating the front cover's base
     art writes it here, so there is only ever one cover to maintain.
 
-    With two gender variants only one can be the shop image: the locked gender
-    if the book is restricted, otherwise the boy variant.
+    A book authored for both genders has two front covers, and each gets its own
+    column (see pages_layout.catalog_field) so the storefront can show the girl
+    art to a girl. The spine is print-only and stays single.
     """
     if page_number not in (FRONT_COVER, SPINE) or not base_image:
         return
     story = await prisma.story.find_unique(where={"id": story_id})
     if not story:
         return
-    primary = normalize_variant(getattr(story, "genderLock", None) or "")
-    if normalize_variant(variant) != primary:
+    field = catalog_field(
+        page_number, variant, primary_variant(getattr(story, "genderLock", None))
+    )
+    if not field:
         return
-    field = "coverImage" if page_number == FRONT_COVER else "spineImage"
     if getattr(story, field, None) != base_image:
         await prisma.story.update(
             where={"id": story_id}, data={field: base_image}
         )
+
+
+async def _resync_catalog_covers(story_id: str):
+    """Re-derive every catalog image for a book from its authored page art.
+
+    Called when something that changes the mapping changes — today, the gender
+    lock, which decides which variant is the shop image.
+    """
+    story = await prisma.story.find_unique(where={"id": story_id})
+    if not story:
+        return
+    primary = primary_variant(getattr(story, "genderLock", None))
+    rows = await prisma.pagetemplate.find_many(
+        where={"bookTemplateId": story_id, "pageNumber": {"in": [FRONT_COVER, SPINE]}}
+    )
+    data: dict[str, str] = {}
+    for r in rows:
+        if not r.baseImageUrl:
+            continue
+        field = catalog_field(r.pageNumber, getattr(r, "variant", ""), primary)
+        if field:
+            data[field] = r.baseImageUrl
+    changed = {k: v for k, v in data.items() if getattr(story, k, None) != v}
+    if changed:
+        await prisma.story.update(where={"id": story_id}, data=changed)
 
 
 def _page_dict(p) -> dict:

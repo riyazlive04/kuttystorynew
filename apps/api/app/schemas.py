@@ -25,6 +25,7 @@ class StoryOut(BaseModel):
     bilingualAddon: int
     pages: int
     coverImage: str
+    coverImageGirl: Optional[str] = None
     gallery: list[str]
     themeColor: str
     supportsTamil: bool

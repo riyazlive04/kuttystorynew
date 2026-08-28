@@ -25,10 +25,12 @@ from .generation_engine import extract_identity, render_page
 from .pages_layout import (
     FRONT_COVER,
     SPINE,
+    catalog_field,
     is_free,
     kind_of,
     normalize_variant,
     other_variant,
+    primary_variant,
     reading_order,
     render_seed,
 )
@@ -597,7 +599,7 @@ async def _generate_book_base_art(
         )
         story = await db.story.find_unique(where={"id": story_id})
         # Only the shop-facing variant's front cover becomes the catalog image.
-        primary = normalize_variant(getattr(story, "genderLock", None) or "")
+        primary = primary_variant(getattr(story, "genderLock", None))
         sem = asyncio.Semaphore(settings.render_concurrency)
 
         async def _one(p):
@@ -622,10 +624,10 @@ async def _generate_book_base_art(
                 await db.pagetemplate.update(
                     where={"id": p.id}, data={"baseImageUrl": url}
                 )
-                # The front cover's art doubles as the book's shop image, and
-                # the spine's shows on the card's edge.
-                if variant == primary and p.pageNumber in (FRONT_COVER, SPINE):
-                    field = "coverImage" if p.pageNumber == FRONT_COVER else "spineImage"
+                # The front cover's art doubles as the book's shop image — one
+                # per gender variant — and the spine's shows on the card's edge.
+                field = catalog_field(p.pageNumber, variant, primary)
+                if field:
                     await db.story.update(
                         where={"id": story_id}, data={field: url}
                     )

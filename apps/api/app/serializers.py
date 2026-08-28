@@ -20,6 +20,9 @@ def story_dict(s) -> dict:
         "bilingualAddon": s.bilingualAddon,
         "pages": s.pages,
         "coverImage": s.coverImage,
+        # The girl variant's front-cover art, when the book is authored for both
+        # genders. None = show coverImage to everyone.
+        "coverImageGirl": getattr(s, "coverImageGirl", None),
         "gallery": s.gallery,
         "themeColor": s.themeColor,
         "supportsTamil": s.supportsTamil,

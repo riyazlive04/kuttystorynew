@@ -145,6 +145,11 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
 
   function handleSelect(format: Format) {
     if (!job) return;
+    // The child's own rendered front cover, when it exists — it is always the
+    // right gender, which the catalog image only is for a single-variant book.
+    const renderedCover = job.pages.find(
+      (p) => p.kind === "front_cover" && p.imageUrl,
+    )?.imageUrl;
     add({
       id: `${job.id}-${format}`,
       jobId: job.id,
@@ -153,7 +158,7 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
       childName: job.childName,
       format,
       language: job.language,
-      coverImage: story?.coverImage || job.pages[0]?.imageUrl || "",
+      coverImage: renderedCover || story?.coverImage || job.pages[0]?.imageUrl || "",
       unitPrice: format === "pdf" ? PAYWALL_PDF : PAYWALL_PRINT,
       quantity: 1,
     });

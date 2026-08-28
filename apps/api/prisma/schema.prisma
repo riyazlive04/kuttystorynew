@@ -52,6 +52,11 @@ model Story {
   bilingualAddon Int     @default(200)
   pages         Int      @default(28)
   coverImage    String
+  // A book authored for both genders has two front covers. coverImage holds the
+  // primary variant's art (the locked gender, else boy) and this holds the girl
+  // variant's, so a girl's book is never shown under the boy artwork. Null when
+  // the book is girl-locked or has no girl variant yet — fall back to coverImage.
+  coverImageGirl String?
   gallery       String[]
   themeColor    String   @default("#9333EA")
   supportsTamil Boolean  @default(true)
