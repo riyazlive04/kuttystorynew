@@ -16,6 +16,15 @@ from .text_layer import _load_font, personalize
 # 210mm square @ 300 dpi
 PAGE_PX = 2480
 
+# 210mm square @ 150 dpi, for the shareable preview.
+#
+# The preview used to be built on the PRINT canvas and then declared 150 dpi,
+# which makes a 420mm page -- twice the book it is previewing -- and carries four
+# times the pixels anyone can see at that resolution. Every page was upscaled
+# from the render's own ~1200px to 2480px, sharpened, and JPEG'd at quality 95,
+# so a five-page preview ran about 10MB for no visible gain over 2.5MB.
+PREVIEW_PX = 1240
+
 # Pillow embeds PDF images as JPEG at quality 75 unless told otherwise, which
 # visibly softens artwork that has ALREADY been through a JPEG on the way in.
 # 4:4:4 (subsampling=0) matters as much as the quality here: the default 4:2:0
@@ -55,18 +64,18 @@ def _placeholder(caption: str, idx: int) -> Image.Image:
     return img
 
 
-def _fit_square(img: Image.Image) -> Image.Image:
-    """Scale onto the square print canvas WITHOUT distorting.
+def _fit_square(img: Image.Image, edge: int = PAGE_PX) -> Image.Image:
+    """Scale onto a square canvas of `edge` px WITHOUT distorting.
 
-    A straight resize((PAGE_PX, PAGE_PX)) squashes any non-square page — which
-    shows up as compressed, stretched-looking text. Scale to fit and letterbox
-    onto white instead, so the burned-in type keeps its proportions.
+    A straight resize((edge, edge)) squashes any non-square page — which shows up
+    as compressed, stretched-looking text. Scale to fit and letterbox onto white
+    instead, so the burned-in type keeps its proportions.
     """
     img = img.convert("RGB")
-    if img.size == (PAGE_PX, PAGE_PX):
+    if img.size == (edge, edge):
         return img
     w, h = img.size
-    scale = min(PAGE_PX / w, PAGE_PX / h)
+    scale = min(edge / w, edge / h)
     fitted = img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
     # Enlarging cannot add detail, but it does soften every edge — a light
     # unsharp mask restores the bite that makes a print look crisp. Only on the
@@ -75,24 +84,26 @@ def _fit_square(img: Image.Image) -> Image.Image:
         fitted = fitted.filter(
             ImageFilter.UnsharpMask(radius=1.6, percent=110, threshold=3)
         )
-    canvas = Image.new("RGB", (PAGE_PX, PAGE_PX), (255, 255, 255))
-    canvas.paste(fitted, ((PAGE_PX - fitted.width) // 2, (PAGE_PX - fitted.height) // 2))
+    canvas = Image.new("RGB", (edge, edge), (255, 255, 255))
+    canvas.paste(fitted, ((edge - fitted.width) // 2, (edge - fitted.height) // 2))
     return canvas
 
 
-def _page_image(page: dict, child_name: str, idx: int) -> Image.Image:
+def _page_image(
+    page: dict, child_name: str, idx: int, edge: int = PAGE_PX
+) -> Image.Image:
     url = (page or {}).get("imageUrl", "")
     caption = (page or {}).get("caption", "")
     try:
         if url.startswith("/uploads/"):
             path = os.path.join(settings.storage_dir, url.split("/uploads/")[1])
-            return _fit_square(Image.open(path))
+            return _fit_square(Image.open(path), edge)
         if url.startswith("http"):
             data = httpx.get(url, timeout=60).content
-            return _fit_square(Image.open(io.BytesIO(data)))
+            return _fit_square(Image.open(io.BytesIO(data)), edge)
     except Exception:
         pass
-    return _placeholder(personalize(caption, child_name), idx)
+    return _fit_square(_placeholder(personalize(caption, child_name), idx), edge)
 
 
 def build_preview_pdf(job) -> str:
@@ -113,7 +124,10 @@ def build_preview_pdf(job) -> str:
     if not preview:
         raise RuntimeError("preview not generated yet")
 
-    imgs = [_page_image(p, job.childName, i).convert("RGB") for i, p in preview]
+    imgs = [
+        _page_image(p, job.childName, i, PREVIEW_PX).convert("RGB")
+        for i, p in preview
+    ]
     os.makedirs(settings.storage_dir, exist_ok=True)
     fname = f"{job.id}_preview.pdf"
     path = os.path.join(settings.storage_dir, fname)
