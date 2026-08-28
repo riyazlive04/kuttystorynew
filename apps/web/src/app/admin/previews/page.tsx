@@ -32,13 +32,33 @@ export default function AdminPreviews() {
   const [showTest, setShowTest] = useState(false);
   const [refresh, setRefresh] = useState(0);
 
+  // The spinner belongs to a load the admin ASKED for -- first paint, or a
+  // different filter. The poll below reuses this same effect, and setting
+  // `loading` there too was replacing the whole table with a spinner every five
+  // seconds for as long as anything was rendering. That is the flicker: not a
+  // reload, just this component throwing its own rows away and putting them
+  // back. A background refresh now swaps the data underneath without disturbing
+  // what is on screen.
   useEffect(() => {
     setLoading(true);
+  }, [filter]);
+
+  useEffect(() => {
+    let cancelled = false;
     adminApi
       .jobs(filter === "purchased" ? true : undefined)
-      .then(setJobs)
-      .catch(() => setJobs([]))
-      .finally(() => setLoading(false));
+      .then((j) => {
+        if (!cancelled) setJobs(j);
+      })
+      .catch(() => {
+        if (!cancelled) setJobs([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [filter, refresh]);
 
   // A render in flight? Poll so progress ticks without a manual reload.
