@@ -121,11 +121,23 @@ class Settings(BaseSettings):
     # hair-keeping composite still has a region to work with. Off = untraced
     # pages keep the old full-head swap.
     # Detect a face region on pages nobody traced, so the hair-keeping composite
-    # has an oval to work with. OFF: a detected oval is a guess, and confining
-    # the swap to a guessed oval is what cost the likeness. A page an admin has
-    # actually traced still gets its outline; an untraced one takes the full-head
-    # swap, which is how this ran when it was working well.
-    face_autodetect_enabled: bool = False
+    # has an oval to work with.
+    #
+    # ON, but for a narrower job than before. The region is no longer sent to
+    # Segmind as a mask -- the swap sees the whole page and swaps the whole head,
+    # so nothing constrains the likeness. The region is used only AFTERWARDS, to
+    # decide how much of that swapped head to keep.
+    #
+    # That distinction is the whole story of this bug. A region used as a mask
+    # tells a diffusion model what to invent, and it invented raised hairlines,
+    # bindis and earrings. The same region used as a composite throws those away:
+    # anything outside the face oval is the artwork's own pixels.
+    #
+    # Measured on the storefront plate, same photo and seed: with this off, the
+    # full-head swap replaces the character's black fringe with the child's brown
+    # hair and exposes ears the artwork had covered. With it on, the fringe is
+    # the artwork's and the face is the child's.
+    face_autodetect_enabled: bool = True
 
     # --- Public A/B provider comparison (/compare) -----------------------------
     # Renders ONE demo page through every configured provider. It spends money on
