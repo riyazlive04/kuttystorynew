@@ -23,27 +23,41 @@ from __future__ import annotations
 import hashlib
 from typing import Optional
 
-# How much to grow the detector's box, and how far to bias it downwards.
+# How the detector's box becomes a face region.
 #
-# A Haar frontal box spans roughly EYEBROW to UPPER LIP — it is not a face, it
-# is the middle of one. Grown uniformly it stays that shape, and the region then
-# excludes the chin, the jawline and the forehead: exactly the geometry a viewer
-# reads as "that's him". Swapping only the inside of it leaves the illustration's
-# own jaw and chin in place, and the result looks like the character wearing the
-# child's eyes rather than the child.
+# A Haar frontal box spans roughly EYEBROW to UPPER LIP -- it is not a face, it
+# is the middle of one. Left as-is, the region excludes the chin and jawline and
+# the swap leaves the illustration's own jaw in place, so the result looks like
+# the character wearing the child's eyes.
 #
-# So the growth is anisotropic — a face is taller than the box, not wider — and
-# the drop puts most of the extra height below the lip, where the chin is,
-# instead of up into the hair. Verified by overlay on a storefront plate and on a
-# customer photo: brow-to-lip before, hairline-to-chin after.
+# But growing it EVENLY to reach the chin lifts the top edge into the hair, and
+# that is worse than the problem it solves. Everything inside this region is
+# canvas the swapper repaints, and faceswap-comic is a diffusion model: it does
+# not paste a face, it GENERATES one to fill what it is given. Hand it the hair
+# fringe and it paints skin there, so the hairline climbs, the ears come out
+# from under the hair, and the face reads as shrunken inside a suddenly larger
+# head. Hand it forehead and ear it did not need and it will sometimes decorate
+# them -- a bindi, an earring -- because that is what its training prior says
+# belongs on a face like this. We cannot prompt it not to. The mask is the only
+# control we have, so the mask must not offer anything we do not want painted.
 #
-# This is safe to grow now in a way it was not when these values were first set.
-# Back then an oversized region meant a false positive (a torso, foliage) got
-# painted; the eye gate below has since made every surviving candidate a real
-# face, and growth around a real face lands on more face.
-BOX_GROW_W = 0.18
-BOX_GROW_H = 0.44
-BOX_DROP = 0.11
+# Hence: the top edge stays BELOW the detector's box top (which sits at the
+# brow, under the hairline) and only the bottom extends, down past the chin.
+# Expressed as two explicit edges rather than a grow/drop pair, because in that
+# form the top edge is a derived quantity -- (drop - grow/2) -- and it silently
+# went positive, into the fringe, which is exactly how this shipped broken.
+#
+# Verified by overlay on a storefront plate: brow to chin, clear of the fringe
+# and clear of both ears.
+
+# Start this far below the detector box's top, as a fraction of its height.
+# Never negative: negative means the hair.
+BOX_TOP_INSET = 0.02
+# Reach this far below the box's bottom, to take in the jaw and the chin.
+BOX_CHIN_DROP = 0.38
+# Sideways growth is nearly nil. The box already spans the cheeks, and widening
+# it reaches the ears and the hair beside them.
+BOX_GROW_W = 0.02
 
 # A detection smaller than this is scenery; larger than this is not a face on a
 # storybook page. Measured across a full 28-page book: real faces ran 12-29% of
@@ -145,11 +159,13 @@ def _detect(image_bytes: bytes) -> Optional[dict]:
     fh = sum(c[3] for c in same_head) / len(same_head)
 
     cx = x + fw / 2
-    cy = y + fh / 2 + fh * BOX_DROP
     bw = fw * (1 + BOX_GROW_W)
-    bh = fh * (1 + BOX_GROW_H)
+    # Top and bottom are set independently, so reaching further down for the
+    # chin can never reach further up into the hair.
+    top = y + fh * BOX_TOP_INSET
+    bh = fh * (1 + BOX_CHIN_DROP) - fh * BOX_TOP_INSET
     left = max(0.0, cx - bw / 2)
-    top = max(0.0, cy - bh / 2)
+    top = max(0.0, top)
     bw = min(bw, dw - left)
     bh = min(bh, dh - top)
 
