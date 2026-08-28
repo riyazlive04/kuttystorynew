@@ -9,7 +9,7 @@ import os
 import httpx
 from PIL import Image, ImageDraw, ImageFilter
 
-from .color import to_cmyk
+from .color import open_srgb, to_cmyk
 from .config import settings
 from .text_layer import _load_font, personalize
 
@@ -97,10 +97,10 @@ def _page_image(
     try:
         if url.startswith("/uploads/"):
             path = os.path.join(settings.storage_dir, url.split("/uploads/")[1])
-            return _fit_square(Image.open(path), edge)
+            return _fit_square(open_srgb(path), edge)
         if url.startswith("http"):
             data = httpx.get(url, timeout=60).content
-            return _fit_square(Image.open(io.BytesIO(data)), edge)
+            return _fit_square(open_srgb(data), edge)
     except Exception:
         pass
     return _fit_square(_placeholder(personalize(caption, child_name), idx), edge)

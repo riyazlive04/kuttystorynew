@@ -190,13 +190,14 @@ def _load_font(size: int, family: str = DEFAULT_FAMILY) -> ImageFont.FreeTypeFon
 def _load_image(src: str) -> Image.Image:
     # Our own uploads live on a shared volume - read them locally so the worker
     # doesn't have to HTTP-fetch (its localhost isn't the API).
+    from .color import open_srgb
+
     if "/uploads/" in src:
         name = src.split("/uploads/", 1)[1]
-        return Image.open(os.path.join(settings.storage_dir, name)).convert("RGB")
+        return open_srgb(os.path.join(settings.storage_dir, name))
     if src.startswith("http"):
-        data = httpx.get(src, timeout=60).content
-        return Image.open(io.BytesIO(data)).convert("RGB")
-    return Image.open(src).convert("RGB")
+        return open_srgb(httpx.get(src, timeout=60).content)
+    return open_srgb(src)
 
 
 def _text_w(draw: ImageDraw.ImageDraw, text: str, font, tracking: float) -> float:

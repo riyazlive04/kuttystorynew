@@ -17,6 +17,7 @@ plate ourselves rather than shipping K=0.
 """
 from __future__ import annotations
 
+import io
 import os
 from functools import lru_cache
 from typing import Optional
@@ -37,10 +38,38 @@ _CANDIDATES = (
 
 @lru_cache(maxsize=1)
 def cmyk_profile_path() -> Optional[str]:
-    """The CMYK profile to convert into, or None if the image has no profile."""
+    """The CMYK profile to convert into, or None if the image has no profile.
+
+    Looked for in order of how deliberate each location is:
+
+      1. CMYK_ICC_PROFILE, an explicit choice
+      2. <storage>/icc/*.icc  -- the shared volume, so a printer's own profile
+         can be dropped in over scp with no rebuild and no image change
+      3. infra/icc/*.icc      -- checked into the repo, if you would rather it
+         travel with the code
+      4. the usual Debian/ghostscript locations
+
+    Without one, to_cmyk falls back to arithmetic that keeps blacks on the K
+    plate but is not colour-accurate -- fine for a proof, not for a press run.
+    /health reports which of these happened.
+    """
+    import glob as _glob
+
     env = (os.getenv(ENV_VAR) or "").strip()
     if env and os.path.exists(env):
         return env
+
+    from .config import settings
+
+    for pattern in (
+        os.path.join(settings.storage_dir, "icc", "*.ic[cm]"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "..",
+                     "infra", "icc", "*.ic[cm]"),
+    ):
+        found = sorted(_glob.glob(pattern))
+        if found:
+            return os.path.abspath(found[0])
+
     for path in _CANDIDATES:
         if os.path.exists(path):
             return path
@@ -91,6 +120,47 @@ def _naive_cmyk(img: Image.Image) -> Image.Image:
         return ImageChops.subtract(inv, k)
 
     return Image.merge("CMYK", (plate(r), plate(g), plate(b), k))
+
+
+def to_srgb(img: Image.Image) -> Image.Image:
+    """Any source image -> sRGB, honouring whatever colour space it arrived in.
+
+    Base art is authored for print. The unicorn book's cover plate is a 2482px
+    CMYK JPEG carrying a Coated FOGRA39 profile, and Pillow's convert("RGB")
+    does not read that profile -- it applies the naive 255-x inversion, which on
+    that plate lands 8.7 luminance levels dark and shifts every colour with it.
+    Darker, muddier, heavier shadows, on screen and in the preview PDF. That is
+    the "images look a little dark" report, and it is also feeding the swapper a
+    contrastier face to shade.
+
+    Customer photos benefit for the same reason from the other direction: a
+    modern phone tags its JPEGs Display P3, and reading those as sRGB oversaturates
+    them.
+
+    No profile and already RGB means there is nothing to do and nothing is done.
+    """
+    icc = img.info.get("icc_profile")
+    if img.mode == "RGB" and not icc:
+        return img
+    if icc:
+        try:
+            return ImageCms.profileToProfile(
+                img,
+                ImageCms.getOpenProfile(io.BytesIO(icc)),
+                ImageCms.createProfile("sRGB"),
+                renderingIntent=ImageCms.Intent.PERCEPTUAL,
+                outputMode="RGB",
+            )
+        except Exception as e:  # noqa: BLE001 -- a bad profile is not a dead render
+            print(f"[color] icc->srgb failed, using naive convert: {e}", flush=True)
+    return img.convert("RGB")
+
+
+def open_srgb(data) -> Image.Image:
+    """Open bytes / a path / a file object and return it in sRGB."""
+    if isinstance(data, (bytes, bytearray)):
+        data = io.BytesIO(data)
+    return to_srgb(Image.open(data))
 
 
 def to_cmyk(img: Image.Image) -> Image.Image:

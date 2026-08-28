@@ -377,8 +377,19 @@ def _data_uri(src: str) -> str:
 
 
 def _b64(src: str) -> str:
-    """Plain base64 (no data: prefix) — Segmind's API expects raw base64."""
-    return base64.b64encode(_image_bytes(src)).decode()
+    """Plain base64 (no data: prefix) — Segmind's API expects raw base64.
+
+    Normalised to sRGB on the way out. The base plates are print-authored CMYK
+    JPEGs with a FOGRA39 profile; handing one to a swapper that assumes RGB is
+    handing it a darker, contrastier picture than the artist drew, and the face
+    it paints gets shaded to match.
+    """
+    from .color import open_srgb
+
+    img = open_srgb(_image_bytes(src))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=95, subsampling=0)
+    return base64.b64encode(buf.getvalue()).decode()
 
 
 def _save_bytes(data: bytes, prefix: str = "swap") -> str:
@@ -401,8 +412,10 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
     template hair/body + child's swapped face. `region` is either a freeform
     polygon {"points": [[x%,y%], ...]} (preferred) or a box {x,y,w,h} in PERCENT.
     """
-    tmpl = Image.open(io.BytesIO(_image_bytes(template_src))).convert("RGB")
-    swp = Image.open(io.BytesIO(swapped)).convert("RGB")
+    from .color import open_srgb
+
+    tmpl = open_srgb(_image_bytes(template_src))
+    swp = open_srgb(swapped)
     if swp.size != tmpl.size:
         swp = swp.resize(tmpl.size)
     cw, ch = tmpl.size
@@ -917,7 +930,9 @@ async def _openai_faceswap(
         print(f"[openai] cache hit ({quality}) -> {cached}", flush=True)
         return cached
 
-    plate = Image.open(io.BytesIO(plate_bytes)).convert("RGB")
+    from .color import open_srgb
+
+    plate = open_srgb(plate_bytes)
     box = _face_crop_box(face_region, plate.size, padding) if face_region else None
     prompt = _openai_prompt(style_prompt, photo_first)
 
