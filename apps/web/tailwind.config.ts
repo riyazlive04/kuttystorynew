@@ -55,10 +55,17 @@ const config: Config = {
         shimmer: {
           "100%": { transform: "translateX(100%)" },
         },
+        // The hero badge's name, changing with the slide behind it.
+        fadeIn: {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
       },
       animation: {
         floaty: "floaty 6s ease-in-out infinite",
         shimmer: "shimmer 1.6s infinite",
+        // Matches the artwork's crossfade, so the two read as one change.
+        "fade-in": "fadeIn 1s ease-in-out",
       },
     },
   },

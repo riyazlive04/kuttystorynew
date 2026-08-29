@@ -56,22 +56,9 @@ export function Hero({ stories }: { stories: Story[] }) {
         </div>
 
         {/* Nothing to show if no book is live — the badge is pinned to the
-            frame, so it goes with it rather than floating on empty space. */}
-        {slides.length > 0 && (
-          <div className="relative">
-            <div className="animate-floaty rounded-4xl border-4 border-white bg-white p-3 shadow-2xl">
-              <HeroSlideshow slides={slides} />
-            </div>
-            <div className="absolute -bottom-5 -left-5 hidden rounded-2xl border-2 border-slate-100 bg-white px-4 py-3 shadow-lg sm:block">
-              <p className="text-xs font-semibold text-slate-mutedText">
-                Personalizing for
-              </p>
-              <p className="kids text-lg font-bold text-brand-primary">
-                Aarav, age 4 ✨
-              </p>
-            </div>
-          </div>
-        )}
+            frame inside HeroSlideshow, so it goes with it rather than floating
+            on empty space. */}
+        {slides.length > 0 && <HeroSlideshow slides={slides} />}
       </div>
     </section>
   );

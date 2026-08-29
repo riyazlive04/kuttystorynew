@@ -12,6 +12,11 @@ export interface Story {
   description: string;
   categoryTag: CategoryTag;
   ageRange: string;
+  // The same range as numbers. The catalogue API has always sent these; they
+  // were just never declared here. Optional because the bundled fallback data
+  // has no age fields.
+  minAge?: number;
+  maxAge?: number;
   pdfPrice: number;
   printPrice: number;
   bilingualAddon: number;
