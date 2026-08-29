@@ -48,7 +48,7 @@ export function Reviews() {
     {
       name: "Priya S.",
       city: "Chennai",
-      text: "My daughter gasped when she saw herself in the story! The Tamil edition was beautifully done. Print quality is gorgeous.",
+      text: "My daughter's face lit up when she saw herself in the story! The Tamil edition was beautifully done. Print quality is gorgeous.",
     },
     {
       name: "Karthik R.",

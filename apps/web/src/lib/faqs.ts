@@ -10,15 +10,15 @@ export const FAQS = [
   },
   {
     q: "Is the preview really free?",
-    a: "Yes! You get an 8-page preview instantly with zero commitment. You only pay when you decide to unlock the full book as a PDF or order a printed copy.",
+    a: "Yes! You get the front cover and the first 5 pages instantly, with zero commitment. You only pay when you decide to unlock the full book as a PDF or order a printed copy.",
   },
   {
     q: "Do you support Tamil?",
-    a: "Most of our titles are available in English and Tamil. Look for the தமிழ் ✓ badge on a story.",
+    a: "Most of our titles are available in English, we have the plan to introduce Tamil books soon.  Look for the தமிழ் ✓ badge on a story.",
   },
   {
     q: "How long does printing and delivery take?",
-    a: "Printed hardcovers are made to order and take 4-7 days to produce. Delivery is free across India, and how long it takes after that depends on the state we're shipping to.",
+    a: "Printed hardcovers are made to order and take 4-7 days to produce. Delivery is across India, and how long it takes after that depends on the state we're shipping to.",
   },
   {
     q: "What if I'm not happy with my book?",
