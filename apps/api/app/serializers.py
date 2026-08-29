@@ -2,6 +2,32 @@
 from datetime import datetime, timezone
 
 from .config import settings
+from .pages_layout import primary_variant
+
+# How many interior pages of a book the storefront may show off. Two is enough
+# for the homepage slideshow without turning the catalogue response into a list
+# of every page in every book.
+SAMPLE_PAGE_LIMIT = 2
+
+
+def sample_pages(s) -> list[str]:
+    """The book's own interior artwork, for the storefront to show off.
+
+    Only meaningful when the caller loaded `pageTemplates`; otherwise empty.
+    Covers and the spine are excluded — the front cover is already mirrored onto
+    coverImage, and the spine is print-only.
+    """
+    templates = getattr(s, "pageTemplates", None) or []
+    variant = primary_variant(getattr(s, "genderLock", None))
+    interior = [
+        p
+        for p in templates
+        if p.pageNumber >= 1
+        and getattr(p, "variant", "boy") == variant
+        and p.baseImageUrl
+    ]
+    interior.sort(key=lambda p: p.pageNumber)
+    return [p.baseImageUrl for p in interior[:SAMPLE_PAGE_LIMIT]]
 
 
 def story_dict(s) -> dict:
@@ -24,6 +50,10 @@ def story_dict(s) -> dict:
         # genders. None = show coverImage to everyone.
         "coverImageGirl": getattr(s, "coverImageGirl", None),
         "gallery": s.gallery,
+        # Interior page art, when the caller loaded the page templates. Lets the
+        # storefront show real pages from whichever books are live instead of a
+        # hand-maintained list that goes stale the moment a book is unpublished.
+        "samplePages": sample_pages(s),
         "themeColor": s.themeColor,
         "supportsTamil": s.supportsTamil,
         "highlights": s.highlights,

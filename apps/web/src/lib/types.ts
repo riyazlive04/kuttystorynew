@@ -21,6 +21,9 @@ export interface Story {
   // null/absent = coverImage is shown to everyone. Read it via coverFor().
   coverImageGirl?: string | null;
   gallery: string[];
+  // A couple of the book's authored interior pages, sent by the catalogue API so
+  // the storefront can show real pages. Absent on the bundled fallback data.
+  samplePages?: string[];
   themeColor: string; // hex used for gradient accents
   supportsTamil: boolean;
   highlights: string[];

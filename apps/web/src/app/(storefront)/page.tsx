@@ -20,8 +20,11 @@ export const metadata: Metadata = {
 
 export default async function HomePage() {
   // Fetched on the server so the "Popular stories" grid is in the HTML a
-  // crawler receives, not painted in afterwards by an effect.
-  const featured = (await getStories()).slice(0, 6);
+  // crawler receives, not painted in afterwards by an effect. Only published
+  // books come back, and the hero art is built from the same list — so a book
+  // taken down stops appearing anywhere on this page.
+  const stories = await getStories();
+  const featured = stories.slice(0, 6);
 
   return (
     <>
@@ -29,7 +32,7 @@ export default async function HomePage() {
         data={[organizationJsonLd(), websiteJsonLd(), faqJsonLd(FAQS)]}
       />
 
-      <Hero />
+      <Hero stories={stories} />
 
       <TrustBar />
 

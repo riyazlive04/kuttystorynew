@@ -5,7 +5,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 
-import { STORY_SAMPLES, type StorySamples } from "@/lib/samples";
+import { storySamples, type StorySamples } from "@/lib/samples";
+import type { Story } from "@/lib/types";
 
 const INTERVAL_MS = 3500;
 
@@ -93,8 +94,10 @@ function StorySlideshow({ story }: { story: StorySamples }) {
   );
 }
 
-export function SampleCarousel() {
-  if (STORY_SAMPLES.length === 0) return null;
+/** `stories` is the live catalogue — see Hero. */
+export function SampleCarousel({ stories }: { stories: Story[] }) {
+  const samples = storySamples(stories);
+  if (samples.length === 0) return null;
 
   return (
     <section className="container-x py-10">
@@ -114,7 +117,7 @@ export function SampleCarousel() {
       {/* Stacked on mobile, side by side from md up. justify-center keeps the
           pair centered if a story is ever added or removed. */}
       <div className="mx-auto flex max-w-4xl flex-col items-center justify-center gap-8 md:flex-row md:items-start">
-        {STORY_SAMPLES.map((story) => (
+        {samples.map((story) => (
           <div key={story.slug} className="w-full max-w-md md:flex-1">
             <StorySlideshow story={story} />
           </div>

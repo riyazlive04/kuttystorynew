@@ -2,8 +2,16 @@ import Link from "next/link";
 import { Sparkles, Star, Truck, Wand2 } from "lucide-react";
 
 import { HeroSlideshow } from "@/components/HeroSlideshow";
+import { heroSamples } from "@/lib/samples";
+import type { Story } from "@/lib/types";
 
-export function Hero() {
+/**
+ * `stories` is the live catalogue — the hero frame shows pages from the books
+ * that are actually on sale, so an unpublished book disappears from here too.
+ */
+export function Hero({ stories }: { stories: Story[] }) {
+  const slides = heroSamples(stories);
+
   return (
     <section className="relative overflow-hidden">
       <div className="pointer-events-none absolute -left-24 top-10 h-72 w-72 rounded-full bg-brand-primary/10 blur-3xl" />
@@ -47,19 +55,23 @@ export function Hero() {
           </div>
         </div>
 
-        <div className="relative">
-          <div className="animate-floaty rounded-4xl border-4 border-white bg-white p-3 shadow-2xl">
-            <HeroSlideshow />
+        {/* Nothing to show if no book is live — the badge is pinned to the
+            frame, so it goes with it rather than floating on empty space. */}
+        {slides.length > 0 && (
+          <div className="relative">
+            <div className="animate-floaty rounded-4xl border-4 border-white bg-white p-3 shadow-2xl">
+              <HeroSlideshow slides={slides} />
+            </div>
+            <div className="absolute -bottom-5 -left-5 hidden rounded-2xl border-2 border-slate-100 bg-white px-4 py-3 shadow-lg sm:block">
+              <p className="text-xs font-semibold text-slate-mutedText">
+                Personalizing for
+              </p>
+              <p className="kids text-lg font-bold text-brand-primary">
+                Aarav, age 4 ✨
+              </p>
+            </div>
           </div>
-          <div className="absolute -bottom-5 -left-5 hidden rounded-2xl border-2 border-slate-100 bg-white px-4 py-3 shadow-lg sm:block">
-            <p className="text-xs font-semibold text-slate-mutedText">
-              Personalizing for
-            </p>
-            <p className="kids text-lg font-bold text-brand-primary">
-              Aarav, age 4 ✨
-            </p>
-          </div>
-        </div>
+        )}
       </div>
     </section>
   );

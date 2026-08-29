@@ -1,16 +1,19 @@
+import type { Story } from "./types";
+
 /**
- * Real storybook pages shown on the homepage — the hero slideshow and the
- * "See the magic" carousels.
+ * The artwork the homepage shows off — the hero slideshow and the "See the
+ * magic" carousel.
  *
- * To change them: drop square page JPGs into `apps/web/public/samples/` and list
- * them here, page 1 first. Keep them ~1200px and under ~300KB — `images.unoptimized`
- * is on in next.config.mjs, so whatever is committed is exactly what visitors
- * download.
+ * Derived from the live catalogue, never from a hand-written list: `getStories()`
+ * returns only books the admin has published, so unpublishing a book takes its
+ * pages off the homepage on the next revalidate. Each book contributes its own
+ * interior page art (`samplePages`, authored in the Page Editor), falling back
+ * to its gallery and finally to its cover, so a book with no interior pages
+ * authored yet still shows something real.
  */
 export type Sample = { src: string; alt: string };
 
 export type StorySamples = {
-  /** Matches Story.title in the DB. */
   title: string;
   /** Links the card to /stories/<slug>. */
   slug: string;
@@ -18,42 +21,42 @@ export type StorySamples = {
   pages: Sample[];
 };
 
-export const STORY_SAMPLES: StorySamples[] = [
-  {
-    title: "Cricket",
-    slug: "cricket",
-    pages: [
-      {
-        src: "/samples/sample-1.jpg",
-        alt: "Aarav practising cricket in his backyard, from a personalized storybook",
-      },
-      {
-        src: "/samples/sample-2.jpg",
-        alt: "Aarav in an India jersey at a packed stadium, from a personalized storybook",
-      },
-      {
-        src: "/samples/sample-3.jpg",
-        alt: "Aarav breaking a flower pot with a big shot, from a personalized storybook",
-      },
-    ],
-  },
-  {
-    title: "Moonstone Academy",
-    slug: "moonstone-academy",
-    pages: [
-      {
-        src: "/samples/moonstone-1.jpg",
-        alt: "A boy reading adventure books in his moonlit bedroom, from a personalized storybook",
-      },
-      {
-        src: "/samples/moonstone-2.jpg",
-        alt: "A glowing golden invitation to Moonstone Academy floating through a window",
-      },
-    ],
-  },
-];
+/** Books shown off on the homepage, and how many images each contributes. */
+const MAX_STORIES = 4;
+const MAX_PAGES_PER_STORY = 2;
 
-/** Hero slideshow: pages 1-2 of every story, interleaved in story order. */
-export const HERO_SAMPLES: Sample[] = STORY_SAMPLES.flatMap((s) =>
-  s.pages.slice(0, 2),
-);
+function imagesFor(story: Story): string[] {
+  const authored = [...(story.samplePages ?? []), ...(story.gallery ?? [])];
+  const pool = authored.length ? authored : [story.coverImage];
+  // A book whose gallery repeats its cover would otherwise crossfade onto
+  // itself, which reads as the slideshow having stalled.
+  return Array.from(new Set(pool.filter(Boolean))).slice(0, MAX_PAGES_PER_STORY);
+}
+
+/** One entry per live book, each with a few of its own pages. */
+export function storySamples(stories: Story[]): StorySamples[] {
+  return stories
+    .map((s) => ({
+      title: s.title,
+      slug: s.slug,
+      pages: imagesFor(s).map((src, i) => ({
+        src,
+        alt: `Page ${i + 1} of ${s.title}, a personalized KuttyStory book`,
+      })),
+    }))
+    .filter((s) => s.pages.length > 0)
+    .slice(0, MAX_STORIES);
+}
+
+/**
+ * Hero slideshow: the live books' pages, in catalogue order. Capped because
+ * every slide is downloaded up front (images.unoptimized) and a loop longer
+ * than about twenty seconds never comes back round while anyone is watching.
+ */
+const MAX_HERO_SLIDES = 6;
+
+export function heroSamples(stories: Story[]): Sample[] {
+  return storySamples(stories)
+    .flatMap((s) => s.pages)
+    .slice(0, MAX_HERO_SLIDES);
+}

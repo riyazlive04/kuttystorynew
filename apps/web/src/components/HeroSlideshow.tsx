@@ -3,18 +3,19 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 
-import { HERO_SAMPLES as SAMPLES } from "@/lib/samples";
+import type { Sample } from "@/lib/samples";
 
 const INTERVAL_MS = 3500;
 
 /**
- * GIF-like crossfade of real personalized pages for the hero frame. Static for
- * visitors who ask for reduced motion — an auto-playing loop is exactly what
- * that setting is meant to stop.
+ * GIF-like crossfade of real personalized pages for the hero frame. The slides
+ * come from whichever books are live (see lib/samples), so this component never
+ * decides what to show. Static for visitors who ask for reduced motion — an
+ * auto-playing loop is exactly what that setting is meant to stop.
  */
-export function HeroSlideshow() {
+export function HeroSlideshow({ slides }: { slides: Sample[] }) {
   const [i, setI] = useState(0);
-  const n = SAMPLES.length;
+  const n = slides.length;
 
   useEffect(() => {
     if (n <= 1) return;
@@ -28,7 +29,7 @@ export function HeroSlideshow() {
 
   return (
     <div className="relative aspect-square w-full overflow-hidden rounded-3xl bg-slate-50">
-      {SAMPLES.map((s, idx) => (
+      {slides.map((s, idx) => (
         <Image
           key={s.src}
           src={s.src}
@@ -37,7 +38,7 @@ export function HeroSlideshow() {
           sizes="(max-width: 768px) 100vw, 500px"
           priority={idx === 0}
           className={`object-cover transition-opacity duration-1000 ease-in-out ${
-            idx === i ? "opacity-100" : "opacity-0"
+            idx === i % n ? "opacity-100" : "opacity-0"
           }`}
         />
       ))}
