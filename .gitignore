@@ -46,3 +46,6 @@ docker-compose.override.yml
 
 # Editor-local settings
 .vscode/
+
+# demo recorder: local password + rendered videos
+demo/output/

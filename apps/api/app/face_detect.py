@@ -381,3 +381,54 @@ def rank_photos(srcs: list[str]) -> list[tuple[str, dict]]:
     caller decides what to do, and the parent is told what was decided."""
     scored = [(s, analyse_photo_for(s)) for s in (srcs or []) if s]
     return sorted(scored, key=lambda pair: pair[1]["score"], reverse=True)
+
+
+def eyes_in_face(image_bytes: bytes, region: dict) -> list[tuple[int, int, int, int]]:
+    """The two eyes inside an already-known face region, in pixels.
+
+    Separate from _detect's eye check, which only counts them to decide whether
+    a box is a face. Here we need where they are.
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:  # pragma: no cover
+        return []
+    img = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        return []
+    H, W = img.shape[:2]
+    x = max(0, int(region["x"] / 100 * W))
+    y = max(0, int(region["y"] / 100 * H))
+    w = int(region["w"] / 100 * W)
+    h = int(region["h"] / 100 * H)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # Only the top of the region. The face region now runs brow to CHIN, and
+    # searching further down than this finds the mouth -- verified: on a real
+    # render the cascade returned one eye and the mouth, and the caller happily
+    # went on to lighten the child's chin.
+    roi = gray[y : y + int(h * 0.45), x : x + w]
+    if roi.size == 0:
+        return []
+    cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_eye.xml")
+    found = cascade.detectMultiScale(
+        roi, scaleFactor=1.05, minNeighbors=6, minSize=(max(8, w // 14),) * 2
+    )
+    eyes = [(x + int(ex), y + int(ey), int(ew), int(eh)) for ex, ey, ew, eh in found]
+    if len(eyes) < 2:
+        return []
+    eyes.sort(key=lambda e: e[2] * e[3], reverse=True)
+
+    # A pair, or nothing. Two eyes sit level and apart; anything that does not
+    # is a brow over an eye, or an eye over a nostril, and acting on it puts the
+    # correction somewhere there is no eye. Returning nothing is the safe answer
+    # -- the caller treats it as "leave this face alone".
+    for i in range(len(eyes)):
+        for j in range(i + 1, len(eyes)):
+            a, b = eyes[i], eyes[j]
+            adx = abs((a[0] + a[2] / 2) - (b[0] + b[2] / 2))
+            ay = abs((a[1] + a[3] / 2) - (b[1] + b[3] / 2))
+            span = (a[2] + b[2]) / 2
+            if adx > span * 0.9 and adx < w * 0.95 and ay < span * 0.7:
+                return [a, b] if a[0] < b[0] else [b, a]
+    return []

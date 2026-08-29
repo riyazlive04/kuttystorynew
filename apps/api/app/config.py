@@ -66,6 +66,17 @@ class Settings(BaseSettings):
     segmind_face_strength: float = 0.85
     segmind_style_strength: float = 0.7
     segmind_steps: int = 12
+    # How far to lift the shadow under the child's eyes on the finished page,
+    # 0-1. Provider-independent -- it runs on the composed output, because the
+    # swapper ignores the photo's own lighting (measured) and this is the only
+    # place the correction survives.
+    #
+    # Low-frequency only, and clipped so it can never darken: a child with no
+    # shadow there comes back untouched, and one with dark circles gets them
+    # lifted toward their own cheek rather than painted over. 0.65 is short of
+    # erasing them, which is deliberate -- the point is a real face that looks
+    # well lit, not a retouched one. 0 disables it.
+    undereye_softening: float = 0.65
     # Hosted Replicate face-swap model (used when faceswap_provider=replicate).
     # Known input schemas are auto-mapped:
     #   fofr/face-swap-with-ideogram -> target_image + character_image + prompt

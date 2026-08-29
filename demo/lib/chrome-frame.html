@@ -1,0 +1,144 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>chrome frame</title>
+<!--
+  The browser chrome strip that sits above the recording.
+
+  Headless Chromium has no window furniture, so the address bar the demo is
+  meant to show does not exist to be captured. This file draws it: the recorder
+  screenshots it once per typed character to build the opening animation, then
+  once more in its "loaded" state to composite over the whole journey.
+
+  Rendered at exactly 1440x90 (STRIP_W x STRIP_H in record-demo.mjs).
+-->
+<style>
+  :root {
+    --bar: #dee1e6;
+    --toolbar: #ffffff;
+    --tab: #ffffff;
+    --pill: #f1f3f4;
+    --ink: #202124;
+    --muted: #5f6368;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1440px; height: 90px; overflow: hidden; }
+  body {
+    background: var(--bar);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* --- tab strip ------------------------------------------------------- */
+  .tabs { height: 40px; display: flex; align-items: flex-end; padding-left: 10px; gap: 6px; }
+  .tab {
+    height: 34px; width: 260px; background: var(--tab);
+    border-radius: 10px 10px 0 0; display: flex; align-items: center;
+    gap: 8px; padding: 0 12px; font-size: 12.5px; color: var(--ink);
+  }
+  .tab .fav {
+    width: 16px; height: 16px; border-radius: 4px; flex: none;
+    background: linear-gradient(135deg, #ff6f61, #ffb199);
+  }
+  .tab .name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .tab .x { margin-left: auto; color: var(--muted); font-size: 14px; line-height: 1; }
+  .newtab { color: var(--muted); font-size: 19px; padding: 0 8px 6px; }
+
+  .winbtns { margin-left: auto; display: flex; gap: 20px; align-items: center;
+             padding: 0 18px 10px 0; color: var(--muted); font-size: 12px; }
+
+  /* --- toolbar --------------------------------------------------------- */
+  .toolbar { height: 50px; background: var(--toolbar); display: flex;
+             align-items: center; gap: 6px; padding: 0 12px; }
+  .icon { width: 30px; height: 30px; display: grid; place-items: center;
+          color: var(--muted); flex: none; }
+  .icon svg { width: 17px; height: 17px; stroke: currentColor; fill: none;
+              stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .icon.dim { opacity: .38; }
+
+  .pill {
+    flex: 1; height: 32px; background: var(--pill); border-radius: 16px;
+    display: flex; align-items: center; gap: 9px; padding: 0 14px;
+    font-size: 13.5px; color: var(--ink); margin: 0 6px; position: relative;
+  }
+  /* Focused-while-typing look: white field with a blue ring, as Chrome does. */
+  body.typing .pill { background: #fff; box-shadow: 0 0 0 2px #1a73e8, 0 1px 6px rgba(32,33,36,.28); }
+  .pill .lead { flex: none; color: var(--muted); display: grid; place-items: center; }
+  .pill .lead svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .url { white-space: nowrap; overflow: hidden; }
+  .url .host { color: var(--ink); }
+  .url .rest { color: var(--muted); }
+  .caret { width: 1.5px; height: 17px; background: #202124; display: inline-block;
+           vertical-align: -3px; margin-left: 1px; }
+  .caret.off { opacity: 0; }
+
+  .avatar { width: 24px; height: 24px; border-radius: 50%; background: #c8ccd0; flex: none; }
+
+  /* --- progress -------------------------------------------------------- */
+  .progress { height: 3px; background: transparent; }
+  .progress i { display: block; height: 100%; width: 0; background: #1a73e8; }
+  body.loading .progress i { width: 62%; }
+</style>
+</head>
+<body>
+  <div class="tabs">
+    <div class="tab">
+      <span class="fav"></span>
+      <span class="name" id="tabname">New Tab</span>
+      <span class="x">&#10005;</span>
+    </div>
+    <span class="newtab">+</span>
+    <div class="winbtns"><span>&#8210;</span><span>&#9723;</span><span>&#10005;</span></div>
+  </div>
+
+  <div class="toolbar">
+    <span class="icon dim"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></span>
+    <span class="icon dim"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
+    <span class="icon"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></span>
+
+    <div class="pill">
+      <span class="lead" id="lead"></span>
+      <span class="url" id="url"></span>
+    </div>
+
+    <span class="icon"><svg viewBox="0 0 24 24"><path d="M12 17.3 6.2 20l1.1-6.5L2.5 8.9l6.6-1L12 2l2.9 5.9 6.6 1-4.8 4.6 1.1 6.5z"/></svg></span>
+    <span class="avatar"></span>
+    <span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></span>
+  </div>
+
+  <div class="progress"><i></i></div>
+
+<script>
+  // ?text=  what sits in the address bar
+  // ?state= typing | loading | loaded
+  // ?caret= 1 to draw the text caret (alternated to make it blink)
+  // ?tab=   tab title
+  const q = new URLSearchParams(location.search);
+  const text = q.get("text") || "";
+  const state = q.get("state") || "typing";
+  const caret = q.get("caret") === "1";
+
+  document.body.className = state;
+  document.getElementById("tabname").textContent =
+    q.get("tab") || (state === "loaded" ? text : "New Tab");
+
+  // Magnifier while typing, padlock once the page is served over HTTPS.
+  document.getElementById("lead").innerHTML =
+    state === "loaded"
+      ? '<svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>'
+      : '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>';
+
+  // Once loaded, Chrome greys out everything but the domain.
+  const url = document.getElementById("url");
+  if (state === "loaded") {
+    url.innerHTML =
+      '<span class="rest">https://</span><span class="host">' + text + "</span>";
+  } else {
+    url.innerHTML =
+      '<span class="host">' + text + "</span>" +
+      '<span class="caret' + (caret ? "" : " off") + '"></span>';
+  }
+</script>
+</body>
+</html>
