@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 
 import { storySamples, type StorySamples } from "@/lib/samples";
 import type { Story } from "@/lib/types";
+import { webImage } from "@/lib/img";
 
 const INTERVAL_MS = 3500;
 
@@ -39,7 +40,7 @@ function StorySlideshow({ story }: { story: StorySamples }) {
         {story.pages.map((p, idx) => (
           <Image
             key={p.src}
-            src={p.src}
+            src={webImage(p.src, 800)}
             alt={p.alt}
             fill
             sizes="(max-width: 768px) 100vw, 440px"

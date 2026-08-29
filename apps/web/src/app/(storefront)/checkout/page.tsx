@@ -13,6 +13,7 @@ import { FormatSwitch } from "@/components/FormatSwitch";
 import { PromoField } from "@/components/PromoField";
 import { payWithRazorpay } from "@/lib/razorpay";
 import type { OrderInput } from "@/lib/types";
+import { webImage } from "@/lib/img";
 
 const EMPTY = {
   name: "",
@@ -185,7 +186,7 @@ export default function CheckoutPage() {
               {items.map((i) => (
                 <li key={i.id} className="flex gap-3">
                   <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg">
-                    <Image src={i.coverImage} alt={i.storyTitle} fill sizes="56px" className="object-cover" />
+                    <Image src={webImage(i.coverImage, 320)} alt={i.storyTitle} fill sizes="56px" className="object-cover" />
                   </div>
                   <div className="flex-1 text-sm">
                     <p className="font-semibold text-slate-deep">{i.storyTitle}</p>

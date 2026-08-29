@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -83,6 +84,19 @@ app.include_router(compare.router)
 
 # Serve generated page images + print PDFs (composed by the worker into storage).
 os.makedirs(settings.storage_dir, exist_ok=True)
+
+
+# Registered BEFORE the mount so it wins: Starlette matches routes in order, and
+# the mount below would otherwise swallow the whole prefix and ignore `?w=`.
+@app.get("/uploads/{name}", include_in_schema=False)
+async def uploads_file(name: str, w: Optional[int] = None):
+    """An upload, optionally resized for the web. See routers.uploads."""
+    from .routers.uploads import serve_upload
+
+    return serve_upload(name, w)
+
+
+# Still mounted, for everything that is not a plain file at the top level.
 app.mount("/uploads", StaticFiles(directory=settings.storage_dir), name="uploads")
 
 

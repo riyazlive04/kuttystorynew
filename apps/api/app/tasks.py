@@ -684,9 +684,25 @@ async def _purge() -> int:
                     _safe_unlink(
                         os.path.join(settings.storage_dir, photo.split("/uploads/")[1])
                     )
-            # Delete cached preview page assets for this session.
-            for f in glob.glob(os.path.join(settings.storage_dir, f"{job.id}_*")):
-                _safe_unlink(f)
+            # Delete cached preview page assets for this session -- including
+            # the web-sized derivatives, which live in their own directory and
+            # so are not caught by the pattern above.
+            from .routers.uploads import WEB_CACHE_DIR
+
+            for pattern in (
+                os.path.join(settings.storage_dir, f"{job.id}_*"),
+                os.path.join(settings.storage_dir, WEB_CACHE_DIR, f"{job.id}_*"),
+            ):
+                for f in glob.glob(pattern):
+                    _safe_unlink(f)
+            # A photo's derivatives are named from its own filename.
+            for photo in {job.photoUrl, *(getattr(job, "photoUrls", None) or [])}:
+                if photo and "/uploads/" in photo:
+                    stem = os.path.splitext(photo.split("/uploads/")[1])[0]
+                    for f in glob.glob(os.path.join(
+                        settings.storage_dir, WEB_CACHE_DIR, f"{stem}_w*"
+                    )):
+                        _safe_unlink(f)
             # Scrub PII from the row and mark purged.
             await db.job.update(
                 where={"id": job.id},

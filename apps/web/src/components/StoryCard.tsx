@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { BookOpen } from "lucide-react";
 import type { Story } from "@/lib/types";
 import { inr } from "@/lib/format";
+import { webImage } from "@/lib/img";
 
 const CATEGORY_STYLES: Record<string, string> = {
   LEARNING: "bg-amber-500/90",
@@ -32,7 +33,7 @@ export function StoryCard({ story }: { story: Story }) {
               around it: rounded corners, a hairline edge and a drop shadow. */}
           <div className="relative h-full w-full overflow-hidden rounded-xl shadow-[0_10px_24px_-8px_rgba(15,23,42,0.45)] ring-1 ring-slate-900/10 transition-transform duration-300 group-hover/book:-translate-y-0.5">
             <Image
-              src={story.coverImage}
+              src={webImage(story.coverImage, 800)}
               alt={story.title}
               fill
               sizes="(max-width: 768px) 100vw, 384px"

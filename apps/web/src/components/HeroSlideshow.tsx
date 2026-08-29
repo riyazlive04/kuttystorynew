@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 
 import type { Sample } from "@/lib/samples";
+import { webImage } from "@/lib/img";
 
 const INTERVAL_MS = 3500;
 
@@ -45,7 +46,7 @@ export function HeroSlideshow({ slides }: { slides: Sample[] }) {
           {slides.map((s, idx) => (
             <Image
               key={s.src}
-              src={s.src}
+              src={webImage(s.src, 1200)}
               alt={s.alt}
               fill
               sizes="(max-width: 768px) 100vw, 500px"

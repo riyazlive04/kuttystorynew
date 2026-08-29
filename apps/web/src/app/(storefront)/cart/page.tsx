@@ -8,6 +8,7 @@ import { useCart } from "@/lib/cart";
 import { inr, languageLabel } from "@/lib/format";
 import { FormatSwitch } from "@/components/FormatSwitch";
 import { PromoField } from "@/components/PromoField";
+import { webImage } from "@/lib/img";
 
 export default function CartPage() {
   const [mounted, setMounted] = useState(false);
@@ -58,7 +59,7 @@ export default function CartPage() {
             <div key={item.id} className="card flex gap-4 p-4">
               <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl">
                 <Image
-                  src={item.coverImage}
+                  src={webImage(item.coverImage, 320)}
                   alt={item.storyTitle}
                   fill
                   sizes="96px"

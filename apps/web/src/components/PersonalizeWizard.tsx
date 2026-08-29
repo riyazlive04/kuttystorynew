@@ -23,6 +23,7 @@ import type { Personalization, Story } from "@/lib/types";
 import { createJob, uploadPhoto } from "@/lib/api";
 import type { PhotoQuality } from "@/lib/api";
 import { languageLabel, previewPath } from "@/lib/format";
+import { webImage } from "@/lib/img";
 
 const STEPS = ["Child", "Photo", "Review"] as const;
 const MAX_PHOTOS = 3;
@@ -613,7 +614,7 @@ export function PersonalizeWizard({ story }: { story: Story }) {
             <div className="flex gap-4 rounded-2xl bg-brand-cream p-4">
               <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl">
                 <Image
-                  src={coverFor(story, gender)}
+                  src={webImage(coverFor(story, gender), 320)}
                   alt={story.title}
                   fill
                   sizes="96px"

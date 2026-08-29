@@ -4,6 +4,7 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 import Image from "next/image";
 import type { Story } from "@/lib/types";
 import { coverFor } from "@/lib/covers";
+import { webImage } from "@/lib/img";
 
 export type Gender = "boy" | "girl";
 
@@ -48,7 +49,7 @@ export function StoryCover({ story }: { story: Story }) {
   const { gender } = useStoryGender();
   return (
     <Image
-      src={coverFor(story, gender)}
+      src={webImage(coverFor(story, gender), 1200)}
       alt={`${story.title} - personalized children's storybook cover for a ${gender}`}
       fill
       priority
