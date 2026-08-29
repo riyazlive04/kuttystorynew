@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Instagram, Facebook, Mail } from "lucide-react";
 import { BrandLogo } from "./BrandLogo";
 
 export function Footer() {
@@ -12,16 +11,6 @@ export function Footer() {
             Personalized storybooks that make your child the hero. Crafted with
             love in India, in English and Tamil.
           </p>
-          <div className="mt-5 flex gap-3">
-            {[Instagram, Facebook, Mail].map((Icon, i) => (
-              <span
-                key={i}
-                className="grid h-9 w-9 place-items-center rounded-xl border-2 border-slate-100 text-slate-mutedText transition hover:border-brand-primary hover:text-brand-primary"
-              >
-                <Icon className="h-4 w-4" />
-              </span>
-            ))}
-          </div>
         </div>
 
         <FooterCol
