@@ -71,8 +71,8 @@ export function PricingTier() {
                 Printed Book
               </h3>
               <p className="mb-6 text-sm text-slate-400">
-                Premium printed book delivered to your doorstep across India in
-                5-7 business days.
+                Premium printed book, made to order in 4-7 days and delivered
+                free anywhere in India.
               </p>
               <div className="mb-6">
                 <span className="text-4xl font-extrabold text-gradient-brand">

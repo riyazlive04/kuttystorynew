@@ -58,7 +58,7 @@ export function Reviews() {
     {
       name: "Anitha M.",
       city: "Coimbatore",
-      text: "The hardcover feels premium and arrived in 4 days. My son asks to read 'his' book every single night now.",
+      text: "The hardcover feels premium and arrived beautifully packed. My son asks to read 'his' book every single night now.",
     },
   ];
   return (

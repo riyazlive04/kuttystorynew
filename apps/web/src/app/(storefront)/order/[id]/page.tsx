@@ -155,7 +155,8 @@ export default function OrderPage({
             <Package className="mx-auto h-8 w-8 text-emerald-500" />
             <h3 className="mt-3 font-bold text-slate-deep">Print in production</h3>
             <p className="mt-1 text-sm text-slate-mutedText">
-              We&apos;ll email tracking once it ships (2-3 days).
+              Printing takes 4-7 days. We&apos;ll email tracking the moment it
+              ships - delivery time depends on your state.
             </p>
             <span className="mt-4 inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
               Status: In production

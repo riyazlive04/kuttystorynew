@@ -18,7 +18,7 @@ export const FAQS = [
   },
   {
     q: "How long does printing and delivery take?",
-    a: "Printed hardcovers are produced within 2-3 business days and delivered free across India, typically within 4-7 days of your order.",
+    a: "Printed hardcovers are made to order and take 4-7 days to produce. Delivery is free across India, and how long it takes after that depends on the state we're shipping to.",
   },
   {
     q: "What if I'm not happy with my book?",

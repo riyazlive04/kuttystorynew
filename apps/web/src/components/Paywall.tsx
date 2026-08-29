@@ -68,7 +68,7 @@ export function Paywall({
             <Package className="h-6 w-6 text-brand-primary" />
             <h3 className="mt-3 font-bold text-slate-deep">Hardcover Print</h3>
             <p className="text-xs text-slate-mutedText">
-              Delivered across India, 5-7 days
+              Made in 4-7 days, shipped free
             </p>
             <p className="mt-3 text-2xl font-extrabold text-gradient-brand">
               {inr(PAYWALL_PRINT)}

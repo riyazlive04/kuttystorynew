@@ -3,7 +3,7 @@ import { Truck, ShieldCheck, Star, Package, Gift } from "lucide-react";
 const ITEMS = [
   { icon: Truck, title: "Free Shipping", sub: "Across India" },
   { icon: ShieldCheck, title: "Secure Payment", sub: "UPI · Cards · NetBanking" },
-  { icon: Package, title: "5-7 Day Delivery", sub: "Premium hardcover" },
+  { icon: Package, title: "Made in 4-7 Days", sub: "Then shipped to your state" },
   { icon: Star, title: "4.9 / 5 Rating", sub: "2,300+ happy families" },
   { icon: Gift, title: "Perfect Gift", sub: "Birthdays & festivals" },
 ];

@@ -42,10 +42,10 @@ export default function TermsPage() {
 
       <LegalSection title="Printing and delivery">
         <p>
-          Printed hardcovers are produced within 2-3 business days and typically
-          delivered across India within 4-7 days of the order. Delivery
-          timelines are estimates, not guarantees, and can be affected by courier
-          delays outside our control.
+          Printed hardcovers are produced within 4-7 days of the order. Delivery
+          across India is free, and the time it takes after production varies
+          with the destination state. All timelines are estimates, not
+          guarantees, and can be affected by courier delays outside our control.
         </p>
       </LegalSection>
 
