@@ -42,10 +42,10 @@ export function LegalPage({
             </Link>{" "}
             or email us at{" "}
             <a
-              href="mailto:hello@kuttystory.co.in"
+              href="mailto:packitize@gmail.com"
               className="font-semibold text-brand-primary hover:underline"
             >
-              hello@kuttystory.co.in
+              packitize@gmail.com
             </a>
             .
           </p>

@@ -60,7 +60,7 @@ export function organizationJsonLd() {
       {
         "@type": "ContactPoint",
         contactType: "customer support",
-        email: "hello@kuttystory.co.in",
+        email: "packitize@gmail.com",
         availableLanguage: ["en", "ta"],
       },
     ],

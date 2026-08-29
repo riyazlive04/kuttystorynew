@@ -82,10 +82,10 @@ export default function PrivacyPage() {
           You can ask us to show you the data we hold about you, correct it, or
           delete it. Write to{" "}
           <a
-            href="mailto:hello@kuttystory.co.in"
+            href="mailto:packitize@gmail.com"
             className="font-semibold text-brand-primary hover:underline"
           >
-            hello@kuttystory.co.in
+            packitize@gmail.com
           </a>{" "}
           and we will respond within 30 days.
         </p>

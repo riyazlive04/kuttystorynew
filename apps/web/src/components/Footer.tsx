@@ -26,7 +26,7 @@ export function Footer() {
           links={[
             { label: "Shipping & Returns", href: "/terms" },
             { label: "FAQ", href: "/#faq" },
-            { label: "Contact Us", href: "mailto:hello@kuttystory.co.in" },
+            { label: "Contact Us", href: "mailto:packitize@gmail.com" },
           ]}
         />
         <FooterCol
