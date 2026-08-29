@@ -116,9 +116,15 @@ export function AdminShell({
                   "Sign in"
                 )}
               </button>
-              <p className="text-center text-xs text-slate-400">
-                Dev token: <code>kutty-admin-dev</code>
-              </p>
+              {/* The seed token, for local work only. The storefront is public
+                  now, so /admin is reachable by anyone; printing a token to try
+                  on a public login form is an invitation, and it is worthless to
+                  a developer who already has the repo. */}
+              {process.env.NODE_ENV !== "production" && (
+                <p className="text-center text-xs text-slate-400">
+                  Dev token: <code>kutty-admin-dev</code>
+                </p>
+              )}
             </form>
           )}
           <Link
