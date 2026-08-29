@@ -37,7 +37,7 @@ const BLANK_BOOK: StoryCreate = {
   printPrice: 1399,
   pages: 28,
   coverImage: "",
-  supportsTamil: true,
+  supportsTamil: false,
 };
 
 export default function AdminStories() {

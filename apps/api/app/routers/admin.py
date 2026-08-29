@@ -361,7 +361,7 @@ class StoryUpsert(BaseModel):
     coverImage: str
     gallery: list[str] = []
     themeColor: str = "#9333EA"
-    supportsTamil: bool = True
+    supportsTamil: bool = False
     highlights: list[str] = []
     active: bool = True
     genderLock: Optional[Literal["boy", "girl"]] = None

@@ -26,7 +26,7 @@ STORIES = [
             "https://images.unsplash.com/photo-1544717305-2782549b5136?w=600&q=80&auto=format&fit=crop",
         ],
         "themeColor": "#FF6F61",
-        "supportsTamil": True,
+        "supportsTamil": False,
         "highlights": [
             "26 letter-themed illustrated scenes",
             "Your child's name woven into every page",
@@ -55,7 +55,7 @@ STORIES = [
             "https://images.unsplash.com/photo-1444703686981-a3abbc4d4fe3?w=600&q=80&auto=format&fit=crop",
         ],
         "themeColor": "#6366F1",
-        "supportsTamil": True,
+        "supportsTamil": False,
         "highlights": [
             "A galaxy-spanning space quest",
             "Confidence-building 'you can do it' narrative",
@@ -84,7 +84,7 @@ STORIES = [
             "https://images.unsplash.com/photo-1564349683136-77e08dba1ef7?w=600&q=80&auto=format&fit=crop",
         ],
         "themeColor": "#10B981",
-        "supportsTamil": True,
+        "supportsTamil": False,
         "highlights": [
             "Rich, hand-painted jungle artwork",
             "Introduces 12 animals by name",
@@ -113,7 +113,7 @@ STORIES = [
             "https://images.unsplash.com/photo-1475924156734-496f6968e0e6?w=600&q=80&auto=format&fit=crop",
         ],
         "themeColor": "#8B5CF6",
-        "supportsTamil": True,
+        "supportsTamil": False,
         "highlights": [
             "Calm, rhythmic bedtime prose",
             "Soft pastel dreamscape art",
@@ -171,7 +171,7 @@ STORIES = [
             "https://images.unsplash.com/photo-1513151233558-d860c5398176?w=600&q=80&auto=format&fit=crop",
         ],
         "themeColor": "#F59E0B",
-        "supportsTamil": True,
+        "supportsTamil": False,
         "highlights": [
             "Numbers 1 to 10 with counting prompts",
             "Bright, cheerful garden artwork",

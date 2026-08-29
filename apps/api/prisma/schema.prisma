@@ -59,7 +59,7 @@ model Story {
   coverImageGirl String?
   gallery       String[]
   themeColor    String   @default("#9333EA")
-  supportsTamil Boolean  @default(true)
+  supportsTamil Boolean  @default(false)
   // Restrict who this book can be personalized for: "boy", "girl", or null for
   // both. Set when the authored base art only works for one gender.
   genderLock    String?

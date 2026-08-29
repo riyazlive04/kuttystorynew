@@ -29,8 +29,8 @@ export function Hero({ stories }: { stories: Story[] }) {
           </h1>
           <p className="mt-5 max-w-lg text-lg text-slate-mutedText">
             Upload a photo, pick a name, choose a story - and watch a beautiful
-            28-page book come to life, personalized just for them. In English or
-            Tamil, as an instant PDF or a premium printed hardcover.
+            28-page book come to life, personalized just for them. In English, as an
+            instant PDF or a premium printed hardcover.
           </p>
 
           <div className="mt-8 flex flex-wrap gap-3">
@@ -46,7 +46,7 @@ export function Hero({ stories }: { stories: Story[] }) {
           <div className="mt-8 flex flex-wrap items-center gap-6 text-sm text-slate-mutedText">
             <span className="inline-flex items-center gap-1.5">
               <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> 4.9/5
-              from 2,300+ reviews
+              from 1,300+ reviews
             </span>
             <span className="inline-flex items-center gap-1.5">
               <Truck className="h-4 w-4 text-emerald-500" /> Free delivery across
