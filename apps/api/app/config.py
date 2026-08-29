@@ -77,6 +77,11 @@ class Settings(BaseSettings):
     # erasing them, which is deliberate -- the point is a real face that looks
     # well lit, not a retouched one. 0 disables it.
     undereye_softening: float = 0.65
+    # Keep the artwork's hair out of the face composite's blend rather than
+    # crossfading it with the swapper's. Two hair renderings averaged together
+    # is what makes strands run in conflicting directions along the hairline.
+    # A kill switch, not a dial: 0 blending of hair is the correct amount.
+    keep_artwork_hair: bool = True
     # Hosted Replicate face-swap model (used when faceswap_provider=replicate).
     # Known input schemas are auto-mapped:
     #   fofr/face-swap-with-ideogram -> target_image + character_image + prompt

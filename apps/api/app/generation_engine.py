@@ -403,6 +403,54 @@ def _save_bytes(data: bytes, prefix: str = "swap") -> str:
     return f"/uploads/{name}"
 
 
+def _keep_artwork_hair(template: Image.Image, mask: Image.Image) -> Image.Image:
+    """Take the plate's hair out of the blend, so it is never averaged with the
+    swapper's.
+
+    The reported symptom is hair "going one direction, then some areas showing a
+    conflicting direction", and that is literally what a crossfade of two hair
+    renderings produces: the artwork's strands and the swapper's own strands, at
+    roughly 50/50 through the middle of the feather, each drawn at its own angle.
+    Measured on a real render, 17% of the feathered band sat on the plate's hair.
+
+    Skin blends fine -- two versions of a cheek average into a cheek. Hair does
+    not, because its detail IS direction.
+
+    So wherever the plate is much darker than the face's own skin, the mask is
+    pulled toward zero and the artwork keeps its pixels. Two things make that
+    safe to do without any geometry:
+
+      * it applies only where the mask is PARTIAL. The eyebrows measure 83px
+        inside the fully-swapped core on a real plate, so they are never
+        touched and the child keeps their own brows.
+      * the threshold is relative to the median skin luminance INSIDE the face,
+        so it follows the plate's own lighting instead of a fixed number that
+        would call a dark-skinned child's cheek "hair".
+
+    The ramp on both edges -- soft between hair and skin, soft between band and
+    core -- is what stops removing an edge from drawing one.
+    """
+    try:
+        import numpy as np
+
+        m = np.asarray(mask, dtype=np.float32) / 255.0
+        core = m > 0.99
+        if not core.any():
+            return mask
+        lum = np.asarray(template.convert("L"), dtype=np.float32)
+        skin = float(np.median(lum[core]))
+        lo, hi = skin * 0.45, skin * 0.70
+        keep = np.clip((lum - lo) / max(1e-3, hi - lo), 0.0, 1.0)  # 0 hair, 1 skin
+        strength = np.clip((1.0 - m) / 0.25, 0.0, 1.0)  # 0 in the core, 1 in the band
+        out = m * (1.0 - strength * (1.0 - keep))
+        return Image.fromarray(
+            np.clip(out * 255.0, 0, 255).astype("uint8"), "L"
+        )
+    except Exception as e:  # noqa: BLE001 -- a softer hairline is not worth a failed page
+        print(f"[composite] hair guard skipped: {e}", flush=True)
+        return mask
+
+
 def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> bytes:
     """Retain the template's HAIR by pasting only the FACE area from the fully
     swapped image back onto the original template.
@@ -468,6 +516,8 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
     mask = mask.filter(
         ImageFilter.GaussianBlur(radius=max(3.0, min(span * 0.03, 16.0)))
     )
+    if settings.keep_artwork_hair:
+        mask = _keep_artwork_hair(tmpl, mask)
     out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
     buf = io.BytesIO()
     out.save(buf, format="JPEG", quality=95)
