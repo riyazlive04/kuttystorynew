@@ -228,15 +228,34 @@ async function renderChromeFrames(browser, dir) {
   await shot({ text: CFG.host, state: "typing", caret: "0" }, 3);
   await shot({ text: CFG.host, state: "loading", tab: CFG.host }, 8);
 
-  // The strip that sits over the journey for the rest of the video.
-  const loaded = path.join(dir, "loaded.png");
-  await page.goto(`${frameUrl}?${new URLSearchParams({
-    text: CFG.host, state: "loaded", tab: "KuttyStory - Personalized Storybooks",
-  })}`);
-  await page.screenshot({ path: loaded });
+  await page.close();
+  return { dir, count: n, seconds: n / FPS };
+}
+
+/**
+ * One "loaded" strip per address the visitor actually reached, so the URL in the
+ * bar tracks the journey instead of sitting on the bare domain all the way to
+ * checkout. Returns the same nav entries with a `png` on each.
+ */
+async function renderUrlStrips(browser, dir, navs) {
+  const page = await browser.newPage({ viewport: { width: VIEW_W, height: STRIP_H } });
+  const frameUrl = pathToFileURL(path.join(HERE, "lib", "chrome-frame.html")).href;
+
+  for (const [i, nav] of navs.entries()) {
+    const png = path.join(dir, `url${String(i).padStart(2, "0")}.png`);
+    const qs = new URLSearchParams({
+      text: CFG.host,
+      path: nav.path,
+      state: "loaded",
+      tab: nav.title || "KuttyStory",
+    });
+    await page.goto(`${frameUrl}?${qs}`);
+    await page.screenshot({ path: png });
+    nav.png = png;
+  }
 
   await page.close();
-  return { dir, count: n, loaded, seconds: n / FPS };
+  return navs;
 }
 
 // ------------------------------------------------------------------- main ---
@@ -292,13 +311,30 @@ async function main() {
   const t0 = Date.now();
   const mark = (name) => (marks[name] = (Date.now() - t0) / 1000);
 
+  // Next's app router navigates client-side, so `framenavigated` misses most of
+  // the journey. Polling page.url() catches every address change, real or
+  // pushState, and each one becomes a strip in the composited address bar.
+  const navs = [];
+  let lastUrl = "";
+  const navWatch = setInterval(() => {
+    const u = page.url();
+    if (u === lastUrl || !u.startsWith("http")) return;
+    lastUrl = u;
+    const entry = { t: (Date.now() - t0) / 1000, path: new URL(u).pathname.replace(/\/$/, ""), title: "" };
+    navs.push(entry);
+    // The title lags the URL on a client-side route change, so read it late.
+    setTimeout(() => page.title().then((x) => (entry.title = x)).catch(() => {}), 1500);
+  }, 300);
+
   /** Close everything down and hand back the recorded file. */
   const finish = async () => {
+    clearInterval(navWatch);
     const video = page.video();
     await context.close();          // must close before the video is finalised
     const raw = await video.path();
+    await renderUrlStrips(browser, frames.dir, navs);
     await browser.close();
-    return { raw, marks, frames, work };
+    return { raw, marks, frames, navs, work };
   };
   const stopHere = async (n) => {
     if (CFG.stopAfter > n) return null;
@@ -321,6 +357,10 @@ async function main() {
   }
   log(`loaded: ${await page.title()}`);
 
+  // Park the drawn pointer before the first glide, or it starts stuck at 0,0
+  // (nothing has moved the mouse yet, so it has no position to track).
+  await page.mouse.move(cursorAt.x, cursorAt.y);
+  await sleep(300);
   await glide(page, 720, 400, 600);
   await humanScroll(page, 700);
   await humanScroll(page, 900);
@@ -488,8 +528,21 @@ async function main() {
   await humanClick(page, page.getByRole("button", { name: /^Pay\s/ }).first());
 
   await page.locator(".razorpay-container").waitFor({ state: "visible", timeout: 90000 });
-  log("Razorpay sheet open - showing UPI / cards / netbanking, NOT paying");
-  await sleep(9000);
+
+  // The container appears about ten seconds before Razorpay paints anything
+  // into it. Holding on the empty white box is the whole payment step wasted,
+  // so wait for the options themselves to render before the pause.
+  await page
+    .frameLocator(".razorpay-container iframe")
+    .first()
+    .getByText(/Payment Options|Netbanking|Wallet/i)
+    .first()
+    .waitFor({ timeout: 60000 })
+    .then(() => log("Razorpay sheet painted - UPI / cards / netbanking visible"))
+    .catch(() => log("Razorpay sheet did not paint in time - holding anyway"));
+  await sleep(1200);
+  log("NOT paying - the sheet is shown, then dismissed");
+  await sleep(8000);
 
   // Dismiss without touching anything inside the payment iframe.
   await page.keyboard.press("Escape");
@@ -535,8 +588,9 @@ async function personalizeButtonFor(page, title) {
  * Compose the final videos: the drawn opening sequence, then the real recording
  * with the address-bar strip fixed above it.
  */
-async function compose({ raw, marks, frames, work }, outBase) {
+async function compose({ raw, marks, frames, navs, work }, outBase) {
   const H = VIEW_H + STRIP_H;
+  const bodyLen = await duration(raw);
 
   // 1. Opening sequence: chrome strip animating over a blank page.
   const intro = path.join(work, "intro.mp4");
@@ -547,15 +601,27 @@ async function compose({ raw, marks, frames, work }, outBase) {
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", intro,
   ]);
 
-  // 2. The journey, with the loaded strip pinned above it.
+  // 2. The journey, with the address bar pinned above it - swapping to the
+  //    right URL as the visitor navigates. Each strip is enabled only for the
+  //    span it was current, so the bar tracks the journey.
+  const shown = navs.filter((n) => n.png);
   const body = path.join(work, "body.mp4");
+  const inputs = ["-i", raw];
+  let chain = `[0:v]scale=${VIEW_W}:${VIEW_H},pad=${VIEW_W}:${H}:0:${STRIP_H}:white[b0];`;
+  shown.forEach((nav, i) => {
+    inputs.push("-i", nav.png);
+    // The first strip covers from zero, so no gap before the first navigation.
+    const from = i === 0 ? 0 : nav.t;
+    const to = i === shown.length - 1 ? bodyLen + 5 : shown[i + 1].t;
+    chain +=
+      `[b${i}][${i + 1}:v]overlay=0:0:enable='between(t,${from.toFixed(3)},${to.toFixed(3)})'[b${i + 1}];`;
+  });
+  chain += `[b${shown.length}]fps=25,format=yuv420p[out]`;
+
   await run(CFG.ffmpeg, [
     "-y", "-hide_banner", "-loglevel", "error",
-    "-i", raw, "-i", frames.loaded,
-    "-filter_complex",
-    `[0:v]scale=${VIEW_W}:${VIEW_H},pad=${VIEW_W}:${H}:0:${STRIP_H}:white[b];` +
-    `[b][1:v]overlay=0:0,fps=25,format=yuv420p[out]`,
-    "-map", "[out]",
+    ...inputs,
+    "-filter_complex", chain, "-map", "[out]",
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", body,
   ]);
 

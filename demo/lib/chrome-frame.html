@@ -129,11 +129,13 @@
       ? '<svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>'
       : '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>';
 
-  // Once loaded, Chrome greys out everything but the domain.
+  // Once loaded, Chrome greys out the scheme and the path, leaving the domain
+  // in black. ?path= carries whatever follows the host.
   const url = document.getElementById("url");
   if (state === "loaded") {
     url.innerHTML =
-      '<span class="rest">https://</span><span class="host">' + text + "</span>";
+      '<span class="rest">https://</span><span class="host">' + text + "</span>" +
+      '<span class="rest">' + (q.get("path") || "") + "</span>";
   } else {
     url.innerHTML =
       '<span class="host">' + text + "</span>" +
