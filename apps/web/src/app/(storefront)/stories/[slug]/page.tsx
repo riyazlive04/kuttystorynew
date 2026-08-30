@@ -7,13 +7,16 @@ import { JsonLd } from "@/components/JsonLd";
 import { PersonalizeWizard } from "@/components/PersonalizeWizard";
 import { StoryCover, StoryGenderProvider } from "@/components/StoryGender";
 import ProviderCompare from "@/components/ProviderCompare";
+import { KeyFacts, RelatedLinks } from "@/components/Prose";
 import { getStories, getStoryBySlug, STORY_REVALIDATE } from "@/lib/stories.server";
 import {
+  FACTS,
   SITE_URL,
   abs,
   breadcrumbJsonLd,
   socialImage,
   storyJsonLd,
+  webPageJsonLd,
 } from "@/lib/seo";
 import { inr } from "@/lib/format";
 
@@ -35,23 +38,34 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 
   const url = `${SITE_URL}/stories/${story.slug}`;
-  const title = `${story.title} - Personalized Storybook | KuttyStory`;
-  const description = `${story.tagline} ${story.ageRange}. Personalized with your child's name and face${
+  // Bare title — the root layout's template appends "| KuttyStory". The age
+  // label rides in the title because "personalised book for 4 year old" is a
+  // real query shape, and it is the one qualifier a parent scans a SERP for.
+  const title = `${story.title} - Personalised Book, ${story.ageRange}`;
+  const description = `${story.tagline} ${story.ageRange}, personalised with your child's name and face on every page${
     story.supportsTamil ? ", in English or Tamil" : ""
-  }. Free preview, then ${inr(story.pdfPrice)} PDF or ${inr(
+  }. Free preview first, then ${inr(story.pdfPrice)} for the instant PDF or ${inr(
     story.printPrice,
-  )} printed hardcover.`;
+  )} for the printed hardcover with free India delivery.`;
 
   const cover = socialImage(story.coverImage);
 
   return {
     title,
     description,
+    keywords: [
+      `${story.title} personalised book`,
+      `personalised ${story.categoryTag.toLowerCase()} book for kids`,
+      `custom story book ${story.ageRange.toLowerCase()}`,
+      "children's book with my child's photo",
+    ],
     alternates: { canonical: `/stories/${story.slug}` },
     openGraph: {
       title: `${story.title} - a storybook starring your child`,
-      description: story.tagline,
+      description,
       url,
+      siteName: "KuttyStory",
+      locale: "en_IN",
       type: "article",
       // Omitted for SVG covers so the generated PNG card is used instead.
       ...(cover ? { images: [{ url: cover, alt: story.title }] } : {}),
@@ -69,6 +83,13 @@ export default async function StoryDetailPage({ params }: Props) {
   const story = await getStoryBySlug(params.slug);
   if (!story) notFound();
 
+  // Three other live titles, linked by name. A catalogue this small leaks most
+  // of its internal link equity into the nav; sibling links put it back into
+  // the product pages that actually need to rank.
+  const siblings = (await getStories())
+    .filter((s) => s.slug !== story.slug)
+    .slice(0, 3);
+
   return (
     <div className="container-x py-8 md:py-12">
       <JsonLd
@@ -79,6 +100,12 @@ export default async function StoryDetailPage({ params }: Props) {
             { name: "Story Library", path: "/stories" },
             { name: story.title, path: `/stories/${story.slug}` },
           ]),
+          webPageJsonLd({
+            path: `/stories/${story.slug}`,
+            name: `${story.title} - personalised storybook`,
+            description: story.description,
+            type: "ItemPage",
+          }),
         ]}
       />
 
@@ -168,6 +195,51 @@ export default async function StoryDetailPage({ params }: Props) {
       <div className="mt-12">
         <ProviderCompare slug={story.slug} />
       </div>
+
+      {/* Per-title specifics as a table: unique text on every product page, and
+          the shape an answer engine can lift when someone asks what a given
+          book costs or how long it takes to arrive. */}
+      <section className="mx-auto mt-16 max-w-3xl">
+        <h2 className="mb-5 text-2xl font-bold text-slate-deep md:text-3xl">
+          What you get with {story.title}
+        </h2>
+        <KeyFacts
+          caption={`${story.title} - personalised storybook details`}
+          rows={[
+            ["Recommended age", story.ageRange],
+            ["Theme", story.categoryTag.toLowerCase()],
+            ["Pages", `${story.pages} illustrated pages, plus a dedication page you write`],
+            ["Personalised with", "Your child's first name, face and character look, on every page"],
+            ["Language", story.supportsTamil ? "English or Tamil" : "English"],
+            ["Free preview", `Front cover and the first ${FACTS.freePreviewPages} pages, before payment`],
+            ["Instant PDF", `${inr(story.pdfPrice)}, downloadable minutes after payment`],
+            ["Printed hardcover", `${inr(story.printPrice)}, free delivery across India`],
+            [
+              "Made and delivered in",
+              `${FACTS.productionDaysMin}-${FACTS.productionDaysMax} days to produce, then 2-7 days in transit`,
+            ],
+            ["Two or more books", "20% off with the code STORY20"],
+          ]}
+        />
+      </section>
+
+      {siblings.length > 0 && (
+        <RelatedLinks
+          title="Other personalised story books"
+          links={[
+            ...siblings.map((s) => ({
+              label: s.title,
+              href: `/stories/${s.slug}`,
+              note: `${s.ageRange} · ${s.tagline}`,
+            })),
+            {
+              label: "Browse the whole library",
+              href: "/stories",
+              note: "Every title, filterable by age and theme",
+            },
+          ]}
+        />
+      )}
     </div>
   );
 }

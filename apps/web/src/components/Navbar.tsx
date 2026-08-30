@@ -7,11 +7,14 @@ import { useCart } from "@/lib/cart";
 import { BrandLogo } from "./BrandLogo";
 import { AnnouncementBar } from "./AnnouncementBar";
 
+// Site-wide links, so every page gets a crawlable path to the routes that earn
+// their own search traffic. "Return Gifts" replaces the old /#reviews anchor:
+// an in-page anchor adds no link target a crawler did not already have.
 const LINKS = [
   { href: "/stories", label: "Story Library" },
   { href: "/how-it-works", label: "How It Works" },
+  { href: "/birthday-return-gifts", label: "Return Gifts" },
   { href: "/#pricing", label: "Pricing" },
-  { href: "/#reviews", label: "Reviews" },
 ];
 
 export function Navbar() {

@@ -7,32 +7,45 @@ export function Footer() {
       <div className="container-x grid gap-10 py-14 md:grid-cols-4">
         <div className="md:col-span-1">
           <BrandLogo className="h-20 w-20" />
+          {/* Says English only, on purpose. Tamil titles do not exist yet, and
+              a claim here that the catalogue contradicts is exactly the kind of
+              inconsistency that makes an answer engine describe the site
+              wrongly — or stop citing it. */}
           <p className="mt-4 max-w-xs text-sm text-slate-mutedText">
-            Personalized storybooks that make your child the hero. Crafted with
-            love in India, in English and Tamil.
+            Personalised storybooks that make your child the hero - their name
+            and face on every page. Written in English, printed and delivered
+            across India.
           </p>
         </div>
 
+        {/* The footer is the only place every indexable page is linked from, so
+            it carries the routes that have no slot in the top nav. */}
         <FooterCol
           title="Explore"
           links={[
             { label: "Story Library", href: "/stories" },
             { label: "How It Works", href: "/how-it-works" },
+            { label: "Birthday Return Gifts", href: "/birthday-return-gifts" },
+            { label: "Guides for Parents", href: "/guides" },
             { label: "Pricing", href: "/#pricing" },
           ]}
         />
         <FooterCol
           title="Support"
           links={[
-            { label: "Shipping & Returns", href: "/terms" },
+            { label: "Contact Us", href: "/contact" },
             { label: "FAQ", href: "/#faq" },
-            { label: "Contact Us", href: "mailto:packitize@gmail.com" },
+            { label: "Shipping & Returns", href: "/terms" },
+            {
+              label: "Choosing a book by age",
+              href: "/guides/choosing-a-personalised-book-by-age",
+            },
           ]}
         />
         <FooterCol
           title="Company"
           links={[
-            { label: "Our Story", href: "/how-it-works" },
+            { label: "About KuttyStory", href: "/about" },
             { label: "Privacy Policy", href: "/privacy" },
             { label: "Terms of Service", href: "/terms" },
           ]}

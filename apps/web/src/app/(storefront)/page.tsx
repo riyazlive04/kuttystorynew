@@ -6,15 +6,32 @@ import { PricingTier } from "@/components/PricingTier";
 import { Steps, Reviews } from "@/components/Marketing";
 import { Faq } from "@/components/Faq";
 import { TrustBar } from "@/components/TrustBar";
+import { HomeSeoContent } from "@/components/HomeSeoContent";
+import { RelatedLinks } from "@/components/Prose";
 import { JsonLd } from "@/components/JsonLd";
 import { FAQS } from "@/lib/faqs";
 import { getStories, STORY_REVALIDATE } from "@/lib/stories.server";
-import { faqJsonLd, organizationJsonLd, websiteJsonLd } from "@/lib/seo";
+import {
+  DEFAULT_DESCRIPTION,
+  DEFAULT_TITLE,
+  FACTS,
+  faqJsonLd,
+  howToJsonLd,
+  itemListJsonLd,
+  organizationJsonLd,
+  webPageJsonLd,
+  websiteJsonLd,
+} from "@/lib/seo";
+import { HOW_TO_STEPS } from "@/lib/howto";
 import { ArrowRight } from "lucide-react";
 
 export const revalidate = STORY_REVALIDATE;
 
 export const metadata: Metadata = {
+  // `absolute` so the home page keeps the full brand-suffixed title from the
+  // root layout instead of running it through the template a second time.
+  title: { absolute: `${DEFAULT_TITLE} | KuttyStory` },
+  description: DEFAULT_DESCRIPTION,
   alternates: { canonical: "/" },
 };
 
@@ -26,10 +43,37 @@ export default async function HomePage() {
   const stories = await getStories();
   const featured = stories.slice(0, 6);
 
+  // Prices quoted in the body copy and the schema come from the live catalogue
+  // rather than a hardcoded number, so a repriced title can never leave a stale
+  // figure sitting in an indexed page or an AI answer.
+  const fromPdf = stories.length
+    ? Math.min(...stories.map((s) => s.pdfPrice))
+    : FACTS.fromPdfPrice;
+  const fromPrint = stories.length
+    ? Math.min(...stories.map((s) => s.printPrice))
+    : FACTS.fromPrintPrice;
+
   return (
     <>
       <JsonLd
-        data={[organizationJsonLd(), websiteJsonLd(), faqJsonLd(FAQS)]}
+        data={[
+          organizationJsonLd(),
+          websiteJsonLd(),
+          webPageJsonLd({
+            path: "/",
+            name: `${DEFAULT_TITLE} | KuttyStory`,
+            description: DEFAULT_DESCRIPTION,
+          }),
+          howToJsonLd(HOW_TO_STEPS),
+          itemListJsonLd(
+            "Popular personalized storybooks",
+            featured.map((s) => ({
+              name: s.title,
+              path: `/stories/${s.slug}`,
+            })),
+          ),
+          faqJsonLd(FAQS),
+        ]}
       />
 
       <Hero stories={stories} />
@@ -40,10 +84,10 @@ export default async function HomePage() {
         <div className="mb-10 flex items-end justify-between">
           <div>
             <h2 className="text-3xl font-bold text-slate-deep md:text-4xl">
-              Popular stories
+              Popular personalised story books
             </h2>
             <p className="mt-2 text-slate-mutedText">
-              Pick a tale - your child stars in every one.
+              Pick a tale - your child stars in every one, by name and by face.
             </p>
           </div>
           <Link
@@ -64,7 +108,36 @@ export default async function HomePage() {
 
       <PricingTier />
       <Reviews />
+
+      <HomeSeoContent fromPdf={fromPdf} fromPrint={fromPrint} />
+
       <Faq />
+
+      <RelatedLinks
+        title="More about KuttyStory"
+        links={[
+          {
+            label: "How it works",
+            href: "/how-it-works",
+            note: "From photo to finished book, step by step",
+          },
+          {
+            label: "Birthday return gifts",
+            href: "/birthday-return-gifts",
+            note: "Gifting a personalised book to a whole party",
+          },
+          {
+            label: "Guides for parents",
+            href: "/guides",
+            note: "Choosing, photographing and gifting picture books",
+          },
+          {
+            label: "About KuttyStory",
+            href: "/about",
+            note: "Who makes these books, and how",
+          },
+        ]}
+      />
 
       <section className="container-x pb-20">
         <div className="overflow-hidden rounded-4xl bg-slate-deep px-8 py-14 text-center text-white md:px-16">

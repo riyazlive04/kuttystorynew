@@ -1,43 +1,36 @@
 import { Camera, Sparkles, BookOpen, Star } from "lucide-react";
+import { HOW_TO_STEPS } from "@/lib/howto";
+
+// Icons live here rather than in lib/howto.ts so the shared step text stays a
+// plain data module that the JSON-LD builder can import without pulling React in.
+const STEP_ICONS = [Camera, Sparkles, BookOpen];
 
 export function Steps() {
-  const steps = [
-    {
-      icon: Camera,
-      title: "1. Personalize",
-      body: "Add your child's name, age and a photo, then pick their character look.",
-    },
-    {
-      icon: Sparkles,
-      title: "2. Preview instantly",
-      body: "Our studio brings the story to life. See a free preview in seconds - no payment needed.",
-    },
-    {
-      icon: BookOpen,
-      title: "3. Download or print",
-      body: "Love it? Get the instant PDF or a premium hardcover shipped to your door.",
-    },
-  ];
   return (
     <section id="how" className="container-x py-16">
       <div className="mb-12 text-center">
         <h2 className="text-3xl font-bold text-slate-deep md:text-4xl">
-          A magical book in three simple steps
+          How to make a personalised story book, in three steps
         </h2>
         <p className="mt-3 text-slate-mutedText">
-          From photo to finished story in under a minute.
+          From photo to finished story in about a minute - free until you decide.
         </p>
       </div>
       <div className="grid gap-6 md:grid-cols-3">
-        {steps.map((s) => (
-          <div key={s.title} className="card p-8 text-center">
-            <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-brand-primary/10 text-brand-primary">
-              <s.icon className="h-7 w-7" />
-            </span>
-            <h3 className="mt-5 text-lg font-bold text-slate-deep">{s.title}</h3>
-            <p className="mt-2 text-sm text-slate-mutedText">{s.body}</p>
-          </div>
-        ))}
+        {HOW_TO_STEPS.map((s, i) => {
+          const Icon = STEP_ICONS[i] ?? Sparkles;
+          return (
+            <div key={s.name} className="card p-8 text-center">
+              <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-brand-primary/10 text-brand-primary">
+                <Icon className="h-7 w-7" />
+              </span>
+              <h3 className="mt-5 text-lg font-bold text-slate-deep">
+                {i + 1}. {s.name}
+              </h3>
+              <p className="mt-2 text-sm text-slate-mutedText">{s.text}</p>
+            </div>
+          );
+        })}
       </div>
     </section>
   );

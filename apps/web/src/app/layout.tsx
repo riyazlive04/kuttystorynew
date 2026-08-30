@@ -2,7 +2,13 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import { Fredoka, Nunito, Baloo_Thambi_2 } from "next/font/google";
 import "./globals.css";
-import { SITE_NAME, SITE_URL } from "@/lib/seo";
+import {
+  DEFAULT_DESCRIPTION,
+  DEFAULT_TITLE,
+  KEYWORDS,
+  SITE_NAME,
+  SITE_URL,
+} from "@/lib/seo";
 
 const GTM_ID = process.env.NEXT_PUBLIC_GTM_ID;
 
@@ -27,20 +33,28 @@ const balooTamil = Baloo_Thambi_2({
 });
 
 export const metadata: Metadata = {
-  title: "KuttyStory - Personalized Storybooks Starring Your Child",
-  description:
-    "Create a beautiful, personalized children's book with your child as the hero. Available in English and Tamil. Instant PDF or premium printed hardcover, delivered across India.",
-  keywords: [
-    "personalized children's book",
-    "kids storybook",
-    "Tamil children book",
-    "custom story",
-    "KuttyStory",
-  ],
   metadataBase: new URL(SITE_URL),
+  title: {
+    // Every child route sets a bare title and inherits the brand suffix, so the
+    // brand never has to be repeated by hand and never gets forgotten.
+    default: `${DEFAULT_TITLE} | ${SITE_NAME}`,
+    template: `%s | ${SITE_NAME}`,
+  },
+  description: DEFAULT_DESCRIPTION,
+  keywords: KEYWORDS,
   applicationName: SITE_NAME,
-  // Let Google show large image thumbnails and full text snippets — this is a
-  // visual, gift-driven product where the cover art is the hook.
+  category: "shopping",
+  creator: SITE_NAME,
+  publisher: SITE_NAME,
+  // Stops mobile Safari turning prices and page counts into blue "call" links.
+  formatDetection: { telephone: false, address: false, email: false },
+  alternates: {
+    canonical: "/",
+    languages: { "en-IN": SITE_URL, "x-default": SITE_URL },
+  },
+  // Let Google show large image thumbnails and full text snippets - this is a
+  // visual, gift-driven product where the cover art is the hook, and an
+  // unclipped snippet is what an AI Overview quotes from.
   robots: {
     index: true,
     follow: true,
@@ -53,9 +67,8 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: "KuttyStory - Personalized Storybooks Starring Your Child",
-    description:
-      "Create a beautiful, personalized children's book with your child as the hero. English & Tamil. Instant PDF or premium print.",
+    title: `${DEFAULT_TITLE} | ${SITE_NAME}`,
+    description: DEFAULT_DESCRIPTION,
     type: "website",
     locale: "en_IN",
     url: SITE_URL,
@@ -63,9 +76,18 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "KuttyStory - Personalized Storybooks",
+    title: `${DEFAULT_TITLE} | ${SITE_NAME}`,
     description:
-      "Make your child the hero of their own storybook. English & Tamil.",
+      "Make your child the hero of their own storybook. Free preview, instant PDF or printed hardcover, delivered free across India.",
+  },
+  // Only emitted when the verification tokens are actually configured.
+  verification: {
+    ...(process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
+      ? { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION }
+      : {}),
+    ...(process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION
+      ? { other: { "msvalidate.01": process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION } }
+      : {}),
   },
 };
 
@@ -76,7 +98,7 @@ export default function RootLayout({
 }) {
   return (
     <html
-      lang="en"
+      lang="en-IN"
       className={`${fredoka.variable} ${nunito.variable} ${balooTamil.variable}`}
     >
       <body className="min-h-screen bg-brand-cream font-bodyText text-slate-deep antialiased">

@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 
 export const alt =
-  "KuttyStory - personalized storybooks starring your child, in English and Tamil";
+  "KuttyStory - personalised storybooks starring your child, by name and face";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 // Edge runtime: @vercel/og's Node build resolves its WASM/font assets through
@@ -61,7 +61,7 @@ export default function OpengraphImage() {
             color: "#F3E9FB",
           }}
         >
-          English & Tamil · Free preview · Printed hardcover across India
+          Free preview · Instant PDF or hardcover · Free India delivery
         </div>
       </div>
     ),
