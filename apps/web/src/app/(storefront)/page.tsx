@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Hero } from "@/components/Hero";
-import { StoryCard } from "@/components/StoryCard";
+import { LazyStoryGrid } from "@/components/LazyStoryGrid";
 import { PricingTier } from "@/components/PricingTier";
 import { Steps, Reviews } from "@/components/Marketing";
 import { Faq } from "@/components/Faq";
@@ -41,7 +41,6 @@ export default async function HomePage() {
   // books come back, and the hero art is built from the same list — so a book
   // taken down stops appearing anywhere on this page.
   const stories = await getStories();
-  const featured = stories.slice(0, 6);
 
   // Prices quoted in the body copy and the schema come from the live catalogue
   // rather than a hardcoded number, so a repriced title can never leave a stale
@@ -65,9 +64,11 @@ export default async function HomePage() {
             description: DEFAULT_DESCRIPTION,
           }),
           howToJsonLd(HOW_TO_STEPS),
+          // The homepage now carries the whole catalogue, so the ItemList
+          // names every title rather than the six that used to be featured.
           itemListJsonLd(
-            "Popular personalized storybooks",
-            featured.map((s) => ({
+            "Personalized storybooks",
+            stories.map((s) => ({
               name: s.title,
               path: `/stories/${s.slug}`,
             })),
@@ -84,10 +85,11 @@ export default async function HomePage() {
         <div className="mb-10 flex items-end justify-between">
           <div>
             <h2 className="text-3xl font-bold text-slate-deep md:text-4xl">
-              Popular personalised story books
+              Every personalised story book
             </h2>
             <p className="mt-2 text-slate-mutedText">
-              Pick a tale - your child stars in every one, by name and by face.
+              The whole library - your child stars in every one, by name and by
+              face.
             </p>
           </div>
           <Link
@@ -97,11 +99,7 @@ export default async function HomePage() {
             Browse all <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
-        <div className="grid justify-items-center gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {featured.map((s) => (
-            <StoryCard key={s.id} story={s} />
-          ))}
-        </div>
+        <LazyStoryGrid stories={stories} />
       </section>
 
       <Steps />
