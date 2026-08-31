@@ -13,15 +13,13 @@ animation is output from the machine that makes the book.
 Needs SEGMIND_API_KEY in apps/api/.env. Writes:
 
     apps/web/public/samples/faceswap/<slug>-<gender>-{base,a,b,c}.jpg
-    tools/face-demos.json      (the data, including the hand-set face boxes)
+    tools/face-demos.json      (which children appear on which cover)
     apps/web/src/lib/faceDemo.ts   (generated; do not hand-edit)
 
-FACE BOXES are the one thing this cannot do for you. The arrow and the
-highlight ring need to know where the face is, and measuring it from the swap's
-own difference does not survive covers where the model regenerates background
-as well -- on the unicorn plate that put the ring on the unicorn. A new title
-gets a rough automatic box; check it, correct it in tools/face-demos.json, and
-re-run with --emit-only. Existing boxes are never overwritten.
+The demo used to point at the face -- a ring around it, then an arrow into it
+-- and so needed a face box per cover. Both are gone: one box could not keep up
+with art where heads differ in size, angle and framing, and on several titles
+the pointer landed off the head. Nothing here measures the face any more.
 """
 from __future__ import annotations
 
@@ -36,7 +34,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "apps/web/public/samples/faceswap"
@@ -118,23 +116,6 @@ def swap(key: str, face: Image.Image, target_b64: str, tries: int = 3) -> bytes 
     return None
 
 
-def rough_face_box(base: Image.Image, swapped: Image.Image) -> dict:
-    """A STARTING POINT for a new title's face box -- always eyeball it."""
-    diff = ImageChops.difference(base, swapped).convert("L")
-    diff = diff.filter(ImageFilter.GaussianBlur(4))
-    bbox = diff.point(lambda v: 255 if v > 28 else 0).getbbox()
-    if not bbox:
-        return {"x": 50, "y": 50, "w": 20, "h": 22}
-    W, H = base.size
-    x0, y0, x1, y1 = bbox
-    return {
-        "x": round(100 * (x0 + x1) / 2 / W, 1),
-        "y": round(100 * (y0 + y1) / 2 / H, 1),
-        "w": round(min(40, 100 * (x1 - x0) / W), 1),
-        "h": round(min(40, 100 * (y1 - y0) / H), 1),
-    }
-
-
 def variants_of(story: dict) -> list[tuple[str, str]]:
     """Which illustrated variants a title has, and the cover art for each."""
     lock = story.get("genderLock")
@@ -167,7 +148,7 @@ def render(only: list[str]) -> None:
                       optimize=True, progressive=True)
             target_b64 = b64(base)
 
-            frames, first_swap = [], None
+            frames = []
             for fkey, child in FACES[gender]:
                 face_path = ASSETS / "faces" / f"{gender}-{fkey}.jpg"
                 if not face_path.exists():
@@ -182,18 +163,13 @@ def render(only: list[str]) -> None:
                     img = img.resize(base.size, Image.LANCZOS)
                 img.save(ASSETS / f"{slug}-{gender}-{fkey}.jpg", "JPEG", quality=JPEG_Q,
                          optimize=True, progressive=True)
-                first_swap = first_swap or img
                 frames.append({"key": fkey, "child": child})
                 print(f"  {fkey}: ok ({child})", flush=True)
 
             if not frames:
                 print(f"  !! nothing usable for {slug}/{gender}", flush=True)
                 continue
-            entry = data.setdefault(slug, {}).setdefault(gender, {})
-            entry["frames"] = frames
-            if "face" not in entry:
-                entry["face"] = rough_face_box(base, first_swap)
-                print(f"  NEW face box (rough, check it): {entry['face']}", flush=True)
+            data.setdefault(slug, {})[gender] = {"frames": frames}
 
     DATA.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -227,10 +203,6 @@ export type FaceDemo = {
   /** The untouched illustration -- the "before" the loop returns to. */
   base: string;
   frames: FaceDemoFrame[];
-  /** Where the face sits in the art, in % of the frame. Hand-checked: measuring
-   *  it from the swap's own difference fails on covers where the model
-   *  regenerates the background too. */
-  face: { x: number; y: number; w: number; h: number };
 };
 
 const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
@@ -280,12 +252,10 @@ def emit() -> None:
                 )
             if not rows:
                 continue
-            fb = v["face"]
             body.append(
                 f"    {gender}: {{\n"
                 f'      base: "/samples/faceswap/{slug}-{gender}-base.jpg",\n'
                 "      frames: [\n" + "\n".join(rows) + "\n      ],\n"
-                f'      face: {{ x: {fb["x"]}, y: {fb["y"]}, w: {fb["w"]}, h: {fb["h"]} }},\n'
                 "    },"
             )
         if body:

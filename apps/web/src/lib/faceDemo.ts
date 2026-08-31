@@ -27,10 +27,6 @@ export type FaceDemo = {
   /** The untouched illustration -- the "before" the loop returns to. */
   base: string;
   frames: FaceDemoFrame[];
-  /** Where the face sits in the art, in % of the frame. Hand-checked: measuring
-   *  it from the swap's own difference fails on covers where the model
-   *  regenerates the background too. */
-  face: { x: number; y: number; w: number; h: number };
 };
 
 const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
@@ -48,13 +44,7 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
           photo: "/samples/faceswap/faces/boy-b.jpg",
           child: "Vihaan",
         },
-        {
-          src: "/samples/faceswap/abc-adventure-boy-c.jpg",
-          photo: "/samples/faceswap/faces/boy-c.jpg",
-          child: "Kabir",
-        },
       ],
-      face: { x: 47, y: 42, w: 16, h: 18 },
     },
     girl: {
       base: "/samples/faceswap/abc-adventure-girl-base.jpg",
@@ -70,12 +60,11 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
           child: "Diya",
         },
         {
-          src: "/samples/faceswap/abc-adventure-girl-c.jpg",
-          photo: "/samples/faceswap/faces/girl-c.jpg",
-          child: "Meera",
+          src: "/samples/faceswap/abc-adventure-girl-d.jpg",
+          photo: "/samples/faceswap/faces/girl-d.jpg",
+          child: "Saanvi",
         },
       ],
-      face: { x: 49, y: 44, w: 16, h: 18 },
     },
   },
   "baking-story": {
@@ -98,7 +87,6 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
           child: "Meera",
         },
       ],
-      face: { x: 56, y: 52, w: 15, h: 18 },
     },
   },
   "beach-story": {
@@ -121,7 +109,6 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
           child: "Kabir",
         },
       ],
-      face: { x: 66, y: 23, w: 15, h: 17 },
     },
     girl: {
       base: "/samples/faceswap/beach-story-girl-base.jpg",
@@ -137,12 +124,11 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
           child: "Diya",
         },
         {
-          src: "/samples/faceswap/beach-story-girl-c.jpg",
-          photo: "/samples/faceswap/faces/girl-c.jpg",
-          child: "Meera",
+          src: "/samples/faceswap/beach-story-girl-d.jpg",
+          photo: "/samples/faceswap/faces/girl-d.jpg",
+          child: "Saanvi",
         },
       ],
-      face: { x: 75, y: 21, w: 15, h: 17 },
     },
   },
   "space-explorer": {
@@ -165,7 +151,6 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
           child: "Kabir",
         },
       ],
-      face: { x: 43, y: 52, w: 27, h: 30 },
     },
   },
   "speed-racer": {
@@ -188,7 +173,6 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
           child: "Kabir",
         },
       ],
-      face: { x: 64, y: 33, w: 15, h: 17 },
     },
   },
   "the-girl-and-the-magical-unicorn": {
@@ -211,7 +195,6 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
           child: "Meera",
         },
       ],
-      face: { x: 36, y: 43, w: 15, h: 17 },
     },
   },
   "the-little-book-of-good-choices": {
@@ -229,12 +212,11 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
           child: "Vihaan",
         },
         {
-          src: "/samples/faceswap/the-little-book-of-good-choices-boy-c.jpg",
-          photo: "/samples/faceswap/faces/boy-c.jpg",
-          child: "Kabir",
+          src: "/samples/faceswap/the-little-book-of-good-choices-boy-d.jpg",
+          photo: "/samples/faceswap/faces/boy-d.jpg",
+          child: "Rehan",
         },
       ],
-      face: { x: 57, y: 38, w: 16, h: 18 },
     },
     girl: {
       base: "/samples/faceswap/the-little-book-of-good-choices-girl-base.jpg",
@@ -255,7 +237,6 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
           child: "Meera",
         },
       ],
-      face: { x: 53, y: 39, w: 16, h: 18 },
     },
   },
 };

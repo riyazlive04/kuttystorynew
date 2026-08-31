@@ -12,8 +12,7 @@ const FADE_MS = 600;
 
 /**
  * A book's cover with a real child's face swapped into it, cycling through a
- * few children -- with the PHOTO each face came from shown in the corner and an
- * arrow drawn into the illustrated face.
+ * few children, with the PHOTO each face came from shown in the corner.
  *
  * Every frame is a pre-rendered output of the production face-swap, run against
  * the live cover art, so this demonstrates the product rather than illustrating
@@ -110,24 +109,14 @@ export function FaceSwapDemo({
   useEffect(() => {
     if (current) setHeldName(`${current.child}'s copy`);
   }, [current]);
-  const { x, y, w, h } = demo.face;
-  // The photo sits in the lower-left; the arrow runs up out of it and down into
-  // the lower-left of the face. Percentages, so the geometry survives every
-  // size the cover is rendered at.
-  //
-  // There used to be a ring drawn around the face as well. A ring has to fit
-  // the head to look deliberate, and one box per cover cannot do that across
-  // art where heads differ in size and angle -- on several titles it sat off
-  // the head entirely. The arrow points at the face without claiming to
-  // outline it, so the box only has to be roughly right.
+  // The photo sits in the lower-left, and that is the whole overlay now. A
+  // pointer drawn from it to the face -- first a ring around the face, then an
+  // arrow into it -- needs to know where the face is, and one box per cover
+  // cannot keep up with art where heads differ in size, angle and framing: on
+  // several titles it landed off the head. The photo changing on the same beat
+  // as the art makes the point without aiming at anything.
   const r = compact ? 13 : 11;
   const photo = { cx: compact ? 17 : 15, cy: compact ? 76 : 78, r };
-  const from = { x: photo.cx + r * 0.35, y: photo.cy - r };
-  const to = { x: x - w * 0.3, y: y + h * 0.33 };
-  // Both control points above the line: straddling it drew an S that doubled
-  // back instead of one sweep.
-  const arrow = `M ${from.x} ${from.y} C ${from.x - 2} ${from.y - 12}, ${to.x - 8} ${to.y - 9}, ${to.x} ${to.y}`;
-  const markerId = `fsd-${demo.base.replace(/[^a-z0-9]+/gi, "-")}`;
 
   return (
     <div
@@ -170,45 +159,12 @@ export function FaceSwapDemo({
         />
       ))}
 
-      {/* The photo this face came from, and the arrow that says so. Hidden on
-          the base frame, where there is no photo to point at yet. */}
+      {/* The photo this face came from. Hidden on the base frame, where there
+          is no photo to show yet. */}
       <div
         className="pointer-events-none absolute inset-0 transition-opacity"
         style={{ transitionDuration: `${FADE_MS}ms`, opacity: current ? 1 : 0 }}
       >
-        <svg
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          className="absolute inset-0 h-full w-full"
-          aria-hidden="true"
-        >
-          <defs>
-            <marker
-              id={markerId}
-              viewBox="0 0 10 10"
-              refX="7"
-              refY="5"
-              markerWidth="4"
-              markerHeight="4"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 1 L 8 5 L 0 9 z" fill="#ffffff" />
-            </marker>
-          </defs>
-          <path
-            d={arrow}
-            fill="none"
-            stroke="#ffffff"
-            strokeWidth="2"
-            strokeLinecap="round"
-            markerEnd={`url(#${markerId})`}
-            // Keeps an even weight despite the non-uniform viewBox scaling that
-            // preserveAspectRatio="none" implies.
-            vectorEffect="non-scaling-stroke"
-            style={{ filter: "drop-shadow(0 1px 2px rgba(15,23,42,0.55))" }}
-          />
-        </svg>
-
         {frames.map((f, i) => (
           <div
             key={f.photo}
