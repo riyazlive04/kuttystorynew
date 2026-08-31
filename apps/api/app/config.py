@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     # erasing them, which is deliberate -- the point is a real face that looks
     # well lit, not a retouched one. 0 disables it.
     undereye_softening: float = 0.65
+    # Size of the patch of lower forehead taken from the TEMPLATE rather than
+    # from the swap, as a multiple of the landmark-derived spot. The swapper
+    # invents a bindi there and no dial it exposes prevents it, so that spot
+    # comes from the artwork instead. Chosen by eye against marked plates: 1.0
+    # and 1.3 left a trace of the largest mark, 1.6 covered it, and clean faces
+    # were indistinguishable at every setting. 0 disables it.
+    forehead_patch: float = 1.6
     # Keep the artwork's hair out of the face composite's blend rather than
     # crossfading it with the swapper's. Two hair renderings averaged together
     # is what makes strands run in conflicting directions along the hairline.

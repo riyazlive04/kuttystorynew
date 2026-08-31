@@ -451,6 +451,53 @@ def _keep_artwork_hair(template: Image.Image, mask: Image.Image) -> Image.Image:
         return mask
 
 
+def _keep_template_forehead(mask, swapped: bytes):
+    """Take the lower forehead from the TEMPLATE, not from the swap.
+
+    faceswap-comic invents a bindi on Indian-looking children whether or not the
+    uploaded photo has one. Nothing the API exposes prevents it -- verified on a
+    plate that marks reliably, across face_strength 0.85/0.95/1.0, style_strength
+    0.7/0.45/0.25/0.1 and three seeds; the dot came back every time, and none of
+    the source photos has one.
+
+    It is done WITHOUT deciding whether a mark is present, because that decision
+    could not be made reliably. Five ways of asking "is there a bindi here" were
+    measured against real plates -- redness against surrounding skin, darkness on
+    the midline, Lab distance, the same against the template's own glabella, and
+    a pixel-registered difference between swap and template -- and every one of
+    them scored clean faces as high as marked ones. Two faces of different
+    children differ everywhere; a small red dot does not stand out from that.
+
+    So the patch is unconditional, which is safe because of what it is: the same
+    artwork, under the same light, at a spot that carries no identity at all --
+    a face is recognised by eyes, nose, mouth and jaw. On a page with no
+    invented mark it changes nothing a reader can see.
+
+    The location comes from a landmark mesh (face_landmarks), which found the
+    face on all 29 illustrated plates tested. Two earlier versions got the place
+    wrong and are worth recording: one estimated it from Haar eye boxes and
+    pasted hair onto a child's forehead, and one centred on the glabella
+    landmark alone, which sits at the top of the nose bridge -- about a third of
+    an eye span BELOW where the mark actually lands.
+    """
+    from .face_landmarks import forehead_spot
+
+    from PIL import ImageChops
+
+    point = forehead_spot(swapped)
+    if not point:
+        return mask
+    scale = settings.forehead_patch
+    rx = max(4.0, point["rx"] * scale)
+    ry = max(4.0, point["ry"] * scale)
+    patch = Image.new("L", mask.size, 0)
+    ImageDraw.Draw(patch).ellipse(
+        [point["x"] - rx, point["y"] - ry, point["x"] + rx, point["y"] + ry], fill=255
+    )
+    patch = patch.filter(ImageFilter.GaussianBlur(radius=max(2.0, rx * 0.35)))
+    return ImageChops.subtract(mask, patch)
+
+
 def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> bytes:
     """Retain the template's HAIR by pasting only the FACE area from the fully
     swapped image back onto the original template.
@@ -516,6 +563,15 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
     mask = mask.filter(
         ImageFilter.GaussianBlur(radius=max(3.0, min(span * 0.03, 16.0)))
     )
+    # After the feather, not before: the feather is wide enough to fill a hole
+    # this small straight back in, which is why an earlier version left the
+    # bindi on the page. The patch carries its own soft edge instead.
+    if settings.forehead_patch > 0:
+        try:
+            mask = _keep_template_forehead(mask, swapped)
+        except Exception as e:  # noqa: BLE001 -- never worth a failed page
+            print(f"[retouch] forehead patch skipped: {e}", flush=True)
+
     if settings.keep_artwork_hair:
         mask = _keep_artwork_hair(tmpl, mask)
     out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
