@@ -1,4 +1,7 @@
+import Image from "next/image";
 import Link from "next/link";
+
+import { webImage } from "@/lib/img";
 
 /**
  * Long-form copy blocks. Two things here are deliberate rather than cosmetic:
@@ -95,7 +98,9 @@ export function RelatedLinks({
   links,
 }: {
   title?: string;
-  links: { label: string; href: string; note?: string }[];
+  /** `image` turns a row into a book row: cover thumbnail beside the title.
+   *  Text-only rows (guides, policy pages) keep the plain layout. */
+  links: { label: string; href: string; note?: string; image?: string }[];
 }) {
   return (
     <section className="container-x py-12">
@@ -106,14 +111,29 @@ export function RelatedLinks({
             <li key={l.href}>
               <Link
                 href={l.href}
-                className="block rounded-2xl border-2 border-brand-borderAccent bg-white px-5 py-4 transition hover:border-brand-primary"
+                className="flex h-full items-center gap-4 rounded-2xl border-2 border-brand-borderAccent bg-white px-5 py-4 transition hover:border-brand-primary"
               >
-                <span className="font-semibold text-slate-deep">{l.label}</span>
-                {l.note && (
-                  <span className="mt-0.5 block text-sm text-slate-mutedText">
-                    {l.note}
+                {l.image && (
+                  <span className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl ring-1 ring-slate-900/10">
+                    <Image
+                      src={webImage(l.image, 160)}
+                      alt=""
+                      fill
+                      sizes="64px"
+                      className="object-cover"
+                    />
                   </span>
                 )}
+                <span className="min-w-0">
+                  <span className="block font-semibold text-slate-deep">
+                    {l.label}
+                  </span>
+                  {l.note && (
+                    <span className="mt-0.5 block text-sm text-slate-mutedText">
+                      {l.note}
+                    </span>
+                  )}
+                </span>
               </Link>
             </li>
           ))}

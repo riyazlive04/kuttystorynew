@@ -7,7 +7,6 @@ import { JsonLd } from "@/components/JsonLd";
 import { PersonalizeWizard } from "@/components/PersonalizeWizard";
 import { StoryGenderProvider } from "@/components/StoryGender";
 import { StoryHeroArt } from "@/components/StoryHeroArt";
-import ProviderCompare from "@/components/ProviderCompare";
 import { KeyFacts, RelatedLinks } from "@/components/Prose";
 import { getStories, getStoryBySlug, STORY_REVALIDATE } from "@/lib/stories.server";
 import {
@@ -191,12 +190,6 @@ export default async function StoryDetailPage({ params }: Props) {
         </div>
       </StoryGenderProvider>
 
-      {/* Try-before-you-buy: one page from this book, rendered from a photo the
-          visitor uploads. Anonymous callers are rate limited by the API. */}
-      <div className="mt-12">
-        <ProviderCompare slug={story.slug} />
-      </div>
-
       {/* Per-title specifics as a table: unique text on every product page, and
           the shape an answer engine can lift when someone asks what a given
           book costs or how long it takes to arrive. */}
@@ -231,7 +224,14 @@ export default async function StoryDetailPage({ params }: Props) {
             ...siblings.map((s) => ({
               label: s.title,
               href: `/stories/${s.slug}`,
-              note: `${s.ageRange} · ${s.tagline}`,
+              image: s.coverImage,
+              // Several titles have no tagline authored yet and the CMS falls
+              // back to the title, which rendered as "Baking Story · Baking
+              // Story". A note that only repeats the label is worse than none.
+              note:
+                s.tagline && s.tagline.trim() !== s.title.trim()
+                  ? `${s.ageRange} · ${s.tagline}`
+                  : s.ageRange,
             })),
             {
               label: "Browse the whole library",
