@@ -575,6 +575,34 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                   >
                     Photo guidelines for best results
                   </h3>
+
+                  {/* One look beats five sentences: the example shows the whole
+                      face, a bare forehead and flat daylight, which is exactly
+                      what the rules below ask for. */}
+                  <figure className="mt-4 flex gap-4 rounded-2xl bg-brand-cream p-3">
+                    <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-2xl ring-2 ring-white">
+                      <Image
+                        src="/samples/photo-example.jpg"
+                        alt="Example photo: a child facing the camera in even daylight, whole face visible and forehead uncovered"
+                        fill
+                        sizes="112px"
+                        className="object-cover"
+                      />
+                    </div>
+                    <figcaption className="text-sm">
+                      <p className="font-bold text-slate-deep">
+                        Upload a photo like this
+                      </p>
+                      <p className="mt-1 text-slate-mutedText">
+                        Whole face towards the camera, forehead uncovered, soft
+                        even light.
+                      </p>
+                      <p className="mt-1 text-xs text-slate-mutedText/70">
+                        Sample image, not a real customer&apos;s photo.
+                      </p>
+                    </figcaption>
+                  </figure>
+
                   <ul className="mt-4 space-y-3 text-sm text-slate-mutedText">
                     {PHOTO_GUIDELINES.map((rule) => (
                       <li key={rule} className="flex gap-2">
