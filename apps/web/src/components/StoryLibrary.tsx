@@ -35,8 +35,8 @@ export function StoryLibrary({ stories }: { stories: Story[] }) {
       </div>
 
       <div className="grid justify-items-center gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((s) => (
-          <StoryCard key={s.id} story={s} />
+        {filtered.map((s, i) => (
+          <StoryCard key={s.id} story={s} index={i} />
         ))}
       </div>
 

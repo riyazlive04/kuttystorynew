@@ -180,8 +180,8 @@ export default async function ReturnGiftsPage() {
             Good books to gift
           </h2>
           <div className="grid justify-items-center gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {picks.map((s) => (
-              <StoryCard key={s.id} story={s} />
+            {picks.map((s, i) => (
+              <StoryCard key={s.id} story={s} index={i} />
             ))}
           </div>
           <div className="mt-10 text-center">

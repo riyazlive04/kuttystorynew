@@ -4,6 +4,8 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { BookOpen } from "lucide-react";
 import type { Story } from "@/lib/types";
+import { faceDemoFor } from "@/lib/faceDemo";
+import { FaceSwapDemo } from "@/components/FaceSwapDemo";
 import { inr } from "@/lib/format";
 import { webImage } from "@/lib/img";
 
@@ -14,9 +16,20 @@ const CATEGORY_STYLES: Record<string, string> = {
   BEDTIME: "bg-violet-500/90",
 };
 
-export function StoryCard({ story }: { story: Story }) {
+export function StoryCard({
+  story,
+  index = 0,
+}: {
+  story: Story;
+  /** Position in the grid, so neighbouring cards do not animate in unison. */
+  index?: number;
+}) {
   const router = useRouter();
   const onPersonalize = () => router.push(`/stories/${story.slug}`);
+  // The card shows the book's primary illustrated variant -- the same one
+  // `coverImage` is -- so a gender-locked book gets its own art and everything
+  // else gets the boy plate the catalogue leads with.
+  const demo = faceDemoFor(story.slug, story.genderLock ?? "boy");
 
   return (
     // w-full matters: without it the card shrink-wraps its content, so a long
@@ -32,13 +45,22 @@ export function StoryCard({ story }: { story: Story }) {
               fore edge or lighting on top of it. The only styling is the frame
               around it: rounded corners, a hairline edge and a drop shadow. */}
           <div className="relative h-full w-full overflow-hidden rounded-xl shadow-[0_10px_24px_-8px_rgba(15,23,42,0.45)] ring-1 ring-slate-900/10 transition-transform duration-300 group-hover/book:-translate-y-0.5">
-            <Image
-              src={webImage(story.coverImage, 800)}
-              alt={story.title}
-              fill
-              sizes="(max-width: 768px) 100vw, 384px"
-              className="object-cover"
-            />
+            {demo ? (
+              <FaceSwapDemo
+                demo={demo}
+                title={story.title}
+                compact
+                stagger={index}
+              />
+            ) : (
+              <Image
+                src={webImage(story.coverImage, 800)}
+                alt={story.title}
+                fill
+                sizes="(max-width: 768px) 100vw, 384px"
+                className="object-cover"
+              />
+            )}
 
             <span
               className={`chip absolute left-3 top-4 z-10 text-white backdrop-blur-sm ${

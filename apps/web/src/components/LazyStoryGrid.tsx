@@ -48,8 +48,8 @@ export function LazyStoryGrid({ stories }: { stories: Story[] }) {
   return (
     <>
       <div className="grid justify-items-center gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {stories.slice(0, count).map((s) => (
-          <StoryCard key={s.id} story={s} />
+        {stories.slice(0, count).map((s, i) => (
+          <StoryCard key={s.id} story={s} index={i} />
         ))}
       </div>
 
