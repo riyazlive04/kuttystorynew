@@ -115,7 +115,7 @@ class Settings(BaseSettings):
     openai_image_size: str = "1024x1024"
     # "low" | "medium" | "high". Free preview pages (1..free_preview_pages) render
     # at `openai_preview_quality`; the paid/final render uses `openai_image_quality`.
-    # Previews dominate spend — 13 free pages are rendered for every visitor,
+    # Previews dominate spend — every free page is rendered for every visitor,
     # including the ones who never buy — so they default a tier down.
     openai_image_quality: str = "medium"
     # Medium too, not a tier down: at input_fidelity="high" the input tokens
@@ -169,7 +169,7 @@ class Settings(BaseSettings):
 
     # How long a mock render takes end-to-end (seconds)
     mock_render_seconds: int = 9
-    free_preview_pages: int = 13  # pages 1-13 free; paywall at page 14
+    free_preview_pages: int = 3  # pages 1-3 free; paywall at page 4
     total_pages: int = 28
     # How many pages render in parallel per job. Bounded so concurrent hosted
     # model calls don't trip Replicate's rate limit; raise once off shared infra.

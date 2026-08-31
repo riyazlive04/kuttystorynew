@@ -15,7 +15,7 @@ const ORDER_KEY = "kutty:orders";
 
 // How long the mock "GPU render" takes end to end (ms).
 const MOCK_RENDER_MS = 9000;
-const FREE_PREVIEW_PAGES = 13; // pages 1-13 free; paywall at page 14
+const FREE_PREVIEW_PAGES = 3; // pages 1-3 free; paywall at page 4
 
 /* ------------------------------------------------------------------ */
 /*  Local persistence helpers (used only in mock / no-backend mode)    */

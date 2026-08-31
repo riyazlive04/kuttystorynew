@@ -27,7 +27,7 @@ export const FACTS = {
   fromPdfPrice: 749,
   /** Cheapest printed hardcover price, in rupees. */
   fromPrintPrice: 1299,
-  freePreviewPages: 5,
+  freePreviewPages: 3,
   productionDaysMin: 4,
   productionDaysMax: 7,
   ageRange: "1-8 years",
