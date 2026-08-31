@@ -5,7 +5,8 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Check, Star } from "lucide-react";
 import { JsonLd } from "@/components/JsonLd";
 import { PersonalizeWizard } from "@/components/PersonalizeWizard";
-import { StoryCover, StoryGenderProvider } from "@/components/StoryGender";
+import { StoryGenderProvider } from "@/components/StoryGender";
+import { StoryHeroArt } from "@/components/StoryHeroArt";
 import ProviderCompare from "@/components/ProviderCompare";
 import { KeyFacts, RelatedLinks } from "@/components/Prose";
 import { getStories, getStoryBySlug, STORY_REVALIDATE } from "@/lib/stories.server";
@@ -123,7 +124,7 @@ export default async function StoryDetailPage({ params }: Props) {
           {/* Left: story presentation */}
           <div>
             <div className="relative aspect-square w-full overflow-hidden rounded-4xl border-4 border-white shadow-xl">
-              <StoryCover story={story} />
+              <StoryHeroArt story={story} />
               <span className="chip absolute left-5 top-5 bg-slate-900/80 text-white backdrop-blur">
                 {story.categoryTag}
               </span>
