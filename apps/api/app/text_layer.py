@@ -158,8 +158,17 @@ def outline_color(font_color: str) -> tuple[int, int, int]:
     return (0, 0, 0) if luma >= 140 else (255, 255, 255)
 
 
+# The name placeholder is authored two ways we do not control: by the LLM story
+# author (asked for a literal {{name}}, but it drifts to {{NAME}}) and by hand in
+# the admin page editor. Matching two exact spellings meant any other one printed
+# raw onto the customer's page. Match the TOKEN, not one casing of it.
+_NAME_TOKEN = re.compile(r"\{\{\s*(?:child[\s_-]?)?name\s*\}\}", re.IGNORECASE)
+
+
 def personalize(text: str, child_name: str) -> str:
-    return (text or "").replace("{{name}}", child_name).replace("{{Name}}", child_name)
+    # A lambda, not a plain string: a name containing a backslash would
+    # otherwise be read as a regex escape by re.sub.
+    return _NAME_TOKEN.sub(lambda _: child_name or "", text or "")
 
 
 def _load_font(size: int, family: str = DEFAULT_FAMILY) -> ImageFont.FreeTypeFont:
