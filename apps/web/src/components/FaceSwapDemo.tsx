@@ -114,6 +114,12 @@ export function FaceSwapDemo({
   // The photo sits in the lower-left; the arrow runs up out of it and down into
   // the lower-left of the face. Percentages, so the geometry survives every
   // size the cover is rendered at.
+  //
+  // There used to be a ring drawn around the face as well. A ring has to fit
+  // the head to look deliberate, and one box per cover cannot do that across
+  // art where heads differ in size and angle -- on several titles it sat off
+  // the head entirely. The arrow points at the face without claiming to
+  // outline it, so the box only has to be roughly right.
   const r = compact ? 13 : 11;
   const photo = { cx: compact ? 17 : 15, cy: compact ? 76 : 78, r };
   const from = { x: photo.cx + r * 0.35, y: photo.cy - r };
@@ -225,13 +231,6 @@ export function FaceSwapDemo({
             />
           </div>
         ))}
-
-        {/* A soft ring on the face the swap landed on, so the eye is in the
-            right place when the child changes. */}
-        <div
-          className="absolute -translate-x-1/2 -translate-y-1/2 rounded-[50%] ring-[3px] ring-white/80 shadow-[0_0_30px_6px_rgba(255,255,255,0.22)]"
-          style={{ left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%` }}
-        />
       </div>
 
       {/* Whose copy this is. The name is the payload of the animation, not a
