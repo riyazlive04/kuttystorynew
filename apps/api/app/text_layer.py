@@ -314,7 +314,25 @@ BLOCK_DEFAULTS = {
 }
 
 
-def _block_layers(size_wh: tuple, block: dict, child_name: str):
+def _text_bounds(W: int, panel_cfg, scale: float) -> tuple[float, float]:
+    """The x-range a row of text is allowed to occupy.
+
+    The default is the page inset by 7% a side -- the old hard-coded 86% line
+    width, restated as EDGES so a row that is not centred can be measured
+    against them. A full-width panel has to hold the text too, so its inner
+    edge (its own margin plus padding) tightens the range when it is narrower.
+    """
+    left, right = W * 0.07, W * 0.93
+    if panel_cfg:
+        b = {**BLOCK_DEFAULTS, **panel_cfg}
+        if b["boxFullWidth"]:
+            pad = max(0.0, float(b["boxPadding"] or 0) * scale)
+            left = max(left, W * 0.04 + pad)
+            right = min(right, W * 0.96 - pad)
+    return left, right
+
+
+def _block_layers(size_wh: tuple, block: dict, child_name: str, bounds=None):
     """Render one styled row into (text, shadow) layers.
 
     Nothing is composited here: the page's background panel has to be sized from
@@ -333,12 +351,18 @@ def _block_layers(size_wh: tuple, block: dict, child_name: str):
     tracking = float(b["letterSpacing"] or 0.0) * scale
 
     measure = ImageDraw.Draw(Image.new("RGB", (W, H)))
-    max_w = int(W * 0.86)
+    cx = W * (float(b["textX"]) / 100.0)
+    left, right = bounds if bounds else (W * 0.07, W * 0.93)
+    # Lines are CENTRED on cx, so the room a row actually has is its shorter
+    # side doubled. Wrapping every row at a flat 86% of the page ignored that:
+    # a row anchored at 65% got lines up to 43% of the page each way, ran off
+    # the right edge, and took the panel -- which is drawn to hug the text but
+    # clipped at the page -- with it. That is the text-outside-the-box.
+    max_w = int(max(W * 0.25, min(right - left, 2 * min(cx - left, right - cx))))
     lines = _wrap(measure, text, font, max_w, tracking, bool(b["softLineBreak"]))
     line_h = int(size * 1.25)
     block_h = line_h * len(lines)
 
-    cx = W * (float(b["textX"]) / 100.0)
     top = H * (float(b["textY"]) / 100.0) - block_h / 2
 
     placed = []
@@ -518,9 +542,14 @@ def compose_page(
     W, H = img.size
     scale = W / 1024
 
+    # The panel is settled BEFORE the rows are drawn: when it spans the page,
+    # its inner edges are what the text has to wrap inside.
+    panel_cfg = _panel_config(text_box, items)
+    bounds = _text_bounds(W, panel_cfg, scale)
+
     rendered = []
     for block in items:
-        text_layer, shadow_layer = _block_layers((W, H), block, child_name)
+        text_layer, shadow_layer = _block_layers((W, H), block, child_name, bounds)
         if text_layer is not None:
             rendered.append((text_layer, shadow_layer))
     if not rendered:
@@ -528,7 +557,6 @@ def compose_page(
 
     # ONE panel for the whole text, sized to the union of every row — the box is
     # a property of the page, not of an individual row.
-    panel_cfg = _panel_config(text_box, items)
     out = img.convert("RGBA")
     if panel_cfg:
         union = None

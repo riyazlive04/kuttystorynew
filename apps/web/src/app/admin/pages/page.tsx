@@ -1486,11 +1486,19 @@ export default function AdminPagesEditor() {
                 </svg>
               )}
               <div
-                className={`pointer-events-none absolute w-[86%] -translate-x-1/2 -translate-y-1/2 text-center ${
+                className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 text-center ${
                   serverPreview ? "hidden" : ""
                 }`}
                 style={{
                   left: `${page.textX}%`,
+                  // Same width the renderer wraps to: lines are centred on
+                  // textX, so the usable width is the shorter side doubled. A
+                  // flat 86% here drew a box that hung off the page and made an
+                  // off-centre row look contained when the burned page ran over.
+                  width: `${Math.max(
+                    25,
+                    Math.min(86, 2 * Math.min(page.textX - 7, 93 - page.textX)),
+                  )}%`,
                   top: `${page.textY}%`,
                   color: page.fontColor,
                   // Scaled the same way the renderer does — no viewport units,
