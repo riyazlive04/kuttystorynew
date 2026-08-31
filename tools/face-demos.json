@@ -1,12 +1,6 @@
 {
   "baking-story": {
     "girl": {
-      "face": {
-        "x": 56,
-        "y": 52,
-        "w": 15,
-        "h": 18
-      },
       "frames": [
         {
           "key": "a",
@@ -25,12 +19,6 @@
   },
   "space-explorer": {
     "boy": {
-      "face": {
-        "x": 43,
-        "y": 52,
-        "w": 27,
-        "h": 30
-      },
       "frames": [
         {
           "key": "a",
@@ -49,12 +37,6 @@
   },
   "speed-racer": {
     "boy": {
-      "face": {
-        "x": 64,
-        "y": 33,
-        "w": 15,
-        "h": 17
-      },
       "frames": [
         {
           "key": "a",
@@ -73,12 +55,6 @@
   },
   "beach-story": {
     "boy": {
-      "face": {
-        "x": 66,
-        "y": 23,
-        "w": 15,
-        "h": 17
-      },
       "frames": [
         {
           "key": "a",
@@ -95,12 +71,6 @@
       ]
     },
     "girl": {
-      "face": {
-        "x": 75,
-        "y": 21,
-        "w": 15,
-        "h": 17
-      },
       "frames": [
         {
           "key": "a",
@@ -111,20 +81,14 @@
           "child": "Diya"
         },
         {
-          "key": "c",
-          "child": "Meera"
+          "key": "d",
+          "child": "Saanvi"
         }
       ]
     }
   },
   "the-girl-and-the-magical-unicorn": {
     "girl": {
-      "face": {
-        "x": 36,
-        "y": 43,
-        "w": 15,
-        "h": 17
-      },
       "frames": [
         {
           "key": "a",
@@ -143,12 +107,6 @@
   },
   "abc-adventure": {
     "boy": {
-      "face": {
-        "x": 47,
-        "y": 42,
-        "w": 16,
-        "h": 18
-      },
       "frames": [
         {
           "key": "a",
@@ -157,20 +115,10 @@
         {
           "key": "b",
           "child": "Vihaan"
-        },
-        {
-          "key": "c",
-          "child": "Kabir"
         }
       ]
     },
     "girl": {
-      "face": {
-        "x": 49,
-        "y": 44,
-        "w": 16,
-        "h": 18
-      },
       "frames": [
         {
           "key": "a",
@@ -181,20 +129,14 @@
           "child": "Diya"
         },
         {
-          "key": "c",
-          "child": "Meera"
+          "key": "d",
+          "child": "Saanvi"
         }
       ]
     }
   },
   "the-little-book-of-good-choices": {
     "boy": {
-      "face": {
-        "x": 57,
-        "y": 38,
-        "w": 16,
-        "h": 18
-      },
       "frames": [
         {
           "key": "a",
@@ -205,18 +147,12 @@
           "child": "Vihaan"
         },
         {
-          "key": "c",
-          "child": "Kabir"
+          "key": "d",
+          "child": "Rehan"
         }
       ]
     },
     "girl": {
-      "face": {
-        "x": 53,
-        "y": 39,
-        "w": 16,
-        "h": 18
-      },
       "frames": [
         {
           "key": "a",
