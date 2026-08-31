@@ -1,5 +1,5 @@
 from typing import Literal, Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 Language = Literal["en", "ta", "bilingual"]
 Format = Literal["pdf", "print"]
@@ -33,9 +33,30 @@ class StoryOut(BaseModel):
     genderLock: Optional[Literal["boy", "girl"]] = None
 
 
+def capitalize_name(name: str) -> str:
+    """Give a typed-in name its capitals back: "aarav kumar" -> "Aarav Kumar".
+
+    The name is printed in the book, so "aarav" on the page reads as a defect.
+    Only the FIRST letter of each part is touched: an all-caps "AARAV" is left
+    as typed (a parent who shouts the name meant to), and so are the internal
+    capitals in "McArthur" or "D'Souza", which .title() would destroy.
+    Hyphens and apostrophes start a new part -- "mary-jane" -> "Mary-Jane".
+    """
+    out, start_of_part = [], True
+    for ch in (name or "").strip():
+        out.append(ch.upper() if start_of_part else ch)
+        start_of_part = ch in " -'’"
+    return "".join(out)
+
+
 class PersonalizationIn(BaseModel):
     storySlug: str
     childName: str = Field(min_length=1, max_length=40)
+
+    @field_validator("childName")
+    @classmethod
+    def _capitalize(cls, v: str) -> str:
+        return capitalize_name(v)
     gender: Literal["boy", "girl", "neutral"] = "neutral"
     ageYears: int = Field(default=4, ge=0, le=15)
     language: Language = "en"
