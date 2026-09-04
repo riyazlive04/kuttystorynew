@@ -9,10 +9,25 @@ const API = process.env.NEXT_PUBLIC_API_URL;
 export const STORY_REVALIDATE = 300;
 
 /**
- * Server-side catalogue read. Unlike the client `listStories()` this never
- * throws and never returns an empty list: if the backend is unreachable — which
- * is the normal case during `next build` inside Docker — it falls back to the
- * bundled catalogue so pages still render with real content.
+ * Is the bundled sample catalogue allowed to stand in for the real one?
+ *
+ * Only with no backend configured at all -- a developer running the web app on
+ * its own, who wants pages with content in them rather than empty grids.
+ *
+ * NOT when a backend is configured and unreachable. That case used to fall back
+ * too, and the consequence was seen in production: while the VPS was down the
+ * storefront served six books that do not exist in the CMS, with placeholder
+ * SVG covers, each with a Personalize button that could only fail. Static
+ * generation then baked the sample slugs into /stories/<slug> pages that
+ * outlived the outage. An empty shelf is a bad hour; a shelf of books that
+ * cannot be bought is a bad reputation.
+ */
+const SAMPLES_OK = !API;
+
+/**
+ * Server-side catalogue read. Never throws: an unreachable backend returns an
+ * empty list, which the grids already have a state for, and which lets Next
+ * keep serving the last good page it rendered rather than replacing it.
  */
 export async function getStories(): Promise<Story[]> {
   if (API) {
@@ -25,7 +40,11 @@ export async function getStories(): Promise<Story[]> {
         if (Array.isArray(data) && data.length) return data;
       }
     } catch {
-      // Backend down or not yet reachable — fall through to bundled data.
+      // Backend down or not yet reachable.
+    }
+    if (!SAMPLES_OK) {
+      console.warn("[catalogue] backend unreachable - serving no titles");
+      return [];
     }
   }
   return STORIES;
@@ -41,8 +60,9 @@ export async function getStoryBySlug(slug: string): Promise<Story | undefined> {
       // A definitive 404 from the backend means the title was unpublished.
       if (res.status === 404) return undefined;
     } catch {
-      // Fall through to bundled data.
+      // Backend down or not yet reachable.
     }
+    if (!SAMPLES_OK) return undefined;
   }
   return getStory(slug);
 }
