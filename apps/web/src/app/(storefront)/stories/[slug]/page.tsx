@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Check, Star } from "lucide-react";
+import { ArrowLeft, Check, Sparkles, Star } from "lucide-react";
 import { JsonLd } from "@/components/JsonLd";
 import { PersonalizeWizard } from "@/components/PersonalizeWizard";
 import { StoryGenderProvider } from "@/components/StoryGender";
@@ -147,13 +147,16 @@ export default async function StoryDetailPage({ params }: Props) {
             </div>
 
             <div className="mt-8">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-sm font-semibold text-slate-400">
-                  {story.ageRange}
+              <div className="mb-4 flex flex-wrap items-center gap-3">
+                <span className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-100 to-fuchsia-100 px-4 py-2 text-base font-black text-brand-primaryDark border-2 border-brand-primary/25 shadow-sm">
+                  <Sparkles className="h-5 w-5 text-brand-primary shrink-0" />
+                  <span className="font-kidsHeader text-base md:text-lg font-bold tracking-tight">
+                    {story.ageRange.replace("-", "–")}
+                  </span>
                 </span>
-                <span className="text-slate-300">·</span>
-                <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-500">
-                  <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> 4.9
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3.5 py-2 text-sm font-bold text-amber-800 border-2 border-amber-200/80 shadow-xs">
+                  <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                  <span>4.9 (120+ reviews)</span>
                 </span>
               </div>
               <h1 className="text-3xl font-bold text-slate-deep md:text-4xl">

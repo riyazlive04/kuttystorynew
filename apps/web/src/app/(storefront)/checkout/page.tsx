@@ -14,6 +14,7 @@ import { PromoField } from "@/components/PromoField";
 import { payWithRazorpay } from "@/lib/razorpay";
 import type { OrderInput } from "@/lib/types";
 import { webImage } from "@/lib/img";
+import { useCustomerAuth } from "@/lib/auth";
 
 const EMPTY = {
   name: "",
@@ -32,6 +33,7 @@ export default function CheckoutPage() {
   const [form, setForm] = useState(EMPTY);
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { customer } = useCustomerAuth();
 
   const items = useCart((s) => s.items);
   const subtotal = useCart((s) => s.subtotal());
@@ -43,6 +45,11 @@ export default function CheckoutPage() {
   const revalidatePromo = useCart((s) => s.revalidatePromo);
 
   useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    if (customer?.phone) {
+      setForm((f) => (f.phone ? f : { ...f, phone: customer.phone }));
+    }
+  }, [customer]);
   // Same re-pricing as the cart: arriving here by browser back, a reload or a
   // second tab must not show a code applied to a basket that no longer earns it.
   useEffect(() => {

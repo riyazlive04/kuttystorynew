@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Download, Loader2, Sparkles } from "lucide-react";
+import { CheckCircle2, Download, Loader2, Lock, Phone, Sparkles } from "lucide-react";
 import {
   approveJob,
   downloadFile,
@@ -14,39 +14,31 @@ import {
 } from "@/lib/api";
 import { getStory } from "@/lib/data";
 import { useCart } from "@/lib/cart";
-import { jobIdFromParam, languageLabel } from "@/lib/format";
+import { jobIdFromParam, languageLabel, inr } from "@/lib/format";
 import type { Format, Job } from "@/lib/types";
 import { FlipBook } from "@/components/FlipBook";
 import { PAYWALL_PDF, PAYWALL_PRINT } from "@/components/Paywall";
+import { useCustomerAuth, formatIndianPhone } from "@/lib/auth";
+import { PhoneLoginModal } from "@/components/PhoneLoginModal";
 
 export default function PreviewPage({ params }: { params: { jobId: string } }) {
   // The URL segment is a readable slug ending in the real job id (…-<jobId>).
   const jobId = jobIdFromParam(params.jobId);
   const router = useRouter();
   const add = useCart((s) => s.add);
+  const { customer, isLoggedIn } = useCustomerAuth();
 
   const [job, setJob] = useState<Job | null>(null);
   const [notFound, setNotFound] = useState(false);
-  // Free-page count comes from the backend (/config) — single source of truth.
-  const [freePages, setFreePages] = useState(13);
   const [totalPages, setTotalPages] = useState(28);
   const [reloadKey, setReloadKey] = useState(0);
   const [regeneratingPage, setRegeneratingPage] = useState<number | null>(null);
   const [approving, setApproving] = useState(false);
-  const [downloading, setDownloading] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
-  async function handleDownloadPreview(id: string, childName: string) {
-    setDownloading(true);
-    const ok = await downloadFile(
-      previewPdfUrl(id),
-      `KuttyStory-preview-${childName || "story"}.pdf`,
-    );
-    setDownloading(false);
-    if (!ok)
-      alert(
-        "The preview PDF isn't ready yet — wait for all pages to finish, then try again.",
-      );
-  }
+  const GUEST_FREE_PAGES = 3;
+  // If user is logged in with their phone number or purchased, they unlock all pages for preview
+  const effectiveFreePages = job?.isPurchased || isLoggedIn ? totalPages : GUEST_FREE_PAGES;
 
   useEffect(() => {
     getConfig().then((c) => {
@@ -169,29 +161,56 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
     <div className="container-x py-10">
       <div className="mb-8 text-center">
         <span className="chip bg-brand-borderAccent text-brand-primaryDark">
-          <Sparkles className="h-3.5 w-3.5" /> Free preview
+          <Sparkles className="h-3.5 w-3.5" /> Story preview
         </span>
         <h1 className="mt-3 text-3xl font-bold text-slate-deep md:text-4xl">
           {job.childName}&apos;s{" "}
           <span className="text-brand-primary">{job.storyTitle}</span>
         </h1>
-        <p className="mt-2 text-sm text-slate-mutedText">
-          {languageLabel(job.language)} · Read pages 1-{freePages} free
-        </p>
-        {renderedFree > 0 && (
-          <button
-            onClick={() => handleDownloadPreview(job.id, job.childName)}
-            disabled={downloading}
-            className="mt-4 inline-flex items-center gap-2 rounded-xl border-2 border-brand-primary px-4 py-2 text-sm font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white disabled:opacity-60"
-          >
-            {downloading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            Download preview (PDF)
-          </button>
+
+        {/* Login status banner */}
+        {isLoggedIn ? (
+          <div className="mt-2.5 flex flex-col items-center gap-1">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3.5 py-1 text-xs font-bold text-emerald-700 border border-emerald-200">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+              Full preview unlocked for {formatIndianPhone(customer?.phone || "")}
+            </span>
+            <p className="text-xs text-slate-mutedText">
+              Flip through all {totalPages} personalized pages below
+            </p>
+          </div>
+        ) : (
+          <div className="mt-2 flex flex-col items-center gap-1.5">
+            <p className="text-sm text-slate-mutedText">
+              {languageLabel(job.language)} · Reading pages 1–{GUEST_FREE_PAGES} free
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowLoginModal(true)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-brand-primary/40 bg-brand-lilac/70 px-3.5 py-1 text-xs font-bold text-brand-primaryDark shadow-xs transition hover:bg-brand-lilac"
+            >
+              <Phone className="h-3.5 w-3.5 text-brand-primary" />
+              Sign in with mobile number to read all {totalPages} pages free
+            </button>
+          </div>
         )}
+
+        {/* Pay-to-Download Gate (no free download allowed) */}
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+          <button
+            onClick={() => handleSelect("pdf")}
+            className="inline-flex items-center gap-2 rounded-2xl bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-glow transition hover:brightness-105 active:scale-95"
+          >
+            <Lock className="h-4 w-4" />
+            Pay to Download Copy ({inr(PAYWALL_PDF)})
+          </button>
+          <button
+            onClick={() => handleSelect("print")}
+            className="inline-flex items-center gap-2 rounded-2xl border-2 border-slate-800 bg-white px-5 py-2.5 text-sm font-bold text-slate-800 transition hover:bg-slate-50 active:scale-95"
+          >
+            Order Hardcover Print ({inr(PAYWALL_PRINT)})
+          </button>
+        </div>
       </div>
 
       {rendering && (
@@ -201,7 +220,7 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
             {job.status === "queued" && "Warming up the studio…"}
             {job.status === "processing" && "Bringing your hero to life…"}
             {job.status === "rendering" &&
-              `Creating page ${currentPage} of ${freePages}…`}
+              `Creating page ${currentPage} of ${effectiveFreePages}…`}
           </div>
           <div className="h-2.5 w-full overflow-hidden rounded-full bg-brand-borderAccent">
             <div
@@ -215,11 +234,20 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
 
       <FlipBook
         pages={job.pages}
-        freeCount={job.isPurchased ? job.pages.length : freePages}
+        freeCount={effectiveFreePages}
         totalPages={totalPages}
+        isLoggedIn={isLoggedIn}
+        onRequestLogin={() => setShowLoginModal(true)}
         onSelect={handleSelect}
         onRegenerate={job.status === "completed" ? handleRegenerate : undefined}
         regeneratingPage={regeneratingPage}
+      />
+
+      <PhoneLoginModal
+        isOpen={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
+        title="Unlock All Story Pages"
+        subtitle={`Enter your mobile number to read all ${totalPages} pages of ${job.childName}'s personalized storybook.`}
       />
 
       {/* Purchased: approve-for-print gate (Diffrun). */}

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Sparkles, Star } from "lucide-react";
 import type { Story } from "@/lib/types";
 import { faceDemoFor } from "@/lib/faceDemo";
 import { FaceSwapDemo } from "@/components/FaceSwapDemo";
@@ -14,6 +14,37 @@ const CATEGORY_STYLES: Record<string, string> = {
   ADVENTURE: "bg-indigo-500/90",
   IMAGINATION: "bg-emerald-500/90",
   BEDTIME: "bg-violet-500/90",
+};
+
+const AGE_STYLES: Record<
+  string,
+  { badge: string; icon: string }
+> = {
+  "Ages 1-5": {
+    badge: "bg-rose-50 text-rose-700 border-rose-200/80",
+    icon: "text-rose-500",
+  },
+  "Ages 2-5": {
+    badge: "bg-amber-50 text-amber-800 border-amber-200/80",
+    icon: "text-amber-500",
+  },
+  "Ages 2-6": {
+    badge: "bg-emerald-50 text-emerald-800 border-emerald-200/80",
+    icon: "text-emerald-500",
+  },
+  "Ages 3-7": {
+    badge: "bg-sky-50 text-sky-800 border-sky-200/80",
+    icon: "text-sky-500",
+  },
+  "Ages 4-8": {
+    badge: "bg-violet-50 text-violet-800 border-violet-200/80",
+    icon: "text-violet-500",
+  },
+};
+
+const DEFAULT_AGE_STYLE = {
+  badge: "bg-brand-lilac/80 text-brand-primaryDark border-brand-borderAccent",
+  icon: "text-brand-primary",
 };
 
 export function StoryCard({
@@ -76,10 +107,29 @@ export function StoryCard({
         </div>
       </button>
 
-      <div className="flex flex-1 flex-col px-6 pb-6 pt-2">
-        <span className="mb-1 text-sm font-semibold text-slate-400">
-          {story.ageRange}
-        </span>
+      <div className="flex flex-1 flex-col px-6 pb-6 pt-3">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <span
+            className={`inline-flex items-center gap-2 rounded-full border-2 px-3.5 py-1.5 text-sm font-black tracking-wide shadow-sm transition-all ${
+              (AGE_STYLES[story.ageRange] || DEFAULT_AGE_STYLE).badge
+            }`}
+          >
+            <Sparkles
+              className={`h-4 w-4 shrink-0 ${
+                (AGE_STYLES[story.ageRange] || DEFAULT_AGE_STYLE).icon
+              }`}
+            />
+            <span className="font-kidsHeader text-sm font-bold tracking-normal">
+              {story.ageRange.replace("-", "–")}
+            </span>
+          </span>
+
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50/90 px-2.5 py-1 text-xs font-bold text-amber-700 border border-amber-200/60 shadow-xs">
+            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+            <span>4.9</span>
+          </span>
+        </div>
+
         <h3 className="mb-1 text-xl font-bold tracking-tight text-slate-deep">
           {story.title}
         </h3>

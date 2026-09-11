@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Menu, ShoppingBag, X } from "lucide-react";
+import { LogOut, Menu, Phone, ShoppingBag, User, X } from "lucide-react";
 import { useCart } from "@/lib/cart";
+import { useCustomerAuth, formatIndianPhone } from "@/lib/auth";
 import { BrandLogo } from "./BrandLogo";
 import { AnnouncementBar } from "./AnnouncementBar";
+import { PhoneLoginModal } from "./PhoneLoginModal";
 
 // Site-wide links, so every page gets a crawlable path to the routes that earn
 // their own search traffic. "Return Gifts" replaces the old /#reviews anchor:
@@ -20,7 +22,9 @@ const LINKS = [
 export function Navbar() {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const count = useCart((s) => s.count());
+  const { customer, isLoggedIn, logout } = useCustomerAuth();
 
   useEffect(() => setMounted(true), []);
 
@@ -44,6 +48,29 @@ export function Navbar() {
           </div>
 
           <div className="flex items-center gap-2">
+            {mounted && isLoggedIn && customer ? (
+              <div className="hidden items-center gap-1.5 rounded-2xl border border-brand-borderAccent bg-brand-cream px-3 py-1.5 text-xs font-bold text-slate-deep md:flex">
+                <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>{formatIndianPhone(customer.phone)}</span>
+                <button
+                  onClick={logout}
+                  title="Log out"
+                  className="ml-1 rounded p-1 text-slate-400 hover:text-rose-600 transition"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : mounted ? (
+              <button
+                type="button"
+                onClick={() => setShowLoginModal(true)}
+                className="hidden items-center gap-1.5 rounded-2xl border-2 border-brand-borderAccent bg-white px-3.5 py-2 text-xs font-bold text-slate-deep transition hover:border-brand-primary md:inline-flex"
+              >
+                <Phone className="h-3.5 w-3.5 text-brand-primary" />
+                Sign In
+              </button>
+            ) : null}
+
             <Link
               href="/cart"
               className="relative grid h-10 w-10 place-items-center rounded-2xl border-2 border-brand-borderAccent bg-white transition hover:border-brand-primary"
@@ -75,6 +102,35 @@ export function Navbar() {
         {open && (
           <div className="border-t border-brand-borderAccent/70 bg-white md:hidden">
             <div className="container-x flex flex-col gap-1 py-3">
+              {mounted && isLoggedIn && customer ? (
+                <div className="mb-2 flex items-center justify-between rounded-xl bg-brand-lilac/70 px-3 py-2 text-xs font-bold text-slate-deep">
+                  <span className="flex items-center gap-2">
+                    <span className="flex h-2 w-2 rounded-full bg-emerald-500" />
+                    {formatIndianPhone(customer.phone)}
+                  </span>
+                  <button
+                    onClick={() => {
+                      logout();
+                      setOpen(false);
+                    }}
+                    className="text-rose-600 hover:underline"
+                  >
+                    Log Out
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    setShowLoginModal(true);
+                  }}
+                  className="mb-1 rounded-xl border border-slate-200 px-3 py-2 text-left font-semibold text-brand-primary"
+                >
+                  Sign In with Phone
+                </button>
+              )}
+
               {LINKS.map((l) => (
                 <Link
                   key={l.href}
@@ -96,6 +152,13 @@ export function Navbar() {
           </div>
         )}
       </div>
+
+      <PhoneLoginModal
+        isOpen={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
+        title="Sign In to KuttyStory"
+        subtitle="Access your personalized books, previews, and orders."
+      />
     </header>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { ChevronLeft, ChevronRight, Loader2, Lock, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Lock, Phone, RefreshCw } from "lucide-react";
 import type { PreviewPage } from "@/lib/types";
 import { inr } from "@/lib/format";
 import { PAYWALL_PDF, PAYWALL_PRINT } from "./Paywall";
@@ -17,6 +17,8 @@ export function FlipBook({
   pages,
   freeCount,
   totalPages,
+  isLoggedIn = false,
+  onRequestLogin,
   onSelect,
   onRegenerate,
   regeneratingPage,
@@ -24,6 +26,8 @@ export function FlipBook({
   pages: PreviewPage[];
   freeCount: number;
   totalPages?: number;
+  isLoggedIn?: boolean;
+  onRequestLogin?: () => void;
   onSelect: (format: "pdf" | "print") => void;
   onRegenerate?: (pageNumber: number) => void;
   regeneratingPage?: number | null;
@@ -100,27 +104,79 @@ export function FlipBook({
         {/* Locked-page teaser: blurred art shows through; unlock CTA on top. */}
         {locked && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-between p-4">
-            <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-slate-900/70 px-3 py-1.5 text-xs font-bold text-white shadow-md">
-              <Lock className="h-3.5 w-3.5" /> Purchase to Unlock
+            <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-slate-900/80 px-3.5 py-1.5 text-xs font-bold text-white shadow-md backdrop-blur">
+              {!isLoggedIn ? (
+                <>
+                  <Phone className="h-3.5 w-3.5 text-amber-400" /> Sign In to Read Full Story
+                </>
+              ) : (
+                <>
+                  <Lock className="h-3.5 w-3.5 text-brand-purple" /> Purchase to Unlock
+                </>
+              )}
             </span>
-            <div className="w-full max-w-sm rounded-2xl bg-white/95 p-4 shadow-xl backdrop-blur">
-              <p className="text-center text-sm font-semibold text-slate-deep">
-                Unlock all {total} personalized pages
-              </p>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => onSelect("pdf")}
-                  className="rounded-xl border-2 border-brand-primary py-2 text-sm font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white"
-                >
-                  PDF {inr(PAYWALL_PDF)}
-                </button>
-                <button
-                  onClick={() => onSelect("print")}
-                  className="rounded-xl bg-brand-gradient py-2 text-sm font-bold text-white transition hover:opacity-90"
-                >
-                  Print {inr(PAYWALL_PRINT)}
-                </button>
-              </div>
+
+            <div className="w-full max-w-sm rounded-3xl border border-brand-borderAccent bg-white/95 p-5 shadow-2xl backdrop-blur">
+              {!isLoggedIn && onRequestLogin ? (
+                <div className="text-center">
+                  <span className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-2xl bg-brand-gradient text-white shadow-glow">
+                    <Phone className="h-5 w-5" />
+                  </span>
+                  <p className="font-bold text-slate-deep text-base">
+                    Read the Full Story Free
+                  </p>
+                  <p className="mt-1 text-xs text-slate-mutedText">
+                    You&apos;ve read the first 3 preview pages! Sign in with your mobile number to unlock all {total - covers} pages.
+                  </p>
+                  <button
+                    onClick={onRequestLogin}
+                    className="btn-primary mt-4 w-full py-2.5 text-sm"
+                  >
+                    <Phone className="h-4 w-4" /> Sign In with Phone
+                  </button>
+                  <div className="my-3 flex items-center gap-2">
+                    <span className="h-px flex-1 bg-slate-200" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      or buy now
+                    </span>
+                    <span className="h-px flex-1 bg-slate-200" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => onSelect("pdf")}
+                      className="rounded-xl border-2 border-brand-primary/40 py-2 text-xs font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white"
+                    >
+                      PDF {inr(PAYWALL_PDF)}
+                    </button>
+                    <button
+                      onClick={() => onSelect("print")}
+                      className="rounded-xl bg-slate-800 py-2 text-xs font-bold text-white transition hover:bg-slate-900"
+                    >
+                      Print {inr(PAYWALL_PRINT)}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-center text-sm font-semibold text-slate-deep">
+                    Unlock all {total} personalized pages
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => onSelect("pdf")}
+                      className="rounded-xl border-2 border-brand-primary py-2 text-sm font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white"
+                    >
+                      PDF {inr(PAYWALL_PDF)}
+                    </button>
+                    <button
+                      onClick={() => onSelect("print")}
+                      className="rounded-xl bg-brand-gradient py-2 text-sm font-bold text-white transition hover:opacity-90"
+                    >
+                      Print {inr(PAYWALL_PRINT)}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
