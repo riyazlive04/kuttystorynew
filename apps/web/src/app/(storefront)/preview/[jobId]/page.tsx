@@ -30,6 +30,7 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
 
   const [job, setJob] = useState<Job | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [freePages, setFreePages] = useState(3);
   const [totalPages, setTotalPages] = useState(28);
   const [reloadKey, setReloadKey] = useState(0);
   const [regeneratingPage, setRegeneratingPage] = useState<number | null>(null);
@@ -303,8 +304,10 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
 
       {!job.isPurchased && (
         <p className="mx-auto mt-6 max-w-md text-center text-xs text-slate-mutedText">
-          Turn the pages to read the first {freePages} for free. Unlock all{" "}
-          {totalPages} to download the PDF or order a printed hardcover.
+          {isLoggedIn
+            ? `You're viewing all ${totalPages} personalized pages. Pay to download or print your copy.`
+            : `Turn the pages to read the first ${freePages} free. Sign in with your phone to unlock all ${totalPages} pages — then pay to download.`
+          }
         </p>
       )}
     </div>
