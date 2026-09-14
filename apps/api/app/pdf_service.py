@@ -144,26 +144,41 @@ def build_preview_pdf(job) -> str:
 
 
 def build_book_pdf(job) -> str:
-    """Combine all pages into a CMYK print PDF; return its /uploads URL.
+    """Combine all pages into the customer's book PDF; return its /uploads URL.
 
-    Pages are composed in sRGB (that's what the models return and what the web
-    preview needs); the conversion to CMYK happens here, once, through an ICC
-    profile when one is installed — see app.color for why `convert("CMYK")`
-    alone is not good enough for print.
+    RGB, exactly like the preview PDF, at 300 dpi. This is the file the customer
+    downloads from their order, so it has to look like the preview they approved.
+    It used to be the CMYK print file: those pages carry no ICC profile, so every
+    PDF viewer shows them through a naive CMYK->RGB guess, and the book came out
+    grey and washed-out next to the preview. The press file is build_print_pdf.
 
     Takes an already-fetched job (the worker owns its own Prisma connection, so
     this stays DB-agnostic).
     """
+    return _build_full_pdf(job, cmyk=False)
+
+
+def build_print_pdf(job) -> str:
+    """The CMYK press file, for the printer only — never shown to a customer.
+
+    Pages are composed in sRGB (that's what the models return and what the web
+    preview needs); the conversion to CMYK happens here, once, through an ICC
+    profile when one is installed — see app.color for why `convert("CMYK")`
+    alone is not good enough for print. Without a profile, most printers are
+    better served by the RGB book PDF and their own conversion.
+    """
+    return _build_full_pdf(job, cmyk=True)
+
+
+def _build_full_pdf(job, cmyk: bool) -> str:
     pages = list(job.pages) if job.pages else []
-    imgs = [
-        to_cmyk(_page_image(p, job.childName, i))
-        for i, p in enumerate(pages)
-    ]
+    imgs = [_page_image(p, job.childName, i) for i, p in enumerate(pages)]
     if not imgs:
         raise RuntimeError("no pages to render")
+    imgs = [to_cmyk(im) if cmyk else im.convert("RGB") for im in imgs]
 
     os.makedirs(settings.storage_dir, exist_ok=True)
-    fname = f"{job.id}_book.pdf"
+    fname = f"{job.id}_{'print' if cmyk else 'book'}.pdf"
     path = os.path.join(settings.storage_dir, fname)
     imgs[0].save(
         path,

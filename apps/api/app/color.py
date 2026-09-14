@@ -114,10 +114,18 @@ def _naive_cmyk(img: Image.Image) -> Image.Image:
 
     k = ImageChops.invert(ImageChops.lighter(ImageChops.lighter(r, g), b))
 
+    import numpy as np
+
+    kf = np.asarray(k, dtype=np.float32)
+    denom = np.maximum(255.0 - kf, 1.0)
+
     def plate(channel: Image.Image) -> Image.Image:
         # (255 - channel - K) / (255 - K), guarded where K = 255 (pure black).
-        inv = ImageChops.invert(channel)
-        return ImageChops.subtract(inv, k)
+        # The division is not optional: without it every colour was under-inked
+        # by the same factor K took away, and the whole page printed grey.
+        inv = 255.0 - np.asarray(channel, dtype=np.float32)
+        v = np.clip((inv - kf) / denom * 255.0, 0, 255)
+        return Image.fromarray(v.round().astype(np.uint8), "L")
 
     return Image.merge("CMYK", (plate(r), plate(g), plate(b), k))
 

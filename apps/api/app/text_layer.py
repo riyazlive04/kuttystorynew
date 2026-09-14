@@ -31,7 +31,12 @@ FONT_BOLD = os.getenv(
 
 _DEJAVU = "/usr/share/fonts/truetype/dejavu"
 _LIBERATION = "/usr/share/fonts/truetype/liberation"
-_COMIC = "/usr/share/fonts/truetype/comic-neue"
+# Debian ships Comic Neue as OpenType under fonts/opentype (trixie, which is what
+# python:3.11-slim is built on now). Looking only for the .ttf path meant every
+# "rounded" page silently fell back to DejaVu Sans Bold on the customer's book,
+# while the editor's CSS preview showed a comic face.
+_COMIC = "/usr/share/fonts/opentype/comic-neue"
+_COMIC_TTF = "/usr/share/fonts/truetype/comic-neue"
 
 # Selectable families for the page editor. Each entry lists candidate files in
 # preference order; the first one present in the image wins, and a family whose
@@ -55,8 +60,16 @@ FONT_FAMILIES: dict[str, dict] = {
     },
     "rounded": {
         "label": "Rounded / storybook (Comic Neue Bold)",
-        "css": "'Comic Neue', 'Comic Sans MS', 'Segoe UI', cursive",
-        "files": [f"{_COMIC}/ComicNeue-Bold.ttf", f"{_COMIC}/ComicNeue-Regular.ttf"],
+        # No 'Comic Sans MS' fallback: the admin browser has it and the server
+        # does not, so the editor showed a font the book never printed. The
+        # admin layout loads Comic Neue itself, so the preview is the real face.
+        "css": "'Comic Neue', 'Segoe UI', cursive",
+        "files": [
+            f"{_COMIC}/ComicNeue-Bold.otf",
+            f"{_COMIC_TTF}/ComicNeue-Bold.ttf",
+            f"{_COMIC}/ComicNeue-Regular.otf",
+            f"{_COMIC_TTF}/ComicNeue-Regular.ttf",
+        ],
     },
     "liberation-sans": {
         "label": "Liberation Sans Bold (Arial-like)",
