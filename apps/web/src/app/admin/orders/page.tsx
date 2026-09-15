@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { BookDown, Loader2, Trash2 } from "lucide-react";
-import { adminApi, ORDER_STATUSES } from "@/lib/admin";
+import { adminApi, ApiError, ORDER_STATUSES } from "@/lib/admin";
 import { bookPdfUrl, downloadFile } from "@/lib/api";
 import { inr } from "@/lib/format";
 import type { Order } from "@/lib/types";
@@ -47,10 +47,19 @@ export default function AdminOrders() {
   async function changeStatus(id: string, status: string) {
     setSavingId(id);
     try {
-      const updated = await adminApi.setOrderStatus(id, status);
+      let updated: Order;
+      try {
+        updated = await adminApi.setOrderStatus(id, status);
+      } catch (e) {
+        // 409 = the customer hasn't approved the book for print. Let the admin
+        // override deliberately rather than leaving the order stuck.
+        if (!(e instanceof ApiError && e.status === 409)) throw e;
+        if (!confirm(`${e.message}\n\nMove this order to "${status.replace("_", " ")}" anyway?`)) return;
+        updated = await adminApi.setOrderStatus(id, status, true);
+      }
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
-    } catch {
-      alert("Failed to update status");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to update status");
     } finally {
       setSavingId(null);
     }

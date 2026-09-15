@@ -36,9 +36,15 @@ async function req(path: string, init: RequestInit = {}) {
       .json()
       .then((j) => (typeof j?.detail === "string" ? j.detail : null))
       .catch(() => null);
-    throw new Error(detail || `Request failed (${res.status})`);
+    throw new ApiError(detail || `Request failed (${res.status})`, res.status);
   }
   return res.json();
+}
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+  }
 }
 
 export interface AdminStats {
@@ -249,10 +255,10 @@ export const adminApi = {
   stats: (): Promise<AdminStats> => req("/admin/stats"),
   orders: (status?: string): Promise<Order[]> =>
     req(`/admin/orders${status ? `?status=${status}` : ""}`),
-  setOrderStatus: (id: string, status: string): Promise<Order> =>
+  setOrderStatus: (id: string, status: string, force = false): Promise<Order> =>
     req(`/admin/orders/${id}/status`, {
       method: "PATCH",
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, force }),
     }),
   deleteOrder: (id: string): Promise<{ ok: boolean; id: string }> =>
     req(`/admin/orders/${id}`, { method: "DELETE" }),

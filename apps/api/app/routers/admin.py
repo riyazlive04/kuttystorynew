@@ -73,6 +73,9 @@ async def admin_orders(status: Optional[str] = None):
 
 class StatusUpdate(BaseModel):
     status: str
+    # Admin override for the print-approval gate, sent only after the admin
+    # confirms they want to move an unapproved book forward anyway.
+    force: bool = False
 
 
 @router.patch("/orders/{order_id}/status", dependencies=[Depends(require_admin)])
@@ -88,7 +91,7 @@ async def update_order_status(
         raise HTTPException(status_code=404, detail="Order not found")
     # Print-approval gate (Diffrun): a book must be customer-approved before it
     # can enter production/shipping.
-    if body.status in ("in_production", "shipped", "delivered"):
+    if body.status in ("in_production", "shipped", "delivered") and not body.force:
         session = existing.previewSession
         if session and not session.printApproved:
             raise HTTPException(
