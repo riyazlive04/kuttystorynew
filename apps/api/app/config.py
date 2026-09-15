@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     admin_test_promo_code: str = ""
     admin_test_promo_total: int = 5
 
+    # Customer email via Resend. Blank key = no emails are sent. The `from`
+    # domain must be verified in the Resend dashboard.
+    resend_api_key: str = ""
+    email_from: str = "KuttyStory <orders@kuttystory.co.in>"
+    email_reply_to: str = ""
+
     # GPU provider: "mock" | "runpod" | "replicate" | "comfyui"
     gpu_provider: str = "mock"
 

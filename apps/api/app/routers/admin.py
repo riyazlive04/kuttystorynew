@@ -8,12 +8,21 @@ import os
 import uuid
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    UploadFile,
+)
 from prisma import Json
 from pydantic import BaseModel, Field
 
 from ..config import settings
 from ..db import prisma
+from ..email_service import send_order_status_email
 from ..pages_layout import (
     FRONT_COVER,
     SPINE,
@@ -67,18 +76,20 @@ class StatusUpdate(BaseModel):
 
 
 @router.patch("/orders/{order_id}/status", dependencies=[Depends(require_admin)])
-async def update_order_status(order_id: str, body: StatusUpdate):
+async def update_order_status(
+    order_id: str, body: StatusUpdate, background: BackgroundTasks
+):
     if body.status not in ORDER_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
+    existing = await prisma.order.find_unique(
+        where={"id": order_id}, include={"previewSession": True}
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Order not found")
     # Print-approval gate (Diffrun): a book must be customer-approved before it
     # can enter production/shipping.
     if body.status in ("in_production", "shipped", "delivered"):
-        order = await prisma.order.find_unique(
-            where={"id": order_id}, include={"previewSession": True}
-        )
-        if not order:
-            raise HTTPException(status_code=404, detail="Order not found")
-        session = order.previewSession
+        session = existing.previewSession
         if session and not session.printApproved:
             raise HTTPException(
                 status_code=409,
@@ -91,6 +102,11 @@ async def update_order_status(order_id: str, body: StatusUpdate):
     )
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    # Only a real change emails the customer — re-clicking the current status
+    # must not send a duplicate. Sent after the response so the admin isn't kept
+    # waiting on Resend.
+    if existing.status != order.status:
+        background.add_task(send_order_status_email, order)
     return order_dict(order)
 
 
