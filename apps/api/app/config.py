@@ -98,6 +98,9 @@ class Settings(BaseSettings):
     # Recolour the artwork's ears and neck to the swapped face's skin tone, so a
     # warmer-skinned child doesn't get a tanned face on pale ears. Kill switch.
     match_surrounding_skin: bool = True
+    # Always take the ears from the artwork, never from the swapper, which adds
+    # earring studs. Kill switch.
+    keep_artwork_ears: bool = True
     # Hosted Replicate face-swap model (used when faceswap_provider=replicate).
     # Known input schemas are auto-mapped:
     #   fofr/face-swap-with-ideogram -> target_image + character_image + prompt

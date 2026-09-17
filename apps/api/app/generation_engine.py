@@ -451,7 +451,7 @@ def _keep_artwork_hair(template: Image.Image, mask: Image.Image) -> Image.Image:
         return mask
 
 
-def _keep_template_forehead(mask, swapped: bytes):
+def _keep_template_forehead(mask, swapped: bytes, swapped_size, template: bytes, region: dict):
     """Take the lower forehead from the TEMPLATE, not from the swap.
 
     faceswap-comic invents a bindi on Indian-looking children whether or not the
@@ -482,19 +482,84 @@ def _keep_template_forehead(mask, swapped: bytes):
     """
     from .face_landmarks import forehead_spot
 
+    # Where the mark is. The swap first -- that is where it was drawn -- then the
+    # artwork, which shares the composition, then the face region itself. A
+    # missing landmark used to mean no patch at all, and so a bindi on the page.
+    point = _scaled(forehead_spot(swapped), swapped_size, mask.size)
+    if not point:
+        point = _scaled(forehead_spot(template), _decoded_size(template), mask.size)
+    if not point:
+        point = _forehead_from_region(region, mask.size)
+    if not point:
+        print("[retouch] forehead patch: no face found by any method", flush=True)
+        return mask
+    return _subtract_spots(mask, [point], settings.forehead_patch)
+
+
+def _keep_template_ears(mask, swapped: bytes, swapped_size, template: bytes):
+    """Take both ears from the TEMPLATE, never from the swap."""
+    from .face_landmarks import ear_spots
+
+    spots = ear_spots(swapped)
+    size = swapped_size
+    if not spots:
+        spots, size = ear_spots(template), _decoded_size(template)
+    if not spots:
+        return mask
+    return _subtract_spots(mask, [_scaled(p, size, mask.size) for p in spots], 1.0)
+
+
+def _decoded_size(data: bytes):
+    return Image.open(io.BytesIO(data)).size
+
+
+def _scaled(point, from_size, to_size):
+    """Landmark pixels are in the image they were found on; the mask may be a
+    different size -- the swapper answers ~1024px for a 2482px plate. Unscaled,
+    the forehead patch landed up and left of the forehead and the bindi stayed."""
+    if not point or not from_size or not from_size[0] or not from_size[1]:
+        return point
+    sx, sy = to_size[0] / from_size[0], to_size[1] / from_size[1]
+    return {"x": point["x"] * sx, "y": point["y"] * sy,
+            "rx": point["rx"] * sx, "ry": point["ry"] * sy}
+
+
+def _forehead_from_region(region: dict, size):
+    """Last resort: the lower forehead, estimated from the face region."""
+    W, H = size
+    pts = (region or {}).get("points")
+    if pts and len(pts) >= 3:
+        xs = [float(p[0]) for p in pts]
+        ys = [float(p[1]) for p in pts]
+        x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+        cy = y0 + (y1 - y0) * 0.30  # a traced outline starts at the hairline
+    elif (region or {}).get("w") and region.get("h"):
+        x0, y0 = float(region["x"]), float(region["y"])
+        x1, y1 = x0 + float(region["w"]), y0 + float(region["h"])
+        cy = y0 + (y1 - y0) * 0.05  # a detected box starts at the brows
+    else:
+        return None
+    w, h = (x1 - x0) / 100 * W, (y1 - y0) / 100 * H
+    return {"x": (x0 + x1) / 200 * W, "y": cy / 100 * H, "rx": w * 0.14, "ry": h * 0.09}
+
+
+def _subtract_spots(mask, spots, scale: float):
+    """Punch soft-edged ellipses out of the mask, so the template shows there."""
     from PIL import ImageChops
 
-    point = forehead_spot(swapped)
-    if not point:
-        return mask
-    scale = settings.forehead_patch
-    rx = max(4.0, point["rx"] * scale)
-    ry = max(4.0, point["ry"] * scale)
     patch = Image.new("L", mask.size, 0)
-    ImageDraw.Draw(patch).ellipse(
-        [point["x"] - rx, point["y"] - ry, point["x"] + rx, point["y"] + ry], fill=255
-    )
-    patch = patch.filter(ImageFilter.GaussianBlur(radius=max(2.0, rx * 0.35)))
+    draw = ImageDraw.Draw(patch)
+    biggest = 4.0
+    for point in spots:
+        if not point:
+            continue
+        rx = max(4.0, point["rx"] * scale)
+        ry = max(4.0, point["ry"] * scale)
+        biggest = max(biggest, rx)
+        draw.ellipse(
+            [point["x"] - rx, point["y"] - ry, point["x"] + rx, point["y"] + ry], fill=255
+        )
+    patch = patch.filter(ImageFilter.GaussianBlur(radius=max(2.0, biggest * 0.3)))
     return ImageChops.subtract(mask, patch)
 
 
@@ -509,8 +574,10 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
     """
     from .color import open_srgb
 
-    tmpl = open_srgb(_image_bytes(template_src))
+    tmpl_bytes = _image_bytes(template_src)
+    tmpl = open_srgb(tmpl_bytes)
     swp = open_srgb(swapped)
+    swapped_size = swp.size
     if swp.size != tmpl.size:
         swp = swp.resize(tmpl.size)
     cw, ch = tmpl.size
@@ -568,9 +635,19 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
     # bindi on the page. The patch carries its own soft edge instead.
     if settings.forehead_patch > 0:
         try:
-            mask = _keep_template_forehead(mask, swapped)
+            mask = _keep_template_forehead(
+                mask, swapped, swapped_size, tmpl_bytes, region
+            )
         except Exception as e:  # noqa: BLE001 -- never worth a failed page
             print(f"[retouch] forehead patch skipped: {e}", flush=True)
+    # The swapper's ears are never used: it redraws them and decorates them (an
+    # earring stud on a boy who has none). Take the artwork's; the skin match
+    # below recolours them to the child's tone.
+    if settings.keep_artwork_ears:
+        try:
+            mask = _keep_template_ears(mask, swapped, swapped_size, tmpl_bytes)
+        except Exception as e:  # noqa: BLE001
+            print(f"[retouch] ear patch skipped: {e}", flush=True)
 
     if settings.keep_artwork_hair:
         mask = _keep_artwork_hair(tmpl, mask)

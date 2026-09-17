@@ -167,6 +167,18 @@ async def _render_one(
             from .face_detect import detect_face_region_for
 
             face_region = detect_face_region_for(base_image_url)
+            if face_region is None and base_image_url:
+                # The cascades miss some drawn faces. Without a region the whole
+                # swapped head goes on the page, with whatever the swapper added
+                # to it -- a bindi, an earring. The landmark mesh finds faces the
+                # cascades don't.
+                try:
+                    from .face_landmarks import face_box
+                    from .generation_engine import _image_bytes
+
+                    face_region = face_box(_image_bytes(base_image_url))
+                except Exception as e:  # noqa: BLE001
+                    print(f"[face-detect] landmark fallback skipped: {e}", flush=True)
 
     image_url = await render_page(
         scene_prompt=scene,
