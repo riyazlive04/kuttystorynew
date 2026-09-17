@@ -17,6 +17,7 @@ import {
   type AdminFont,
   type AdminPage,
   type AdminStory,
+  type AutoTraceRun,
   type TextBlock,
   type TextBox,
   type Variant,
@@ -354,6 +355,65 @@ export default function AdminPagesEditor() {
   const [autoTracing, setAutoTracing] = useState(false);
   const [autoTraceMsg, setAutoTraceMsg] = useState<string | null>(null);
 
+  // The run lives on the server (a book is many minutes of SAM3), so this
+  // only starts it and then follows it. Also picks up a run that was already
+  // going when the editor was opened or reloaded.
+  function describeRun(run: AutoTraceRun): string {
+    if (run.state === "running") {
+      if (run.total == null) return "Starting SAM3…";
+      if (run.total === 0) return "Nothing to trace.";
+      return `Tracing page ${run.current ?? "…"} (${(run.done ?? 0) + 1} of ${run.total}) — 2–5 min a page. You can leave this page; it keeps running.`;
+    }
+    if (run.state === "failed") return `Auto-trace stopped: ${run.error ?? "unknown error"}`;
+    const failed = (run.pages ?? []).filter((p) => p.status === "failed");
+    const noArt = (run.pages ?? []).filter((p) => p.status === "no base art");
+    return (
+      `Traced ${run.traced ?? 0} page${run.traced === 1 ? "" : "s"}` +
+      (failed.length
+        ? ` · ${failed.length} failed (p${failed[0].pageNumber}: ${failed[0].detail ?? "unknown"})`
+        : "") +
+      (noArt.length && !run.traced && !failed.length
+        ? " · this page has no saved base art yet — save the page first"
+        : "")
+    );
+  }
+
+  async function followRun() {
+    setAutoTracing(true);
+    try {
+      for (;;) {
+        const run = await adminApi.autoTraceStatus(slug, variant);
+        if (run.state === "idle") break;
+        setAutoTraceMsg(describeRun(run));
+        if (run.state !== "running") {
+          // Re-read: the outlines now live on the server, not in local state.
+          setPages(await adminApi.pages(slug, variant));
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+    } catch (e) {
+      setAutoTraceMsg(e instanceof Error ? e.message : "Auto-trace failed");
+    } finally {
+      setAutoTracing(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!slug) return;
+    let cancelled = false;
+    adminApi
+      .autoTraceStatus(slug, variant)
+      .then((run) => {
+        if (!cancelled && run.state === "running") followRun();
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, variant]);
+
   async function autoTrace(scope: "page" | "book") {
     if (autoTracing || !page) return;
     const pages = scope === "page" ? [page.pageNumber] : undefined;
@@ -361,35 +421,28 @@ export default function AdminPagesEditor() {
     if (
       !confirm(
         scope === "page"
-          ? `Trace this page's face with SAM3?\n\nTakes 2-5 minutes and costs ${cost} in Segmind credits.`
-          : `Trace every untraced page in this ${variant} book?\n\nEach page takes 2-5 minutes and costs ${cost}. Pages that already have an outline are skipped.`,
+          ? `Trace this page's face with SAM3?
+
+Takes 2-5 minutes and costs ${cost} in Segmind credits.`
+          : `Trace every untraced page in this ${variant} book?
+
+Each page takes 2-5 minutes and costs ${cost}. Pages that already have an outline are skipped.`,
       )
     )
       return;
 
-    setAutoTracing(true);
-    setAutoTraceMsg("Tracing… this takes a few minutes per page.");
+    setAutoTraceMsg("Starting SAM3…");
     try {
-      const res = await adminApi.autoTraceFaces(slug, {
+      await adminApi.autoTraceFaces(slug, {
         variant,
         pageNumbers: pages,
         overwrite: scope === "page",
       });
-      const failed = res.pages.filter((p) => p.status === "failed");
-      setAutoTraceMsg(
-        `Traced ${res.traced} page${res.traced === 1 ? "" : "s"}` +
-          (failed.length
-            ? ` · ${failed.length} failed (${failed[0].detail ?? "unknown"})`
-            : ""),
-      );
-      // Re-read: the outlines now live on the server, not in local state.
-      const fresh = await adminApi.pages(slug, variant);
-      setPages(fresh);
     } catch (e) {
       setAutoTraceMsg(e instanceof Error ? e.message : "Auto-trace failed");
-    } finally {
-      setAutoTracing(false);
+      return;
     }
+    await followRun();
   }
   const [livePath, setLivePath] = useState<number[][]>([]);
   const r1 = (n: number) => Math.round(n * 10) / 10;

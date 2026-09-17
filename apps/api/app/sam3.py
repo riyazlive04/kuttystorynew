@@ -14,6 +14,7 @@ fixable in the editor rather than discovered in a customer's book.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 from typing import Optional
 
@@ -91,7 +92,10 @@ async def trace_face(
         return {"error": "SEGMIND_API_KEY not set"}
 
     try:
-        image_b64 = base64.b64encode(_image_bytes(image_src)).decode()
+        # A sync read (and, for a remote plate, a sync HTTP fetch) — off the
+        # event loop, so a trace doesn't stall every other request.
+        raw = await asyncio.to_thread(_image_bytes, image_src)
+        image_b64 = base64.b64encode(raw).decode()
     except Exception as e:  # noqa: BLE001
         return {"error": f"could not read the plate: {e}"}
 
@@ -118,7 +122,11 @@ async def trace_face(
     except Exception as e:  # noqa: BLE001
         return {"error": f"SAM3 call failed: {e}"}
 
-    points = _mask_to_points(mask_bytes)
+    try:
+        points = _mask_to_points(mask_bytes)
+    except Exception as e:  # noqa: BLE001 -- e.g. OpenCV failing to import
+        return {"error": f"could not read the mask: {type(e).__name__}: {e}"[:300],
+                "credits": credits}
     if not points:
         return {"error": "no usable face mask came back", "credits": credits}
 

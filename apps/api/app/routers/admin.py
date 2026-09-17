@@ -691,17 +691,89 @@ class AutoTraceIn(BaseModel):
     overwrite: bool = False                  # re-trace pages that already have one
 
 
+# One SAM3 run per story+variant, held in this process. A trace takes 2-5
+# minutes a page and a book is many pages, so it cannot live inside one HTTP
+# request: the host nginx gives up at 300s, and the admin saw "Request failed".
+# The request now starts the run and returns; the editor polls the status.
+# The API runs a single uvicorn process, so a module dict is the whole registry.
+_TRACE_RUNS: dict[str, dict] = {}
+_TRACE_TASKS: dict[str, "asyncio.Task"] = {}
+
+
+def _trace_key(slug: str, variant: str) -> str:
+    return f"{slug}:{variant}"
+
+
+async def _run_autotrace(key: str, story_id: str, variant: str, body: AutoTraceIn):
+    from datetime import datetime, timezone
+
+    from ..sam3 import trace_face
+
+    run = _TRACE_RUNS[key]
+    try:
+        pages = await prisma.pagetemplate.find_many(
+            where={"bookTemplateId": story_id, "variant": variant},
+            order={"pageNumber": "asc"},
+        )
+        todo = []
+        for page in pages:
+            if body.pageNumbers is not None and page.pageNumber not in body.pageNumbers:
+                continue
+            if not (page.baseImageUrl or "").strip():
+                run["pages"].append({"pageNumber": page.pageNumber, "status": "no base art"})
+                continue
+            existing = getattr(page, "facePath", None)
+            if existing and len(existing) >= 3 and not body.overwrite:
+                run["pages"].append({"pageNumber": page.pageNumber, "status": "already traced"})
+                continue
+            todo.append(page)
+        run["total"] = len(todo)
+
+        for page in todo:
+            run["current"] = page.pageNumber
+            # One bad plate is reported, never allowed to end the whole run.
+            try:
+                traced = await trace_face(page.baseImageUrl, variant=variant)
+                if traced.get("error"):
+                    entry = {"pageNumber": page.pageNumber, "status": "failed",
+                             "detail": traced["error"]}
+                else:
+                    await prisma.pagetemplate.update(
+                        where={"id": page.id},
+                        data={"facePath": Json(traced["points"])},
+                    )
+                    run["traced"] += 1
+                    entry = {"pageNumber": page.pageNumber, "status": "traced",
+                             "points": len(traced["points"]),
+                             "creditsLeft": traced.get("credits")}
+            except Exception as e:  # noqa: BLE001
+                entry = {"pageNumber": page.pageNumber, "status": "failed",
+                         "detail": f"{type(e).__name__}: {e}"[:300]}
+            run["pages"].append(entry)
+            run["done"] += 1
+        run["state"] = "done"
+    except Exception as e:  # noqa: BLE001
+        run["state"] = "failed"
+        run["error"] = f"{type(e).__name__}: {e}"[:300]
+    finally:
+        run["current"] = None
+        run["finishedAt"] = datetime.now(timezone.utc).isoformat()
+        _TRACE_TASKS.pop(key, None)
+
+
 @router.post("/stories/{slug}/autotrace", dependencies=[Depends(require_admin)])
 async def admin_autotrace_faces(slug: str, body: AutoTraceIn):
-    """Trace face outlines with SAM3 and store them as ordinary facePaths.
+    """Start tracing face outlines with SAM3; returns the run's status at once.
 
     Deliberately sequential and deliberately slow: each page is a ~150-280s
-    Segmind call costing real credits, so this reports what it did per page
+    Segmind call costing real credits, so the run reports what it did per page
     rather than failing the batch on one bad plate. Existing outlines are left
     alone unless `overwrite` is set — a hand-traced one is better than anything
-    here and must never be silently replaced.
+    here and must never be silently replaced. Poll GET .../autotrace for progress.
     """
-    from ..sam3 import sam3_enabled, trace_face
+    from datetime import datetime, timezone
+
+    from ..sam3 import sam3_enabled
 
     if not sam3_enabled():
         raise HTTPException(status_code=400, detail="SAM3 auto-tracing is turned off")
@@ -711,44 +783,37 @@ async def admin_autotrace_faces(slug: str, body: AutoTraceIn):
         raise HTTPException(status_code=404, detail="Story not found")
 
     variant = normalize_variant(body.variant)
-    pages = await prisma.pagetemplate.find_many(
-        where={"bookTemplateId": story.id, "variant": variant},
-        order={"pageNumber": "asc"},
+    key = _trace_key(slug, variant)
+    if key in _TRACE_TASKS:
+        # Never start a second paid run over the first.
+        raise HTTPException(
+            status_code=409,
+            detail="A trace is already running for this book — wait for it to finish.",
+        )
+
+    _TRACE_RUNS[key] = {
+        "variant": variant,
+        "state": "running",
+        "total": None,
+        "done": 0,
+        "traced": 0,
+        "current": None,
+        "pages": [],
+        "error": None,
+        "startedAt": datetime.now(timezone.utc).isoformat(),
+        "finishedAt": None,
+    }
+    _TRACE_TASKS[key] = asyncio.create_task(
+        _run_autotrace(key, story.id, variant, body)
     )
+    return _TRACE_RUNS[key]
 
-    results = []
-    for page in pages:
-        if body.pageNumbers is not None and page.pageNumber not in body.pageNumbers:
-            continue
-        if not (page.baseImageUrl or "").strip():
-            results.append({"pageNumber": page.pageNumber, "status": "no base art"})
-            continue
-        existing = getattr(page, "facePath", None)
-        if existing and len(existing) >= 3 and not body.overwrite:
-            results.append({"pageNumber": page.pageNumber, "status": "already traced"})
-            continue
 
-        traced = await trace_face(page.baseImageUrl, variant=variant)
-        if traced.get("error"):
-            results.append(
-                {"pageNumber": page.pageNumber, "status": "failed", "detail": traced["error"]}
-            )
-            continue
-
-        await prisma.pagetemplate.update(
-            where={"id": page.id}, data={"facePath": Json(traced["points"])}
-        )
-        results.append(
-            {
-                "pageNumber": page.pageNumber,
-                "status": "traced",
-                "points": len(traced["points"]),
-                "creditsLeft": traced.get("credits"),
-            }
-        )
-
-    traced_count = sum(1 for r in results if r["status"] == "traced")
-    return {"variant": variant, "traced": traced_count, "pages": results}
+@router.get("/stories/{slug}/autotrace", dependencies=[Depends(require_admin)])
+async def admin_autotrace_status(slug: str, variant: str = "boy"):
+    """Progress of the latest SAM3 run for this book, or state "idle"."""
+    key = _trace_key(slug, normalize_variant(variant))
+    return _TRACE_RUNS.get(key) or {"variant": normalize_variant(variant), "state": "idle"}
 
 
 @router.get("/stories/{slug}/pages", dependencies=[Depends(require_admin)])

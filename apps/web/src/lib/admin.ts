@@ -239,10 +239,15 @@ export interface AdminFont {
   custom?: boolean; // admin-installed, living on the storage volume
 }
 
-export interface AutoTraceResult {
+export interface AutoTraceRun {
   variant: string;
-  traced: number;
-  pages: {
+  state: "idle" | "running" | "done" | "failed";
+  total?: number | null; // pages to trace; null until the run has listed them
+  done?: number;
+  traced?: number;
+  current?: number | null; // page number being traced right now
+  error?: string | null;
+  pages?: {
     pageNumber: number;
     status: "traced" | "failed" | "already traced" | "no base art";
     points?: number;
@@ -293,11 +298,12 @@ export const adminApi = {
       method: "DELETE",
     }),
   /**
-   * Trace face outlines with SAM3 and store them as ordinary facePaths.
+   * START tracing face outlines with SAM3; returns immediately. Poll
+   * autoTraceStatus for progress.
    *
    * SLOW and PAID: ~150-280s and ~0.38 Segmind credits per page, run
-   * sequentially. Pages that already have an outline are skipped unless
-   * `overwrite` is set — a hand-traced outline beats a generated one.
+   * sequentially on the server. Pages that already have an outline are skipped
+   * unless `overwrite` is set — a hand-traced outline beats a generated one.
    */
   autoTraceFaces: (
     slug: string,
@@ -306,11 +312,13 @@ export const adminApi = {
       pageNumbers?: number[];
       overwrite?: boolean;
     },
-  ): Promise<AutoTraceResult> =>
+  ): Promise<AutoTraceRun> =>
     req(`/admin/stories/${slug}/autotrace`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  autoTraceStatus: (slug: string, variant: "boy" | "girl"): Promise<AutoTraceRun> =>
+    req(`/admin/stories/${slug}/autotrace?variant=${variant}`),
   fonts: (): Promise<AdminFont[]> => req("/admin/fonts"),
   // Compose the page's text over its base art with the REAL renderer and hand
   // back a JPEG object URL — no CSS approximation, no AI cost.
