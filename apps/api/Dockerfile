@@ -28,6 +28,13 @@ ENV PRISMA_USE_GLOBAL_NODE=true
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
+# mediapipe drags in opencv-contrib-python (the desktop GUI build), which
+# overwrites the headless cv2 and then fails to import without libxcb/libGL.
+# Leave only the headless build: mediapipe's cv2 use is covered by it.
+RUN pip uninstall -y opencv-contrib-python opencv-python-headless \
+    && pip install --no-deps opencv-python-headless==4.10.0.84 \
+    && python -c "import cv2, mediapipe"
+
 COPY . .
 
 # Fetch the Prisma query engine + generate the Python client at build time.
