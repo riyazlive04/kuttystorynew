@@ -575,6 +575,12 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
     if settings.keep_artwork_hair:
         mask = _keep_artwork_hair(tmpl, mask)
     out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
+    # The artwork's ears and neck stay the illustrated child's skin tone; move
+    # them to the swapped face's, or the face reads as a mask on a pale head.
+    if settings.match_surrounding_skin:
+        from .skin_tone import match_surrounding_skin
+
+        out = match_surrounding_skin(tmpl, out, mask)
     buf = io.BytesIO()
     out.save(buf, format="JPEG", quality=95)
     return buf.getvalue()

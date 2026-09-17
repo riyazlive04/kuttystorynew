@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     # is what makes strands run in conflicting directions along the hairline.
     # A kill switch, not a dial: 0 blending of hair is the correct amount.
     keep_artwork_hair: bool = True
+    # Recolour the artwork's ears and neck to the swapped face's skin tone, so a
+    # warmer-skinned child doesn't get a tanned face on pale ears. Kill switch.
+    match_surrounding_skin: bool = True
     # Hosted Replicate face-swap model (used when faceswap_provider=replicate).
     # Known input schemas are auto-mapped:
     #   fofr/face-swap-with-ideogram -> target_image + character_image + prompt

@@ -99,4 +99,12 @@ def merge_face(
     out = base.convert("RGB")
     aligned = swapped.convert("RGB").resize((bw, bh), Image.LANCZOS)
     out.paste(aligned, (0, 0), mask)
+    # The feather reaches the ears, so it would blend the full-resolution base's
+    # untouched ears back over the recoloured ones. Match them here as well.
+    from .config import settings
+
+    if settings.match_surrounding_skin:
+        from .skin_tone import match_surrounding_skin
+
+        out = match_surrounding_skin(base.convert("RGB"), out, mask)
     return out
