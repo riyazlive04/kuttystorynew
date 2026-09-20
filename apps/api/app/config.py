@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     admin_test_promo_code: str = ""
     admin_test_promo_total: int = 5
 
+    # Public site origin, for links and images in emails and on the invoice.
+    # Falls back to the first CORS origin, which is the site in every deploy.
+    site_url: str = ""
+    # Seller details on the invoice. Newlines in the address are line breaks.
+    invoice_business_name: str = "Kutty Story"
+    invoice_address: str = "No.6, Kajamalai,\nTrichy - 620023,\nTamilnadu."
+    invoice_phone: str = "9003169615"
+
     # Customer email via Resend. Blank key = no emails are sent. The `from`
     # domain must be verified in the Resend dashboard.
     resend_api_key: str = ""
@@ -203,6 +211,13 @@ class Settings(BaseSettings):
     @property
     def cors_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def public_site_url(self) -> str:
+        if self.site_url.strip():
+            return self.site_url.strip().rstrip("/")
+        origins = self.cors_origin_list
+        return origins[0].rstrip("/") if origins else "http://localhost:3000"
 
     @property
     def payments_live(self) -> bool:

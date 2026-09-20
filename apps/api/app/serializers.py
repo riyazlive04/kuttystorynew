@@ -115,7 +115,13 @@ def job_dict(j) -> dict:
     }
 
 
+def _iso(dt):
+    return dt.isoformat() if dt else None
+
+
 def order_dict(o) -> dict:
+    from .invoice import order_number
+
     return {
         "id": o.id,
         "status": o.status,
@@ -149,5 +155,15 @@ def order_dict(o) -> dict:
         "promoCode": o.promoCode,
         "shipping": o.shipping,
         "total": o.total,
+        "orderNo": getattr(o, "orderNo", None),
+        "orderNumber": order_number(o),
+        "invoiceNo": getattr(o, "invoiceNo", None),
+        "invoicedAt": _iso(getattr(o, "invoicedAt", None)),
+        "tracking": {
+            "courier": getattr(o, "courier", None),
+            "number": getattr(o, "trackingNumber", None),
+            "url": getattr(o, "trackingUrl", None),
+            "sentAt": _iso(getattr(o, "trackingSentAt", None)),
+        },
         "createdAt": o.createdAt.isoformat(),
     }

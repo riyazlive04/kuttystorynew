@@ -1,21 +1,32 @@
 "use client";
 
-import { CheckCircle2, Download, Lock, Package } from "lucide-react";
+import { BookOpen, CheckCircle2, Download, Gift, Lock } from "lucide-react";
 import { inr } from "@/lib/format";
 
-import { PDF_PRICE, PRINT_PRICE } from "@/lib/pricing";
+import {
+  FORMATS,
+  FORMAT_BLURBS,
+  FORMAT_LABELS,
+  PRICES,
+  type Format,
+} from "@/lib/pricing";
 
-// Re-exported so existing imports keep working; the numbers live in lib/pricing
-// because the cart store needs them too and must not import a component.
-export const PAYWALL_PDF = PDF_PRICE;
-export const PAYWALL_PRINT = PRINT_PRICE;
+const ICONS: Record<Format, typeof BookOpen> = {
+  pdf: Download,
+  staple: BookOpen,
+  print: Gift,
+};
+
+// The hardbound is the one we recommend, so it carries the badge and the solid
+// button; the other two are outlined.
+const FEATURED: Format = "print";
 
 export function Paywall({
   onSelect,
   paywallPage = 14,
   totalPages = 28,
 }: {
-  onSelect: (format: "pdf" | "print") => void;
+  onSelect: (format: Format) => void;
   paywallPage?: number;
   totalPages?: number;
 }) {
@@ -24,7 +35,7 @@ export function Paywall({
       {/* Blurred, non-bypassable backdrop over the locked page */}
       <div className="absolute inset-0 bg-white/40 backdrop-blur-xl" />
 
-      <div className="relative w-full max-w-lg rounded-3xl border-2 border-brand-borderAccent bg-white p-6 shadow-2xl md:p-8">
+      <div className="relative w-full max-w-3xl rounded-3xl border-2 border-brand-borderAccent bg-white p-6 shadow-2xl md:p-8">
         <div className="mb-5 text-center">
           <span className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-brand-gradient text-white">
             <Lock className="h-6 w-6" />
@@ -33,50 +44,50 @@ export function Paywall({
             You&apos;ve reached page {paywallPage} of {totalPages}
           </h2>
           <p className="mt-1 text-sm text-slate-mutedText">
-            Unlock the complete personalized book to keep reading and to download
-            or print it.
+            Choose your preferred format to unlock the complete personalized
+            book.
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          {/* PDF */}
-          <button
-            onClick={() => onSelect("pdf")}
-            className="group rounded-2xl border-2 border-slate-100 p-5 text-left transition hover:border-brand-primary"
-          >
-            <Download className="h-6 w-6 text-brand-primary" />
-            <h3 className="mt-3 font-bold text-slate-deep">Digital PDF</h3>
-            <p className="text-xs text-slate-mutedText">
-              High-res, instant download
-            </p>
-            <p className="mt-3 text-2xl font-extrabold text-gradient-brand">
-              {inr(PAYWALL_PDF)}
-            </p>
-            <span className="mt-3 inline-block w-full rounded-xl border-2 border-brand-primary py-2 text-center text-sm font-bold text-brand-primary transition group-hover:bg-brand-primary group-hover:text-white">
-              Choose PDF
-            </span>
-          </button>
-
-          {/* Print */}
-          <button
-            onClick={() => onSelect("print")}
-            className="group relative rounded-2xl border-2 border-brand-primary p-5 text-left shadow-glow transition"
-          >
-            <span className="absolute -top-3 right-4 rounded-full bg-brand-gradient px-2.5 py-0.5 text-[10px] font-bold uppercase text-white">
-              Most Loved
-            </span>
-            <Package className="h-6 w-6 text-brand-primary" />
-            <h3 className="mt-3 font-bold text-slate-deep">Hardcover Print</h3>
-            <p className="text-xs text-slate-mutedText">
-              Made in 4-7 days, shipped free
-            </p>
-            <p className="mt-3 text-2xl font-extrabold text-gradient-brand">
-              {inr(PAYWALL_PRINT)}
-            </p>
-            <span className="mt-3 inline-block w-full rounded-xl bg-brand-gradient py-2 text-center text-sm font-bold text-white">
-              Choose Print
-            </span>
-          </button>
+        <div className="grid gap-4 sm:grid-cols-3">
+          {FORMATS.map((f) => {
+            const Icon = ICONS[f];
+            const featured = f === FEATURED;
+            return (
+              <button
+                key={f}
+                onClick={() => onSelect(f)}
+                className={`group relative rounded-2xl border-2 p-5 text-left transition ${
+                  featured
+                    ? "border-brand-primary shadow-glow"
+                    : "border-slate-100 hover:border-brand-primary"
+                }`}
+              >
+                {featured && (
+                  <span className="absolute -top-3 right-4 rounded-full bg-brand-gradient px-2.5 py-0.5 text-[10px] font-bold uppercase text-white">
+                    Most Loved
+                  </span>
+                )}
+                <Icon className="h-6 w-6 text-brand-primary" />
+                <h3 className="mt-3 font-bold text-slate-deep">
+                  {FORMAT_LABELS[f]}
+                </h3>
+                <p className="text-xs text-slate-mutedText">{FORMAT_BLURBS[f]}</p>
+                <p className="mt-3 text-2xl font-extrabold text-gradient-brand">
+                  {inr(PRICES[f])}
+                </p>
+                <span
+                  className={`mt-3 inline-block w-full rounded-xl py-2 text-center text-sm font-bold transition ${
+                    featured
+                      ? "bg-brand-gradient text-white"
+                      : "border-2 border-brand-primary text-brand-primary group-hover:bg-brand-primary group-hover:text-white"
+                  }`}
+                >
+                  Choose {FORMAT_LABELS[f]}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         <ul className="mt-5 flex flex-wrap justify-center gap-x-5 gap-y-1 text-xs text-slate-mutedText">

@@ -2,7 +2,10 @@ export type CategoryTag = "LEARNING" | "IMAGINATION" | "ADVENTURE" | "BEDTIME";
 
 export type Language = "en" | "ta" | "bilingual";
 
-export type Format = "pdf" | "print";
+// The editions a customer can buy. Defined with the prices, so a new edition
+// is added in one place.
+import type { Format } from "./pricing";
+export type { Format };
 
 export interface Story {
   id: string;
@@ -116,8 +119,20 @@ export interface OrderInput {
   total: number;
 }
 
+export interface OrderTracking {
+  courier?: string | null;
+  number?: string | null;
+  url?: string | null;
+  sentAt?: string | null; // when the customer was emailed these details
+}
+
 export interface Order extends OrderInput {
   id: string;
   status: "pending" | "paid" | "in_production" | "shipped" | "delivered";
+  /** Human-facing order number, e.g. "KS-0096". */
+  orderNumber?: string;
+  invoiceNo?: string | null;
+  invoicedAt?: string | null;
+  tracking?: OrderTracking;
   createdAt: string;
 }

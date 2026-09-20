@@ -5,7 +5,7 @@ import Image from "next/image";
 import { ChevronLeft, ChevronRight, Loader2, Lock, Phone, RefreshCw } from "lucide-react";
 import type { PreviewPage } from "@/lib/types";
 import { inr } from "@/lib/format";
-import { PAYWALL_PDF, PAYWALL_PRINT } from "./Paywall";
+import { FORMAT_LABELS, PRICES, type Format } from "@/lib/pricing";
 
 /**
  * Digital flip-book (Diffrun-style). You can flip through EVERY page: the free
@@ -28,7 +28,7 @@ export function FlipBook({
   totalPages?: number;
   isLoggedIn?: boolean;
   onRequestLogin?: () => void;
-  onSelect: (format: "pdf" | "print") => void;
+  onSelect: (format: Format) => void;
   onRegenerate?: (pageNumber: number) => void;
   regeneratingPage?: number | null;
 }) {
@@ -141,18 +141,24 @@ export function FlipBook({
                     </span>
                     <span className="h-px flex-1 bg-slate-200" />
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid gap-2">
                     <button
                       onClick={() => onSelect("pdf")}
                       className="rounded-xl border-2 border-brand-primary/40 py-2 text-xs font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white"
                     >
-                      PDF {inr(PAYWALL_PDF)}
+                      {FORMAT_LABELS.pdf} {inr(PRICES.pdf)}
+                    </button>
+                    <button
+                      onClick={() => onSelect("staple")}
+                      className="rounded-xl border-2 border-brand-primary/40 py-2 text-xs font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white"
+                    >
+                      {FORMAT_LABELS.staple} {inr(PRICES.staple)}
                     </button>
                     <button
                       onClick={() => onSelect("print")}
                       className="rounded-xl bg-slate-800 py-2 text-xs font-bold text-white transition hover:bg-slate-900"
                     >
-                      Print {inr(PAYWALL_PRINT)}
+                      {FORMAT_LABELS.print} {inr(PRICES.print)}
                     </button>
                   </div>
                 </div>
@@ -161,18 +167,24 @@ export function FlipBook({
                   <p className="text-center text-sm font-semibold text-slate-deep">
                     Unlock all {total} personalized pages
                   </p>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="mt-3 grid gap-2">
                     <button
                       onClick={() => onSelect("pdf")}
                       className="rounded-xl border-2 border-brand-primary py-2 text-sm font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white"
                     >
-                      PDF {inr(PAYWALL_PDF)}
+                      {FORMAT_LABELS.pdf} {inr(PRICES.pdf)}
+                    </button>
+                    <button
+                      onClick={() => onSelect("staple")}
+                      className="rounded-xl border-2 border-brand-primary py-2 text-sm font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white"
+                    >
+                      {FORMAT_LABELS.staple} {inr(PRICES.staple)}
                     </button>
                     <button
                       onClick={() => onSelect("print")}
                       className="rounded-xl bg-brand-gradient py-2 text-sm font-bold text-white transition hover:opacity-90"
                     >
-                      Print {inr(PAYWALL_PRINT)}
+                      {FORMAT_LABELS.print} {inr(PRICES.print)}
                     </button>
                   </div>
                 </>

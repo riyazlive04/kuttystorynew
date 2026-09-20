@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Lock, ShieldCheck, Trash2 } from "lucide-react";
 import { useCart } from "@/lib/cart";
+import { isPrinted } from "@/lib/pricing";
 import { inr } from "@/lib/format";
 import { createOrder, verifyPayment } from "@/lib/api";
 import { INDIAN_STATES, INDIAN_UNION_TERRITORIES } from "@/lib/india";
@@ -57,7 +58,7 @@ export default function CheckoutPage() {
   }, [mounted, revalidatePromo]);
   if (!mounted) return <div className="container-x py-24" />;
 
-  const hasPhysical = items.some((i) => i.format === "print");
+  const hasPhysical = items.some((i) => isPrinted(i.format));
   const shipping = 0;
   const total = subtotal - discount + shipping;
 

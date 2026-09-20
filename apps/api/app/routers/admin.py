@@ -22,7 +22,11 @@ from pydantic import BaseModel, Field
 
 from ..config import settings
 from ..db import prisma
-from ..email_service import send_order_status_email
+from ..email_service import (
+    send_invoice_email,
+    send_order_status_email,
+    send_tracking_email,
+)
 from ..pages_layout import (
     FRONT_COVER,
     SPINE,
@@ -111,6 +115,96 @@ async def update_order_status(
     if existing.status != order.status:
         background.add_task(send_order_status_email, order)
     return order_dict(order)
+
+
+class TrackingIn(BaseModel):
+    courier: str = ""
+    trackingNumber: str = ""
+    trackingUrl: str = ""
+    notify: bool = True   # email the customer the details straight away
+    markShipped: bool = True  # tracking exists because it shipped
+
+
+@router.patch("/orders/{order_id}/tracking", dependencies=[Depends(require_admin)])
+async def update_order_tracking(order_id: str, body: TrackingIn):
+    """Save courier + tracking number and tell the customer.
+
+    The email is awaited, not backgrounded: the admin needs to know whether the
+    customer actually got the details, and it is one request to Resend.
+    """
+    existing = await prisma.order.find_unique(where={"id": order_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    data: dict = {
+        "courier": body.courier.strip() or None,
+        "trackingNumber": body.trackingNumber.strip() or None,
+        "trackingUrl": body.trackingUrl.strip() or None,
+    }
+    # Tracking without a number is nothing to send.
+    has_tracking = bool(data["trackingNumber"])
+    if has_tracking and body.markShipped and existing.status in ("paid", "in_production"):
+        data["status"] = "shipped"
+
+    notified = False
+    if has_tracking and body.notify:
+        order = await prisma.order.update(
+            where={"id": order_id}, data=data, include={"items": True}
+        )
+        notified = await send_tracking_email(order)
+        if notified:
+            from datetime import datetime, timezone
+
+            order = await prisma.order.update(
+                where={"id": order_id},
+                data={"trackingSentAt": datetime.now(timezone.utc)},
+                include={"items": True},
+            )
+    else:
+        order = await prisma.order.update(
+            where={"id": order_id}, data=data, include={"items": True}
+        )
+    return {**order_dict(order), "notified": notified}
+
+
+@router.post("/orders/{order_id}/invoice", dependencies=[Depends(require_admin)])
+async def send_order_invoice(order_id: str):
+    """Email the customer their invoice, issuing its number on the first send."""
+    order = await prisma.order.find_unique(
+        where={"id": order_id}, include={"items": True}
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if not order.customerEmail:
+        raise HTTPException(status_code=400, detail="This order has no email address")
+
+    from datetime import datetime, timezone
+
+    from ..invoice import invoice_prefix, next_invoice_number
+
+    issued = order.invoicedAt or datetime.now(timezone.utc)
+    # Sequence within the issue date: how many invoices that day already has.
+    issued_today = await prisma.order.count(
+        where={"invoiceNo": {"startsWith": invoice_prefix(issued)}}
+    )
+    inv_no = next_invoice_number(order, issued, issued_today)
+    sent = await send_invoice_email(order, inv_no)
+    if not sent:
+        # Nothing is stamped on a failure: an order showing an invoice number
+        # the customer never received reads as "already invoiced" in the list.
+        raise HTTPException(
+            status_code=502,
+            detail="Invoice not sent — check RESEND_API_KEY and the from-address domain.",
+        )
+    # Kept only now, and only once, so a re-send repeats the number the customer
+    # already has instead of issuing a new one.
+    if not order.invoiceNo:
+        order = await prisma.order.update(
+            where={"id": order_id},
+            data={"invoiceNo": inv_no, "invoicedAt": issued},
+            include={"items": True},
+        )
+    return {**order_dict(order), "sent": True}
 
 
 @router.delete("/orders/{order_id}", dependencies=[Depends(require_admin)])

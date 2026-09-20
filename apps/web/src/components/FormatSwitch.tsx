@@ -1,20 +1,19 @@
 "use client";
 
-import { BookOpen, FileDown } from "lucide-react";
+import { BookOpen, FileDown, Gift } from "lucide-react";
 import { inr } from "@/lib/format";
-import { PDF_PRICE, PRINT_PRICE } from "@/lib/pricing";
+import { FORMATS, FORMAT_LABELS, PRICES, type Format } from "@/lib/pricing";
 
-type Format = "pdf" | "print";
-
-const OPTIONS: { value: Format; label: string; price: number; Icon: typeof BookOpen }[] = [
-  { value: "pdf", label: "Instant PDF", price: PDF_PRICE, Icon: FileDown },
-  { value: "print", label: "Hardcover", price: PRINT_PRICE, Icon: BookOpen },
-];
+const ICONS: Record<Format, typeof BookOpen> = {
+  pdf: FileDown,
+  staple: BookOpen,
+  print: Gift,
+};
 
 /**
- * Switch a line between the digital and printed edition. Shown wherever an
- * order can still be changed — the cart and the checkout summary — because the
- * choice was previously locked in at the paywall with no way back.
+ * Switch a line between the three editions. Shown wherever an order can still
+ * be changed — the cart and the checkout summary — because the choice was
+ * previously locked in at the paywall with no way back.
  */
 export function FormatSwitch({
   value,
@@ -29,29 +28,32 @@ export function FormatSwitch({
     <div
       role="group"
       aria-label="Edition"
-      className="mt-2 inline-flex overflow-hidden rounded-xl border-2 border-brand-borderAccent"
+      className="mt-2 inline-flex flex-wrap overflow-hidden rounded-xl border-2 border-brand-borderAccent"
     >
-      {OPTIONS.map(({ value: v, label, price, Icon }) => (
-        <button
-          key={v}
-          type="button"
-          onClick={() => onChange(v)}
-          aria-pressed={value === v}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition ${
-            value === v
-              ? "bg-brand-primary text-white"
-              : "bg-white text-slate-mutedText hover:bg-brand-primary/5"
-          }`}
-        >
-          <Icon className="h-3.5 w-3.5" />
-          {label}
-          {!compact && (
-            <span className={value === v ? "opacity-90" : "text-slate-400"}>
-              {inr(price)}
-            </span>
-          )}
-        </button>
-      ))}
+      {FORMATS.map((v) => {
+        const Icon = ICONS[v];
+        return (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onChange(v)}
+            aria-pressed={value === v}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition ${
+              value === v
+                ? "bg-brand-primary text-white"
+                : "bg-white text-slate-mutedText hover:bg-brand-primary/5"
+            }`}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {FORMAT_LABELS[v]}
+            {!compact && (
+              <span className={value === v ? "opacity-90" : "text-slate-400"}>
+                {inr(PRICES[v])}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

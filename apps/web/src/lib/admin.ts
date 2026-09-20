@@ -265,6 +265,24 @@ export const adminApi = {
       method: "PATCH",
       body: JSON.stringify({ status, force }),
     }),
+  /** Save courier + tracking number; the API emails the customer when asked. */
+  setTracking: (
+    id: string,
+    body: {
+      courier: string;
+      trackingNumber: string;
+      trackingUrl?: string;
+      notify?: boolean;
+      markShipped?: boolean;
+    },
+  ): Promise<Order & { notified: boolean }> =>
+    req(`/admin/orders/${id}/tracking`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  /** Email the customer their invoice (numbered on the first send). */
+  sendInvoice: (id: string): Promise<Order & { sent: boolean }> =>
+    req(`/admin/orders/${id}/invoice`, { method: "POST" }),
   deleteOrder: (id: string): Promise<{ ok: boolean; id: string }> =>
     req(`/admin/orders/${id}`, { method: "DELETE" }),
   jobs: (

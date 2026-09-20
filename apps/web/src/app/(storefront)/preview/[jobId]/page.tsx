@@ -17,7 +17,7 @@ import { useCart } from "@/lib/cart";
 import { jobIdFromParam, languageLabel, inr } from "@/lib/format";
 import type { Format, Job } from "@/lib/types";
 import { FlipBook } from "@/components/FlipBook";
-import { PAYWALL_PDF, PAYWALL_PRINT } from "@/components/Paywall";
+import { FORMAT_EMOJI, FORMAT_LABELS, PRICES, priceFor } from "@/lib/pricing";
 import { useCustomerAuth, formatIndianPhone } from "@/lib/auth";
 import { PhoneLoginModal } from "@/components/PhoneLoginModal";
 
@@ -152,7 +152,7 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
       format,
       language: job.language,
       coverImage: renderedCover || story?.coverImage || job.pages[0]?.imageUrl || "",
-      unitPrice: format === "pdf" ? PAYWALL_PDF : PAYWALL_PRINT,
+      unitPrice: priceFor(format),
       quantity: 1,
     });
     router.push("/checkout");
@@ -200,16 +200,22 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
         <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
           <button
             onClick={() => handleSelect("pdf")}
-            className="inline-flex items-center gap-2 rounded-2xl bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-glow transition hover:brightness-105 active:scale-95"
+            className="inline-flex items-center gap-2 rounded-2xl border-2 border-slate-800 bg-white px-5 py-2.5 text-sm font-bold text-slate-800 transition hover:bg-slate-50 active:scale-95"
           >
             <Lock className="h-4 w-4" />
-            Pay to Download Copy ({inr(PAYWALL_PDF)})
+            {FORMAT_EMOJI.pdf} {FORMAT_LABELS.pdf} ({inr(PRICES.pdf)})
+          </button>
+          <button
+            onClick={() => handleSelect("staple")}
+            className="inline-flex items-center gap-2 rounded-2xl border-2 border-slate-800 bg-white px-5 py-2.5 text-sm font-bold text-slate-800 transition hover:bg-slate-50 active:scale-95"
+          >
+            {FORMAT_EMOJI.staple} {FORMAT_LABELS.staple} ({inr(PRICES.staple)})
           </button>
           <button
             onClick={() => handleSelect("print")}
-            className="inline-flex items-center gap-2 rounded-2xl border-2 border-slate-800 bg-white px-5 py-2.5 text-sm font-bold text-slate-800 transition hover:bg-slate-50 active:scale-95"
+            className="inline-flex items-center gap-2 rounded-2xl bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-glow transition hover:brightness-105 active:scale-95"
           >
-            Order Hardcover Print ({inr(PAYWALL_PRINT)})
+            {FORMAT_EMOJI.print} {FORMAT_LABELS.print} ({inr(PRICES.print)})
           </button>
         </div>
       </div>

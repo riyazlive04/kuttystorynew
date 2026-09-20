@@ -1,4 +1,5 @@
 import type { Story } from "./types";
+import { PRICES } from "./pricing";
 
 /**
  * Canonical origin for the storefront. Everything that has to emit an absolute
@@ -24,9 +25,10 @@ export const SITE_NAME = "KuttyStory";
 export const FACTS = {
   currency: "INR",
   /** Cheapest instant-download price in the catalogue, in rupees. */
-  fromPdfPrice: 749,
+  fromPdfPrice: PRICES.pdf,
   /** Cheapest printed hardcover price, in rupees. */
-  fromPrintPrice: 1299,
+  fromStaplePrice: PRICES.staple,
+  fromPrintPrice: PRICES.print,
   freePreviewPages: 3,
   productionDaysMin: 4,
   productionDaysMax: 7,
@@ -456,8 +458,9 @@ export function storyJsonLd(story: Story) {
       },
     ],
     offers: [
-      offer("Instant PDF download", story.pdfPrice, false),
-      offer("Premium printed hardcover", story.printPrice, true),
+      offer("Instant PDF download", PRICES.pdf, false),
+      offer("Staple bound printed book", PRICES.staple, true),
+      offer("Premium hardbound book", PRICES.print, true),
     ],
   };
 }

@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Download, Loader2, Package } from "lucide-react";
-import { bookPdfUrl, downloadFile, getOrder } from "@/lib/api";
+import { CheckCircle2, Download, FileText, Loader2, Package, Truck } from "lucide-react";
+import { bookPdfUrl, downloadFile, getOrder, invoiceUrl } from "@/lib/api";
 import { useCart } from "@/lib/cart";
 import { inr } from "@/lib/format";
-import { PAYWALL_PRINT } from "@/components/Paywall";
+import { PRICES, isPrinted } from "@/lib/pricing";
 import type { Order } from "@/lib/types";
 
 export default function OrderPage({
@@ -45,7 +45,7 @@ export default function OrderPage({
   }
 
   const hasPdf = order.items.some((i) => i.format === "pdf");
-  const hasPrint = order.items.some((i) => i.format === "print");
+  const hasPrint = order.items.some((i) => isPrinted(i.format));
   const jobId = order.items.find((i) => i.jobId)?.jobId || "";
   // Any item works as the source for the print upsell (same book/child).
   const src = order.items[0];
@@ -75,7 +75,7 @@ export default function OrderPage({
       format: "print",
       language: src.language,
       coverImage: src.coverImage,
-      unitPrice: PAYWALL_PRINT,
+      unitPrice: PRICES.print,
       quantity: 1,
     });
     router.push("/checkout");
@@ -118,6 +118,18 @@ export default function OrderPage({
         </div>
       </div>
 
+      <p className="mt-4 text-center text-sm">
+        <a
+          href={invoiceUrl(order.id)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 font-bold text-brand-primary hover:underline"
+        >
+          <FileText className="h-4 w-4" /> View invoice
+          {order.orderNumber ? ` (${order.orderNumber})` : ""}
+        </a>
+      </p>
+
       <p className="mt-6 text-center text-sm text-slate-mutedText">
         We&apos;re now generating all the personalized pages of your book. The
         full PDF becomes downloadable once it&apos;s ready (usually a couple of
@@ -150,7 +162,26 @@ export default function OrderPage({
           </div>
         )}
 
-        {hasPrint ? (
+        {hasPrint && order.tracking?.number ? (
+          <div className="card p-6 text-center">
+            <Truck className="mx-auto h-8 w-8 text-emerald-500" />
+            <h3 className="mt-3 font-bold text-slate-deep">On its way</h3>
+            <p className="mt-1 text-sm text-slate-mutedText">
+              {order.tracking.courier || "Courier"} &middot;{" "}
+              <span className="font-mono">{order.tracking.number}</span>
+            </p>
+            {order.tracking.url && (
+              <a
+                href={order.tracking.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-outline mt-4 inline-flex w-full items-center justify-center gap-2 !py-2.5 text-sm"
+              >
+                <Truck className="h-4 w-4" /> Track your parcel
+              </a>
+            )}
+          </div>
+        ) : hasPrint ? (
           <div className="card p-6 text-center">
             <Package className="mx-auto h-8 w-8 text-emerald-500" />
             <h3 className="mt-3 font-bold text-slate-deep">Print in production</h3>
@@ -175,7 +206,7 @@ export default function OrderPage({
               onClick={orderPrintedBook}
               className="btn-primary mt-4 inline-flex w-full items-center justify-center gap-2 !py-2.5 text-sm"
             >
-              <Package className="h-4 w-4" /> Order printed book · {inr(PAYWALL_PRINT)}
+              <Package className="h-4 w-4" /> Order printed book · {inr(PRICES.print)}
             </button>
           </div>
         )}

@@ -257,6 +257,11 @@ export function bookPdfUrl(jobId: string): string {
   return API ? `${API}/jobs/${jobId}/book.pdf` : "#";
 }
 
+/** The order's invoice as a web page — printable, and what the email links to. */
+export function invoiceUrl(orderId: string): string {
+  return API ? `${API}/orders/${orderId}/invoice` : "#";
+}
+
 /**
  * Reliably download a file cross-origin: fetch as a blob and trigger a save.
  * Avoids the `target="_blank"` + attachment quirk where the new tab opens blank

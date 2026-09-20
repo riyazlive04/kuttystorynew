@@ -187,6 +187,17 @@ model Order {
   razorpayOrderId   String?
   razorpayPaymentId String?
   pdfDownloadUrl    String?
+  // Human-facing order number (KS-0096). The id is a cuid -- unreadable on an
+  // invoice and impossible to quote over the phone.
+  orderNo           Int         @default(autoincrement())
+  // Invoice, issued once: the number must not change if it is sent twice.
+  invoiceNo         String?
+  invoicedAt        DateTime?
+  // Shipment tracking, entered by an admin.
+  courier           String?
+  trackingNumber    String?
+  trackingUrl       String?
+  trackingSentAt    DateTime?
   createdAt         DateTime    @default(now())
 
   items             OrderItem[]

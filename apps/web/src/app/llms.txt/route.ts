@@ -1,4 +1,5 @@
 import { getStories, STORY_REVALIDATE } from "@/lib/stories.server";
+import { PRICES } from "@/lib/pricing";
 import { GUIDES } from "@/lib/guides";
 import { ALL_FAQS } from "@/lib/faqs";
 import { FACTS, SITE_URL, WHATSAPP_URL, abs } from "@/lib/seo";
@@ -25,10 +26,10 @@ const rs = (n: number) => `Rs. ${n.toLocaleString("en-IN")}`;
 export async function GET() {
   const stories = await getStories();
   const fromPdf = stories.length
-    ? Math.min(...stories.map((s) => s.pdfPrice))
+    ? PRICES.pdf
     : FACTS.fromPdfPrice;
   const fromPrint = stories.length
-    ? Math.min(...stories.map((s) => s.printPrice))
+    ? PRICES.print
     : FACTS.fromPrintPrice;
 
   const lines: string[] = [
@@ -76,7 +77,7 @@ export async function GET() {
     "",
     ...stories.map(
       (s) =>
-        `- [${s.title}](${abs(`/stories/${s.slug}`)}): ${s.tagline} ${s.ageRange}, ${s.pages} pages. PDF ${rs(s.pdfPrice)}, hardcover ${rs(s.printPrice)}.`,
+        `- [${s.title}](${abs(`/stories/${s.slug}`)}): ${s.tagline} ${s.ageRange}, ${s.pages} pages. PDF ${rs(PRICES.pdf)}, staple bound ${rs(PRICES.staple)}, hardbound ${rs(PRICES.print)}.`,
     ),
     "",
     "## Guides",

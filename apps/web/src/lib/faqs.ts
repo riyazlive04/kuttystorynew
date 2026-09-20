@@ -30,7 +30,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: "How much does a personalized story book cost in India?",
-    a: "KuttyStory books start at Rs. 749 for the instant PDF and Rs. 1,299 for the premium printed hardcover, with free delivery anywhere in India. Prices vary a little by title and page count, and 2 or more books get 20% off with the code STORY20. Payment is in Indian Rupees through Razorpay - UPI, credit card, debit card or net banking.",
+    a: "Every KuttyStory book is Rs. 399 for the instant PDF, Rs. 799 for the staple bound printed book and Rs. 1,299 for the premium hardbound edition, with free delivery anywhere in India on both printed editions. 2 or more books get 20% off with the code STORY20. Payment is in Indian Rupees through Razorpay - UPI, credit card, debit card or net banking.",
   },
   {
     q: "What age are these books for?",

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PRICES } from "@/lib/pricing";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { StoryCard } from "@/components/StoryCard";
@@ -42,10 +43,10 @@ export default async function ReturnGiftsPage() {
   const stories = await getStories();
   const picks = stories.slice(0, 3);
   const fromPdf = stories.length
-    ? Math.min(...stories.map((s) => s.pdfPrice))
+    ? PRICES.pdf
     : FACTS.fromPdfPrice;
   const fromPrint = stories.length
-    ? Math.min(...stories.map((s) => s.printPrice))
+    ? PRICES.print
     : FACTS.fromPrintPrice;
 
   return (

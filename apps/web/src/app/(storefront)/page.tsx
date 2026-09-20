@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PRICES } from "@/lib/pricing";
 import Link from "next/link";
 import { Hero } from "@/components/Hero";
 import { LazyStoryGrid } from "@/components/LazyStoryGrid";
@@ -46,10 +47,10 @@ export default async function HomePage() {
   // rather than a hardcoded number, so a repriced title can never leave a stale
   // figure sitting in an indexed page or an AI answer.
   const fromPdf = stories.length
-    ? Math.min(...stories.map((s) => s.pdfPrice))
+    ? PRICES.pdf
     : FACTS.fromPdfPrice;
   const fromPrint = stories.length
-    ? Math.min(...stories.map((s) => s.printPrice))
+    ? PRICES.print
     : FACTS.fromPrintPrice;
 
   return (

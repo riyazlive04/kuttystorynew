@@ -2,7 +2,8 @@ from typing import Literal, Optional
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 Language = Literal["en", "ta", "bilingual"]
-Format = Literal["pdf", "print"]
+# The three editions the storefront sells. Prices live in app.pricing.
+Format = Literal["pdf", "staple", "print"]
 
 
 class PreviewPage(BaseModel):

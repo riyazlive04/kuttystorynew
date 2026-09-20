@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import HTMLResponse
 
 from ..db import prisma
 from ..promo import compute_discount
@@ -13,8 +14,16 @@ async def create_order(payload: OrderIn):
     if not payload.items:
         raise HTTPException(status_code=400, detail="Cart is empty")
 
-    # Recompute all money server-side — never trust client-sent amounts.
-    subtotal = sum(i.unitPrice * i.quantity for i in payload.items)
+    # Recompute all money server-side — never trust client-sent amounts. The
+    # line price comes from OUR list for the chosen edition: a cart posting
+    # {"format": "print", "unitPrice": 1} used to be billed as sent.
+    from ..pricing import price_for
+
+    try:
+        unit = {id(i): price_for(i.format) for i in payload.items}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    subtotal = sum(unit[id(i)] * i.quantity for i in payload.items)
     qty = sum(i.quantity for i in payload.items)
     discount, applied_code = compute_discount(payload.promoCode, subtotal, qty)
     shipping = 0
@@ -53,7 +62,7 @@ async def create_order(payload: OrderIn):
                         "format": i.format,
                         "language": i.language,
                         "coverImage": i.coverImage,
-                        "unitPrice": i.unitPrice,
+                        "unitPrice": unit[id(i)],
                         "quantity": i.quantity,
                     }
                     for i in payload.items
@@ -87,3 +96,21 @@ async def get_order(order_id: str):
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     return order_dict(order)
+
+
+@router.get("/{order_id}/invoice", response_class=HTMLResponse)
+async def order_invoice(order_id: str):
+    """The order's invoice as a web page — the link in the invoice email, and
+    what the customer prints or saves as a PDF from their browser.
+
+    Public like GET /orders/{id}: the id is an unguessable cuid, and the page
+    carries nothing the customer doesn't already see on their order.
+    """
+    order = await prisma.order.find_unique(
+        where={"id": order_id}, include={"items": True}
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    from ..invoice import render_invoice
+
+    return HTMLResponse(render_invoice(order))

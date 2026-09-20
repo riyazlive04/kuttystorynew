@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BookDown, Loader2, Trash2 } from "lucide-react";
+import { BookDown, FileText, Loader2, Send, Trash2, Truck } from "lucide-react";
 import { adminApi, ApiError, ORDER_STATUSES } from "@/lib/admin";
-import { bookPdfUrl, downloadFile } from "@/lib/api";
+import { bookPdfUrl, downloadFile, invoiceUrl } from "@/lib/api";
 import { inr } from "@/lib/format";
 import type { Order } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -14,6 +14,56 @@ export default function AdminOrders() {
   const [filter, setFilter] = useState<string>("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [invoicingId, setInvoicingId] = useState<string | null>(null);
+  // Tracking is edited inline, one order at a time.
+  const [trackingFor, setTrackingFor] = useState<string | null>(null);
+  const [track, setTrack] = useState({ courier: "", trackingNumber: "", trackingUrl: "" });
+  const [trackBusy, setTrackBusy] = useState(false);
+
+  function openTracking(o: Order) {
+    setTrackingFor(o.id);
+    setTrack({
+      courier: o.tracking?.courier || "",
+      trackingNumber: o.tracking?.number || "",
+      trackingUrl: o.tracking?.url || "",
+    });
+  }
+
+  async function saveTracking(id: string) {
+    if (!track.trackingNumber.trim()) {
+      alert("Enter the tracking number first.");
+      return;
+    }
+    setTrackBusy(true);
+    try {
+      const updated = await adminApi.setTracking(id, { ...track, notify: true });
+      setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
+      setTrackingFor(null);
+      alert(
+        updated.notified
+          ? "Tracking saved and emailed to the customer."
+          : "Tracking saved, but the email was not sent (check RESEND_API_KEY).",
+      );
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not save tracking");
+    } finally {
+      setTrackBusy(false);
+    }
+  }
+
+  async function sendInvoice(o: Order) {
+    if (!confirm(`Email the invoice for this order to ${o.customer.email}?`)) return;
+    setInvoicingId(o.id);
+    try {
+      const updated = await adminApi.sendInvoice(o.id);
+      setOrders((prev) => prev.map((x) => (x.id === o.id ? updated : x)));
+      alert(`Invoice ${updated.invoiceNo || ""} sent to ${o.customer.email}.`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Could not send the invoice");
+    } finally {
+      setInvoicingId(null);
+    }
+  }
 
   async function downloadBook(o: Order) {
     const jobId = o.items.find((i) => i.jobId)?.jobId;
@@ -110,7 +160,9 @@ export default function AdminOrders() {
             <div key={o.id} className="card p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="font-mono text-xs text-slate-400">{o.id}</p>
+                  <p className="font-mono text-xs text-slate-400">
+                    {o.orderNumber || o.id}
+                  </p>
                   <p className="font-bold text-slate-deep">{o.customer.name}</p>
                   <p className="text-sm text-slate-mutedText">
                     {o.customer.email} · {o.customer.phone}
@@ -177,6 +229,36 @@ export default function AdminOrders() {
                   )}
                   Book PDF
                 </button>
+                <a
+                  href={invoiceUrl(o.id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Open the invoice (print or save as PDF from your browser)"
+                  className="inline-flex items-center gap-1.5 rounded-lg border-2 border-brand-borderAccent px-2.5 py-1 text-xs font-bold text-slate-mutedText transition hover:border-brand-primary hover:text-brand-primary"
+                >
+                  <FileText className="h-3.5 w-3.5" /> Invoice
+                </a>
+                <button
+                  onClick={() => sendInvoice(o)}
+                  disabled={invoicingId === o.id}
+                  title="Email this invoice to the customer"
+                  className="inline-flex items-center gap-1.5 rounded-lg border-2 border-brand-primary px-2.5 py-1 text-xs font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white disabled:opacity-50"
+                >
+                  {invoicingId === o.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5" />
+                  )}
+                  {o.invoiceNo ? "Resend invoice" : "Send invoice"}
+                </button>
+                <button
+                  onClick={() => (trackingFor === o.id ? setTrackingFor(null) : openTracking(o))}
+                  title="Add or update courier tracking"
+                  className="inline-flex items-center gap-1.5 rounded-lg border-2 border-brand-borderAccent px-2.5 py-1 text-xs font-bold text-slate-mutedText transition hover:border-brand-primary hover:text-brand-primary"
+                >
+                  <Truck className="h-3.5 w-3.5" />
+                  {o.tracking?.number ? "Edit tracking" : "Add tracking"}
+                </button>
                 <button
                   onClick={() => removeOrder(o.id)}
                   disabled={savingId === o.id}
@@ -187,6 +269,61 @@ export default function AdminOrders() {
                   <Trash2 className="h-3.5 w-3.5" /> Delete
                 </button>
               </div>
+
+              {o.tracking?.number && trackingFor !== o.id && (
+                <p className="mt-3 text-xs text-slate-mutedText">
+                  <b className="text-slate-deep">{o.tracking.courier || "Courier"}</b>{" "}
+                  &middot; {o.tracking.number}
+                  {o.tracking.sentAt
+                    ? " \u00b7 emailed to the customer"
+                    : " \u00b7 not emailed yet"}
+                </p>
+              )}
+
+              {trackingFor === o.id && (
+                <div className="mt-3 rounded-xl border-2 border-dashed border-brand-borderAccent p-3">
+                  <p className="mb-2 text-xs text-slate-mutedText">
+                    Saving sends the customer an email with these details, and
+                    moves the order to <b>shipped</b>.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      value={track.courier}
+                      onChange={(e) => setTrack((t) => ({ ...t, courier: e.target.value }))}
+                      placeholder="Courier (e.g. DTDC)"
+                      className="w-40 rounded-lg border-2 border-brand-borderAccent px-2.5 py-1.5 text-xs outline-none focus:border-brand-primary"
+                    />
+                    <input
+                      value={track.trackingNumber}
+                      onChange={(e) =>
+                        setTrack((t) => ({ ...t, trackingNumber: e.target.value }))
+                      }
+                      placeholder="Tracking number"
+                      className="w-48 rounded-lg border-2 border-brand-borderAccent px-2.5 py-1.5 text-xs outline-none focus:border-brand-primary"
+                    />
+                    <input
+                      value={track.trackingUrl}
+                      onChange={(e) => setTrack((t) => ({ ...t, trackingUrl: e.target.value }))}
+                      placeholder="Tracking link (optional)"
+                      className="w-64 rounded-lg border-2 border-brand-borderAccent px-2.5 py-1.5 text-xs outline-none focus:border-brand-primary"
+                    />
+                    <button
+                      onClick={() => saveTracking(o.id)}
+                      disabled={trackBusy}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-brand-primary px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                    >
+                      {trackBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      Save &amp; notify
+                    </button>
+                    <button
+                      onClick={() => setTrackingFor(null)}
+                      className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-mutedText hover:text-slate-deep"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

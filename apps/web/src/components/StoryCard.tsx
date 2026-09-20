@@ -6,6 +6,7 @@ import { BookOpen, Sparkles, Star } from "lucide-react";
 import type { Story } from "@/lib/types";
 import { faceDemoFor } from "@/lib/faceDemo";
 import { FaceSwapDemo } from "@/components/FaceSwapDemo";
+import { PRICES } from "@/lib/pricing";
 import { inr } from "@/lib/format";
 import { webImage } from "@/lib/img";
 
@@ -140,19 +141,28 @@ export function StoryCard({
         <div className="mb-6 mt-auto flex items-center gap-3 border-t border-slate-50 pt-4 text-sm">
           <div className="flex flex-col">
             <span className="text-xs uppercase tracking-tight text-slate-400">
-              PDF Copy
+              PDF
             </span>
             <span className="text-base font-bold text-slate-700">
-              {inr(story.pdfPrice)}
+              {inr(PRICES.pdf)}
             </span>
           </div>
           <div className="h-8 w-px bg-slate-200" />
           <div className="flex flex-col">
             <span className="text-xs uppercase tracking-tight text-slate-400">
-              Premium Print
+              Staple
+            </span>
+            <span className="text-base font-bold text-slate-700">
+              {inr(PRICES.staple)}
+            </span>
+          </div>
+          <div className="h-8 w-px bg-slate-200" />
+          <div className="flex flex-col">
+            <span className="text-xs uppercase tracking-tight text-slate-400">
+              Hardbound
             </span>
             <span className="text-base font-bold text-slate-900">
-              {inr(story.printPrice)}
+              {inr(PRICES.print)}
             </span>
           </div>
         </div>

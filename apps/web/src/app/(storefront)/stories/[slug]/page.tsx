@@ -18,6 +18,7 @@ import {
   storyJsonLd,
   webPageJsonLd,
 } from "@/lib/seo";
+import { PRICES } from "@/lib/pricing";
 import { inr } from "@/lib/format";
 
 export const revalidate = STORY_REVALIDATE;
@@ -44,8 +45,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const title = `${story.title} - Personalised Book, ${story.ageRange}`;
   const description = `${story.tagline} ${story.ageRange}, personalised with your child's name and face on every page${
     story.supportsTamil ? ", in English or Tamil" : ""
-  }. Free preview first, then ${inr(story.pdfPrice)} for the instant PDF or ${inr(
-    story.printPrice,
+  }. Free preview first, then ${inr(PRICES.pdf)} for the instant PDF or ${inr(
+    PRICES.print,
   )} for the printed hardcover with free India delivery.`;
 
   const cover = socialImage(story.coverImage);
@@ -179,9 +180,11 @@ export default async function StoryDetailPage({ params }: Props) {
               </ul>
 
               <div className="mt-6 flex gap-4 rounded-2xl border-2 border-brand-borderAccent bg-brand-cream p-4 text-sm">
-                <PriceBadge label="PDF" price={inr(story.pdfPrice)} />
+                <PriceBadge label="PDF" price={inr(PRICES.pdf)} />
                 <div className="w-px bg-amber-200" />
-                <PriceBadge label="Premium Print" price={inr(story.printPrice)} />
+                <PriceBadge label="Staple bound" price={inr(PRICES.staple)} />
+                <div className="w-px bg-amber-200" />
+                <PriceBadge label="Hardbound" price={inr(PRICES.print)} />
               </div>
             </div>
           </div>
@@ -209,8 +212,9 @@ export default async function StoryDetailPage({ params }: Props) {
             ["Personalised with", "Your child's first name, face and character look, on every page"],
             ["Language", story.supportsTamil ? "English or Tamil" : "English"],
             ["Free preview", `Front cover and the first ${FACTS.freePreviewPages} pages, before payment`],
-            ["Instant PDF", `${inr(story.pdfPrice)}, downloadable minutes after payment`],
-            ["Printed hardcover", `${inr(story.printPrice)}, free delivery across India`],
+            ["Instant PDF", `${inr(PRICES.pdf)}, downloadable minutes after payment`],
+            ["Staple bound", `${inr(PRICES.staple)}, free delivery across India`],
+            ["Premium hardbound", `${inr(PRICES.print)}, free delivery across India`],
             [
               "Made and delivered in",
               `${FACTS.productionDaysMin}-${FACTS.productionDaysMax} days to produce, then 2-7 days in transit`,

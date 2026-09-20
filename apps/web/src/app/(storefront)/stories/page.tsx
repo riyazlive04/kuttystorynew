@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PRICES } from "@/lib/pricing";
 import Link from "next/link";
 import { StoryLibrary } from "@/components/StoryLibrary";
 import { Faq } from "@/components/Faq";
@@ -38,10 +39,10 @@ export default async function StoriesPage() {
   const stories = await getStories();
 
   const fromPdf = stories.length
-    ? Math.min(...stories.map((s) => s.pdfPrice))
+    ? PRICES.pdf
     : FACTS.fromPdfPrice;
   const fromPrint = stories.length
-    ? Math.min(...stories.map((s) => s.printPrice))
+    ? PRICES.print
     : FACTS.fromPrintPrice;
   const categories = Array.from(new Set(stories.map((s) => s.categoryTag)));
 
