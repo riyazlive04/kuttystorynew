@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import Script from "next/script";
+import { MetaPixel } from "@/components/MetaPixel";
 import { Fredoka, Nunito, Baloo_Thambi_2 } from "next/font/google";
 import "./globals.css";
 import {
@@ -117,6 +119,11 @@ export default function RootLayout({
             </noscript>
           </>
         )}
+        {/* Meta Pixel. In Suspense because it reads the query string, which
+            opts the whole tree out of static rendering otherwise. */}
+        <Suspense fallback={null}>
+          <MetaPixel />
+        </Suspense>
         {children}
       </body>
     </html>

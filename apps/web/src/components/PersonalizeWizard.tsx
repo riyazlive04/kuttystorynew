@@ -21,6 +21,7 @@ import { useStoryGender } from "@/components/StoryGender";
 import { coverFor } from "@/lib/covers";
 import type { Personalization, Story } from "@/lib/types";
 import { createJob, uploadPhoto } from "@/lib/api";
+import { track } from "@/lib/pixel";
 import type { PhotoQuality } from "@/lib/api";
 import { languageLabel, previewPath } from "@/lib/format";
 import { webImage } from "@/lib/img";
@@ -243,6 +244,12 @@ export function PersonalizeWizard({ story }: { story: Story }) {
     setSubmitting(true);
     try {
       const job = await createJob({ ...data, gender });
+      // The visitor has handed over a child's name, age and photo: a lead.
+      track("Lead", {
+        content_name: job.storyTitle,
+        content_ids: [job.storySlug],
+        content_category: "preview_created",
+      });
       router.push(previewPath(job.id, job.childName, job.storyTitle));
     } catch (e) {
       setSubmitting(false);

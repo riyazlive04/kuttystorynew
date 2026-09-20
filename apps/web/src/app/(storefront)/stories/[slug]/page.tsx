@@ -6,6 +6,7 @@ import { ArrowLeft, Check, Sparkles, Star } from "lucide-react";
 import { JsonLd } from "@/components/JsonLd";
 import { PersonalizeWizard } from "@/components/PersonalizeWizard";
 import { StoryGenderProvider } from "@/components/StoryGender";
+import { TrackViewContent } from "@/components/TrackViewContent";
 import { StoryHeroArt } from "@/components/StoryHeroArt";
 import { KeyFacts, RelatedLinks } from "@/components/Prose";
 import { getStories, getStoryBySlug, STORY_REVALIDATE } from "@/lib/stories.server";
@@ -119,6 +120,12 @@ export default async function StoryDetailPage({ params }: Props) {
 
       {/* The cover and the wizard's Boy/Girl picker share one choice, so a
           both-gender book shows the artwork the child will actually get. */}
+      <TrackViewContent
+        slug={story.slug}
+        title={story.title}
+        price={PRICES.pdf}
+        category={story.categoryTag}
+      />
       <StoryGenderProvider story={story}>
         <div className="grid gap-10 lg:grid-cols-2">
           {/* Left: story presentation */}

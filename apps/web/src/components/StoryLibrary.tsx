@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { track } from "@/lib/pixel";
 import { StoryCard } from "@/components/StoryCard";
 import { CATEGORIES } from "@/lib/data";
 import type { Story } from "@/lib/types";
@@ -43,6 +44,18 @@ export function StoryLibrary({ stories }: { stories: Story[] }) {
   });
 
   const hasActiveFilters = activeCategory !== "ALL" || activeAge !== "ALL";
+
+  // Which age and theme a visitor filters to is the strongest intent signal the
+  // catalogue page produces, and it is what audiences get built from ("parents
+  // of 4-5 year olds who looked at bedtime books").
+  useEffect(() => {
+    if (!hasActiveFilters) return;
+    track("Search", {
+      search_string: `age:${activeAge} category:${activeCategory}`,
+      content_category: activeCategory,
+      content_ids: filtered.slice(0, 10).map((s) => s.slug),
+    });
+  }, [activeAge, activeCategory]);
 
   return (
     <>

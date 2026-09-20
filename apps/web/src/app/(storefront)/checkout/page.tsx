@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Lock, ShieldCheck, Trash2 } from "lucide-react";
 import { useCart } from "@/lib/cart";
 import { isPrinted } from "@/lib/pricing";
+import { CURRENCY, contentsFrom, track } from "@/lib/pixel";
 import { inr } from "@/lib/format";
 import { createOrder, verifyPayment } from "@/lib/api";
 import { INDIAN_STATES, INDIAN_UNION_TERRITORIES } from "@/lib/india";
@@ -56,6 +57,19 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (mounted) revalidatePromo();
   }, [mounted, revalidatePromo]);
+
+  // Landing on the checkout with a cart IS the checkout being initiated: there
+  // is no earlier step between the paywall and this page.
+  useEffect(() => {
+    if (!mounted || items.length === 0) return;
+    track("InitiateCheckout", {
+      ...contentsFrom(items),
+      value: total,
+      currency: CURRENCY,
+    });
+    // Once per visit to the page, not on every promo/total recalculation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted]);
   if (!mounted) return <div className="container-x py-24" />;
 
   const hasPhysical = items.some((i) => isPrinted(i.format));
@@ -91,6 +105,12 @@ export default function CheckoutPage() {
         shipping,
         total,
       };
+      // Card/UPI details are about to be entered: the last step before money.
+      track("AddPaymentInfo", {
+        ...contentsFrom(items),
+        value: total,
+        currency: CURRENCY,
+      });
       const order = await createOrder(input);
 
       const payment = await payWithRazorpay({

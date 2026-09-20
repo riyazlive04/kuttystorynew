@@ -18,6 +18,7 @@ import { jobIdFromParam, languageLabel, inr } from "@/lib/format";
 import type { Format, Job } from "@/lib/types";
 import { FlipBook } from "@/components/FlipBook";
 import { FORMAT_EMOJI, FORMAT_LABELS, PRICES, priceFor } from "@/lib/pricing";
+import { CURRENCY, track } from "@/lib/pixel";
 import { useCustomerAuth, formatIndianPhone } from "@/lib/auth";
 import { PhoneLoginModal } from "@/components/PhoneLoginModal";
 
@@ -154,6 +155,17 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
       coverImage: renderedCover || story?.coverImage || job.pages[0]?.imageUrl || "",
       unitPrice: priceFor(format),
       quantity: 1,
+    });
+    track("AddToCart", {
+      content_type: "product",
+      content_ids: [job.storySlug],
+      content_name: job.storyTitle,
+      contents: [{ id: job.storySlug, quantity: 1, item_price: priceFor(format) }],
+      value: priceFor(format),
+      currency: CURRENCY,
+      // Which edition was picked — Meta can optimise toward the ones that
+      // actually convert, and the report shows the mix.
+      content_category: format,
     });
     router.push("/checkout");
   }

@@ -8,6 +8,7 @@ import { bookPdfUrl, downloadFile, getOrder, invoiceUrl } from "@/lib/api";
 import { useCart } from "@/lib/cart";
 import { inr } from "@/lib/format";
 import { PRICES, isPrinted } from "@/lib/pricing";
+import { CURRENCY, contentsFrom, trackOnce } from "@/lib/pixel";
 import type { Order } from "@/lib/types";
 
 export default function OrderPage({
@@ -24,6 +25,19 @@ export default function OrderPage({
   useEffect(() => {
     getOrder(id).then((o) => setOrder(o ?? null));
   }, [id]);
+
+  // The sale. Keyed on the order id so a refresh, a back-button, or the
+  // customer reopening the link months later never counts the revenue twice —
+  // Meta bids on this number, and a double count teaches it the wrong price.
+  useEffect(() => {
+    if (!order) return;
+    trackOnce(`purchase:${order.id}`, "Purchase", {
+      ...contentsFrom(order.items),
+      value: order.total,
+      currency: CURRENCY,
+      order_id: order.id,
+    });
+  }, [order]);
 
   if (order === undefined) {
     return (
