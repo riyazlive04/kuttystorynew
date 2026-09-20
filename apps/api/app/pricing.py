@@ -16,7 +16,7 @@ PRICES: dict[str, int] = {
 LABELS: dict[str, str] = {
     "pdf": "PDF Version",
     "staple": "Staple Bound",
-    "print": "Premium Hardbound",
+    "print": "Hard Cover",
 }
 
 # Editions that are printed and posted, so the order needs an address.

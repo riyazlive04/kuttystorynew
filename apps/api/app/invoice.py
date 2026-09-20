@@ -72,7 +72,7 @@ def _addr_lines(order) -> list[str]:
 FORMAT_LABELS = {
     "pdf": "PDF Version",
     "staple": "Staple Bound",
-    "print": "Premium Hardbound",
+    "print": "Hard Cover",
 }
 
 

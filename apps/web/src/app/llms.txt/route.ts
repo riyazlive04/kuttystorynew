@@ -77,7 +77,7 @@ export async function GET() {
     "",
     ...stories.map(
       (s) =>
-        `- [${s.title}](${abs(`/stories/${s.slug}`)}): ${s.tagline} ${s.ageRange}, ${s.pages} pages. PDF ${rs(PRICES.pdf)}, staple bound ${rs(PRICES.staple)}, hardbound ${rs(PRICES.print)}.`,
+        `- [${s.title}](${abs(`/stories/${s.slug}`)}): ${s.tagline} ${s.ageRange}, ${s.pages} pages. PDF ${rs(PRICES.pdf)}, staple bound ${rs(PRICES.staple)}, hard cover ${rs(PRICES.print)}.`,
     ),
     "",
     "## Guides",

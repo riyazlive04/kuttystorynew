@@ -20,14 +20,14 @@ export const PRICES: Record<Format, number> = {
 export const FORMAT_LABELS: Record<Format, string> = {
   pdf: "PDF Version",
   staple: "Staple Bound",
-  print: "Premium Hardbound",
+  print: "Hard Cover",
 };
 
 // The one-line promise under each option.
 export const FORMAT_BLURBS: Record<Format, string> = {
   pdf: "High-res download, ready in minutes",
   staple: "Softcover, stapled spine, shipped free",
-  print: "Premium hardbound keepsake, shipped free",
+  print: "Premium hard cover keepsake, shipped free",
 };
 
 export const FORMAT_EMOJI: Record<Format, string> = {

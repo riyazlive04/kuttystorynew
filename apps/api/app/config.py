@@ -216,7 +216,7 @@ class Settings(BaseSettings):
     def public_site_url(self) -> str:
         if self.site_url.strip():
             return self.site_url.strip().rstrip("/")
-        origins = self.cors_origin_list
+        origins = self.cors_list
         return origins[0].rstrip("/") if origins else "http://localhost:3000"
 
     @property

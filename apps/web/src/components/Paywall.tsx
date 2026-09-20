@@ -17,7 +17,7 @@ const ICONS: Record<Format, typeof BookOpen> = {
   print: Gift,
 };
 
-// The hardbound is the one we recommend, so it carries the badge and the solid
+// The hard cover is the one we recommend, so it carries the badge and the solid
 // button; the other two are outlined.
 const FEATURED: Format = "print";
 

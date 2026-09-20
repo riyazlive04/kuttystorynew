@@ -415,7 +415,7 @@ export const GUIDES: Guide[] = [
       },
       {
         q: "How much should a personalised story book cost in India?",
-        a: "Expect roughly 700 to 1,000 rupees for a digital edition and 1,300 to 2,800 rupees for a printed hardcover, depending on page count and print quality. KuttyStory books are 399 rupees for the instant PDF, 799 rupees for the staple bound printed book and 1,299 rupees for the premium hardbound edition, with delivery included anywhere in India.",
+        a: "Expect roughly 700 to 1,000 rupees for a digital edition and 1,300 to 2,800 rupees for a printed hardcover, depending on page count and print quality. KuttyStory books are 399 rupees for the instant PDF, 799 rupees for the staple bound printed book and 1,299 rupees for the premium hard cover edition, with delivery included anywhere in India.",
       },
       {
         q: "What is the difference between a name-personalised and a face-personalised book?",

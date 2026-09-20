@@ -150,7 +150,7 @@ export function StoryCard({
           <div className="h-8 w-px bg-slate-200" />
           <div className="flex flex-col">
             <span className="text-xs uppercase tracking-tight text-slate-400">
-              Staple
+              Staple Bound
             </span>
             <span className="text-base font-bold text-slate-700">
               {inr(PRICES.staple)}
@@ -159,7 +159,7 @@ export function StoryCard({
           <div className="h-8 w-px bg-slate-200" />
           <div className="flex flex-col">
             <span className="text-xs uppercase tracking-tight text-slate-400">
-              Hardbound
+              Hard Cover
             </span>
             <span className="text-base font-bold text-slate-900">
               {inr(PRICES.print)}

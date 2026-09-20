@@ -182,9 +182,9 @@ export default async function StoryDetailPage({ params }: Props) {
               <div className="mt-6 flex gap-4 rounded-2xl border-2 border-brand-borderAccent bg-brand-cream p-4 text-sm">
                 <PriceBadge label="PDF" price={inr(PRICES.pdf)} />
                 <div className="w-px bg-amber-200" />
-                <PriceBadge label="Staple bound" price={inr(PRICES.staple)} />
+                <PriceBadge label="Staple Bound" price={inr(PRICES.staple)} />
                 <div className="w-px bg-amber-200" />
-                <PriceBadge label="Hardbound" price={inr(PRICES.print)} />
+                <PriceBadge label="Hard Cover" price={inr(PRICES.print)} />
               </div>
             </div>
           </div>
@@ -214,7 +214,7 @@ export default async function StoryDetailPage({ params }: Props) {
             ["Free preview", `Front cover and the first ${FACTS.freePreviewPages} pages, before payment`],
             ["Instant PDF", `${inr(PRICES.pdf)}, downloadable minutes after payment`],
             ["Staple bound", `${inr(PRICES.staple)}, free delivery across India`],
-            ["Premium hardbound", `${inr(PRICES.print)}, free delivery across India`],
+            ["Hard cover", `${inr(PRICES.print)}, free delivery across India`],
             [
               "Made and delivered in",
               `${FACTS.productionDaysMin}-${FACTS.productionDaysMax} days to produce, then 2-7 days in transit`,

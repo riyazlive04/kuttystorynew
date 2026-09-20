@@ -44,15 +44,15 @@ const TIERS: {
   {
     format: "print",
     blurb:
-      "Our premium hardbound keepsake, made to order in 4-7 days and delivered free anywhere in India.",
+      "Our premium hard cover keepsake, made to order in 4-7 days and delivered free anywhere in India.",
     features: [
       "28 illustrated pages",
       "210mm × 210mm square format",
-      "Hardbound cover",
+      "Hard cover binding",
       "170gsm art paper",
       "Free shipping across India",
     ],
-    cta: "Order Hardbound",
+    cta: "Order Hard Cover",
     featured: true,
   },
 ];

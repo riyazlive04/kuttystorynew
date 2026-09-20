@@ -460,7 +460,7 @@ export function storyJsonLd(story: Story) {
     offers: [
       offer("Instant PDF download", PRICES.pdf, false),
       offer("Staple bound printed book", PRICES.staple, true),
-      offer("Premium hardbound book", PRICES.print, true),
+      offer("Premium hard cover book", PRICES.print, true),
     ],
   };
 }
