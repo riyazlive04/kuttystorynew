@@ -8,6 +8,12 @@ import { inr } from "@/lib/format";
 import type { Order } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
 
+// The couriers we actually ship with. "Other" opens a text box rather than
+// forcing an admin to pick a wrong one — and a new courier then needs no code
+// change to be recorded correctly.
+const COURIERS = ["TRACKON", "Delhivery", "Professional", "ST Courier"];
+const OTHER = "Other";
+
 export default function AdminOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,17 +25,31 @@ export default function AdminOrders() {
   const [trackingFor, setTrackingFor] = useState<string | null>(null);
   const [track, setTrack] = useState({ courier: "", trackingNumber: "", trackingUrl: "" });
   const [trackBusy, setTrackBusy] = useState(false);
+  // "" (not chosen yet), one of COURIERS, or OTHER.
+  const [courierChoice, setCourierChoice] = useState("");
 
   function openTracking(o: Order) {
+    const saved = o.tracking?.courier || "";
     setTrackingFor(o.id);
+    // A courier that isn't in the list was typed in as "Other" — reopen it that
+    // way instead of silently dropping it back to the first option.
+    setCourierChoice(!saved || COURIERS.includes(saved) ? saved : OTHER);
     setTrack({
-      courier: o.tracking?.courier || "",
+      courier: saved,
       trackingNumber: o.tracking?.number || "",
       trackingUrl: o.tracking?.url || "",
     });
   }
 
   async function saveTracking(id: string) {
+    if (!track.courier.trim()) {
+      alert(
+        courierChoice === OTHER
+          ? "Type the courier's name."
+          : "Choose a courier first.",
+      );
+      return;
+    }
     if (!track.trackingNumber.trim()) {
       alert("Enter the tracking number first.");
       return;
@@ -287,12 +307,36 @@ export default function AdminOrders() {
                     moves the order to <b>shipped</b>.
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    <input
-                      value={track.courier}
-                      onChange={(e) => setTrack((t) => ({ ...t, courier: e.target.value }))}
-                      placeholder="Courier (e.g. DTDC)"
-                      className="w-40 rounded-lg border-2 border-brand-borderAccent px-2.5 py-1.5 text-xs outline-none focus:border-brand-primary"
-                    />
+                    <select
+                      value={courierChoice}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setCourierChoice(v);
+                        // Picking a named courier IS the value; picking Other
+                        // clears it so the text box starts empty.
+                        setTrack((t) => ({ ...t, courier: v === OTHER ? "" : v }));
+                      }}
+                      className="w-40 rounded-lg border-2 border-brand-borderAccent bg-white px-2.5 py-1.5 text-xs outline-none focus:border-brand-primary"
+                    >
+                      <option value="">Select courier</option>
+                      {COURIERS.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                      <option value={OTHER}>{OTHER}</option>
+                    </select>
+                    {courierChoice === OTHER && (
+                      <input
+                        value={track.courier}
+                        onChange={(e) =>
+                          setTrack((t) => ({ ...t, courier: e.target.value }))
+                        }
+                        placeholder="Courier name"
+                        autoFocus
+                        className="w-40 rounded-lg border-2 border-brand-borderAccent px-2.5 py-1.5 text-xs outline-none focus:border-brand-primary"
+                      />
+                    )}
                     <input
                       value={track.trackingNumber}
                       onChange={(e) =>
