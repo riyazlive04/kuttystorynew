@@ -257,6 +257,14 @@ export function bookPdfUrl(jobId: string): string {
   return API ? `${API}/jobs/${jobId}/book.pdf` : "#";
 }
 
+/**
+ * The actual font file the text layer draws with, so the page editor can
+ * preview in it. Public: a @font-face request carries no auth header.
+ */
+export function fontFileUrl(key: string): string {
+  return API ? `${API}/fonts/${encodeURIComponent(key)}/file` : "";
+}
+
 /** The order's invoice as a web page — printable, and what the email links to. */
 export function invoiceUrl(orderId: string): string {
   return API ? `${API}/orders/${orderId}/invoice` : "#";

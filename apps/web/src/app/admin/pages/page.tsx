@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { BookOpen, ImagePlus, Loader2, Plus, Save, Sparkles, Trash2 } from "lucide-react";
 import ProviderCompare from "@/components/ProviderCompare";
+import { fontFileUrl } from "@/lib/api";
 import {
   adminApi,
   getToken,
@@ -28,6 +29,12 @@ import {
 const DESIGN_W = 1024;
 
 // Shown until GET /admin/fonts answers; keys match text_layer.FONT_FAMILIES.
+// One CSS family name per font key. Prefixed so it can never collide with a
+// font the admin's own machine happens to have installed under the same name.
+function previewFamily(key: string): string {
+  return `ks-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
 const FALLBACK_FONTS: AdminFont[] = [
   {
     key: "sans",
@@ -116,6 +123,20 @@ export default function AdminPagesEditor() {
   const [authoring, setAuthoring] = useState(false);
   const [faceOutlineOn, setFaceOutlineOn] = useState(true);
   const [fonts, setFonts] = useState<AdminFont[]>(FALLBACK_FONTS);
+  // The editor previews text in the SAME file the renderer draws with, loaded
+  // from the API as a web font. Previewing a CSS stack instead (Segoe UI for
+  // "Sans", Georgia for "Serif") meant the admin positioned and sized type in a
+  // typeface the book never used, and every book "changed font" on generation.
+  const fontFaces = fonts
+    .filter((f) => f.installed)
+    .map(
+      (f) =>
+        `@font-face{font-family:'${previewFamily(f.key)}';src:url('${fontFileUrl(
+          f.key,
+        )}');font-display:swap;}`,
+    )
+    .join("\n");
+
   // Any edit to the open page that hasn't been sent to the backend yet.
   const [dirty, setDirty] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -751,6 +772,8 @@ Each page takes 2-5 minutes and costs ${cost}. Pages that already have an outlin
 
   return (
     <div>
+      {/* The real fonts, so the preview below is the page that will print. */}
+      <style dangerouslySetInnerHTML={{ __html: fontFaces }} />
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-slate-deep">Page Editor (CMS)</h1>
         <div className="flex flex-wrap items-center gap-3">
@@ -1559,9 +1582,10 @@ Each page takes 2-5 minutes and costs ${cost}. Pages that already have an outlin
                   fontSize: `${Math.max(6, page.fontSize * pxScale)}px`,
                   letterSpacing: `${(page.letterSpacing ?? 0) * pxScale}px`,
                   lineHeight: 1.25,
-                  fontFamily:
+                  fontFamily: `'${previewFamily(page.fontFamily || "sans")}', ${
                     fonts.find((f) => f.key === (page.fontFamily || "sans"))?.css ||
-                    "system-ui, sans-serif",
+                    "system-ui, sans-serif"
+                  }`,
                   // Mirror the render: an outline ring + soft shadow, or
                   // nothing at all when the outline is turned off.
                   textShadow: outlinePx

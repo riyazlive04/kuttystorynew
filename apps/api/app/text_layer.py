@@ -145,9 +145,9 @@ def available_families() -> list[dict]:
             {
                 "key": key,
                 "label": _custom_label(key),
-                # The browser can't load a server-side font file, so the editor
-                # preview approximates it; the burned-in text uses the real one.
-                "css": "'Segoe UI', system-ui, sans-serif",
+                # Only a fallback now: the editor loads the real file from
+                # /fonts/{key}/file, so the preview IS the burned-in face.
+                "css": "system-ui, sans-serif",
                 "installed": os.path.exists(path),
                 "custom": True,
             }
@@ -182,6 +182,28 @@ def personalize(text: str, child_name: str) -> str:
     # A lambda, not a plain string: a name containing a backslash would
     # otherwise be read as a regex escape by re.sub.
     return _NAME_TOKEN.sub(lambda _: child_name or "", text or "")
+
+
+def font_file(family: str) -> Optional[str]:
+    """The file the text layer would actually draw `family` with, or None.
+
+    Same resolution order as _load_font, minus the fallbacks: the editor must
+    preview the family it asked for or nothing, never a stand-in that would
+    disagree with the printed page in a different way.
+    """
+    family = (family or "").strip()
+    if not family:
+        return None
+    if family.startswith(CUSTOM_PREFIX):
+        path = _custom_files().get(family)
+        return path if path and os.path.exists(path) else None
+    spec = FONT_FAMILIES.get(family)
+    if not spec:
+        return None
+    for path in spec["files"]:
+        if os.path.exists(path):
+            return path
+    return None
 
 
 def _load_font(size: int, family: str = DEFAULT_FAMILY) -> ImageFont.FreeTypeFont:
