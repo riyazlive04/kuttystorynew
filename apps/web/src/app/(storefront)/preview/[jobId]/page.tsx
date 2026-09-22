@@ -17,6 +17,7 @@ import { getStory } from "@/lib/data";
 import { useCart } from "@/lib/cart";
 import { jobIdFromParam, languageLabel, inr } from "@/lib/format";
 import type { Format, Job } from "@/lib/types";
+import { GenerationProgress } from "@/components/GenerationProgress";
 import { FlipBook } from "@/components/FlipBook";
 import { FORMAT_EMOJI, FORMAT_LABELS, PRICES, priceFor } from "@/lib/pricing";
 import { CURRENCY, track } from "@/lib/pixel";
@@ -149,7 +150,6 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
   const renderedFree = job.pages
     .slice(0, freePages)
     .filter((p) => p.imageUrl).length;
-  const currentPage = Math.min(renderedFree + 1, freePages);
 
   function handleSelect(format: Format) {
     if (!job) return;
@@ -267,22 +267,13 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
       )}
 
       {rendering && (
-        <div className="mx-auto mb-8 max-w-md text-center">
-          <div className="mb-3 flex items-center justify-center gap-2 text-sm font-semibold text-slate-deep">
-            <Loader2 className="h-4 w-4 animate-spin text-brand-primary" />
-            {job.status === "queued" && "Warming up the studio…"}
-            {job.status === "processing" && "Bringing your hero to life…"}
-            {job.status === "rendering" &&
-              `Creating page ${currentPage} of ${effectiveFreePages}…`}
-          </div>
-          <div className="h-2.5 w-full overflow-hidden rounded-full bg-brand-borderAccent">
-            <div
-              className="h-full rounded-full bg-brand-gradient transition-all duration-700"
-              style={{ width: `${job.progress}%` }}
-            />
-          </div>
-          <p className="mt-2 text-xs text-slate-400">{job.progress}%</p>
-        </div>
+        <GenerationProgress
+          status={job.status}
+          serverProgress={job.progress}
+          childName={job.childName}
+          pagesReady={renderedFree}
+          pagesTotal={effectiveFreePages}
+        />
       )}
 
       <FlipBook
