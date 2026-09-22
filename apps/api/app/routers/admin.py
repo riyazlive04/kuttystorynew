@@ -373,6 +373,7 @@ async def admin_list_jobs(
                 "purged": j.purged,
                 "renderedFreePages": rendered_free,
                 "previewReady": rendered_free > 0,
+                "error": getattr(j, "error", None),
                 "createdAt": j.createdAt.isoformat(),
             }
         )

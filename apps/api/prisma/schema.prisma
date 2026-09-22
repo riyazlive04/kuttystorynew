@@ -154,6 +154,10 @@ model Job {
   printApproved Boolean @default(false)  // customer approved the book for print
   approvedAt  DateTime?
   pdfDownloadUrl String?
+  // Why the last render failed, in plain words, for the admin. A failure used to
+  // leave nothing behind but "failed · 12%", which says nothing about whether
+  // to retry, top up credits, or ask for a different photo.
+  error       String?
   expiresAt   DateTime? // preview + raw photo purged 48h after this (non-purchased)
   preservedUntil DateTime? // purchased/approved books kept until this (30 days)
   purged      Boolean   @default(false)

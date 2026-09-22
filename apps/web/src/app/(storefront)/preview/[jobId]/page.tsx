@@ -11,6 +11,7 @@ import {
   getJob,
   previewPdfUrl,
   regeneratePage,
+  retryJob,
 } from "@/lib/api";
 import { getStory } from "@/lib/data";
 import { useCart } from "@/lib/cart";
@@ -66,7 +67,10 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
         }
         failures = 0;
         setJob(j);
-        if (j.status !== "completed") timer = setTimeout(tick, 1000);
+        // "failed" is settled too — polling it every second is what left the
+        // customer watching "Creating page 1… 12%" spin forever.
+        if (j.status !== "completed" && j.status !== "failed")
+          timer = setTimeout(tick, 1000);
         else setRegeneratingPage(null); // render settled — clear refine spinner
       } catch {
         // Transient (fetch failed / 5xx while the API restarts). Back off & retry
@@ -86,6 +90,15 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
       clearTimeout(timer);
     };
   }, [jobId, reloadKey]);
+
+  const [retrying, setRetrying] = useState(false);
+  async function handleRetry() {
+    setRetrying(true);
+    const ok = await retryJob(jobId);
+    setRetrying(false);
+    if (ok) setReloadKey((k) => k + 1); // poll again while it resumes
+    else alert("Couldn't restart the preview. Please try again in a minute.");
+  }
 
   async function handleRegenerate(pageNumber: number) {
     setRegeneratingPage(pageNumber);
@@ -129,7 +142,8 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
   }
 
   const story = getStory(job.storySlug);
-  const rendering = job.status !== "completed";
+  const failed = job.status === "failed";
+  const rendering = job.status !== "completed" && !failed;
   // Page-by-page progress (Diffrun-style): count free pages already rendered so
   // we can show "Creating page N of M" — more tangible than an abstract %.
   const renderedFree = job.pages
@@ -231,6 +245,26 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
           </button>
         </div>
       </div>
+
+      {failed && (
+        <div className="mx-auto mb-8 max-w-md rounded-2xl border-2 border-amber-200 bg-amber-50 p-5 text-center">
+          <p className="font-bold text-slate-deep">
+            Our illustrators are extra busy right now
+          </p>
+          <p className="mt-1 text-sm text-slate-mutedText">
+            We couldn&apos;t finish {job.childName}&apos;s preview this time. Nothing
+            is lost — tap below and we&apos;ll pick up where we left off.
+          </p>
+          <button
+            onClick={handleRetry}
+            disabled={retrying}
+            className="btn-primary mt-4 inline-flex items-center gap-2 disabled:opacity-60"
+          >
+            {retrying && <Loader2 className="h-4 w-4 animate-spin" />}
+            Try again
+          </button>
+        </div>
+      )}
 
       {rendering && (
         <div className="mx-auto mb-8 max-w-md text-center">

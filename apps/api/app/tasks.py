@@ -272,6 +272,10 @@ async def _render_one(
         "imageUrl": image_url,
         "caption": personalize(story_text, job.childName),
         "locked": not is_free(page_number, FREE),
+        # Set only here, by an actual render. A new job's page list is seeded
+        # with the BASE art in every slot, so "has an imageUrl" cannot mean
+        # "personalised" -- resuming on that would ship another child's face.
+        "rendered": True,
     }
 
 
@@ -326,22 +330,45 @@ async def _run_preview(job_id: str) -> None:
             )
             for i, n in enumerate(order)
         ]
+        # A retry resumes rather than restarts: any free page that already came
+        # back is kept, so trying again costs only the pages that failed.
+        kept = _relayout(job.pages, order) if job.pages else []
+        for i, n in enumerate(order):
+            if is_free(n, FREE) and i < len(kept) and (kept[i] or {}).get("rendered"):
+                pages[i] = {**kept[i], "index": i}
+        todo = [n for n in free_numbers if not pages[slot[n]].get("rendered")]
         await db.job.update(
             where={"id": job_id},
-            data={"status": "rendering", "progress": 12, "pages": Json(pages)},
+            data={
+                "status": "rendering",
+                "progress": 12 + int((len(free_numbers) - len(todo))
+                                     / max(1, len(free_numbers)) * 86),
+                "pages": Json(pages),
+                "error": None,
+            },
         )
 
         sem = asyncio.Semaphore(settings.render_concurrency)
         done = 0
         lock = asyncio.Lock()
 
+        done = len(free_numbers) - len(todo)
+        failures: dict[int, str] = {}
+
         async def _one(n: int) -> None:
             nonlocal done
             base = _base_art(gallery, n)
-            async with sem:
-                page = await _render_one(job, templates.get(n), n, base)
+            try:
+                async with sem:
+                    page = await _render_one(job, templates.get(n), n, base)
+            except Exception as e:  # noqa: BLE001
+                # One page failing used to fail the whole preview, and throw
+                # away the pages that DID finish. Record it and carry on.
+                failures[n] = str(e) or type(e).__name__
+                print(f"[preview] {job_id} page {n} failed: {failures[n]}", flush=True)
+                return
+            failures.pop(n, None)
             async with lock:
-                nonlocal pages
                 pages[slot[n]] = {**page, "index": slot[n]}
                 done += 1
                 progress = 12 + int(done / max(1, len(free_numbers)) * 86)
@@ -350,14 +377,37 @@ async def _run_preview(job_id: str) -> None:
                     data={"progress": progress, "pages": Json(pages)},
                 )
 
-        await asyncio.gather(*(_one(n) for n in free_numbers))
+        await asyncio.gather(*(_one(n) for n in todo))
 
+        # A second chance for what failed, one page at a time: most failures are
+        # a busy Segmind, and a quieter moment a minute later usually works.
+        for n in sorted(failures):
+            await asyncio.sleep(15)
+            await _one(n)
+
+        if done == 0:
+            raise RuntimeError(
+                next(iter(failures.values()), "no preview page could be rendered")
+            )
         await db.job.update(
             where={"id": job_id},
-            data={"status": "completed", "progress": 100, "pages": Json(pages)},
+            data={
+                "status": "completed",
+                "progress": 100,
+                "pages": Json(pages),
+                # Partial success is still success for the customer -- they see
+                # every page that rendered -- but the admin sees what didn't.
+                "error": (
+                    f"{len(failures)} page(s) failed: "
+                    + "; ".join(f"p{n}: {msg}" for n, msg in sorted(failures.items()))
+                )[:1000] if failures else None,
+            },
         )
-    except Exception:
-        await db.job.update(where={"id": job_id}, data={"status": "failed"})
+    except Exception as e:
+        await db.job.update(
+            where={"id": job_id},
+            data={"status": "failed", "error": (str(e) or type(e).__name__)[:1000]},
+        )
         raise
     finally:
         await _disconnect(db)
@@ -436,7 +486,9 @@ def generate_book(self, job_id: str) -> str:
     try:
         asyncio.run(_run_preview(job_id))
     except Exception as exc:  # pragma: no cover
-        raise self.retry(exc=exc, countdown=5)
+        # The run resumes from the pages it kept, so a retry is cheap; wait long
+        # enough for whatever made Segmind fail to have passed.
+        raise self.retry(exc=exc, countdown=60)
     return job_id
 
 

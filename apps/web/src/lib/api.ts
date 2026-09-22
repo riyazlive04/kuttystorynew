@@ -178,6 +178,14 @@ export async function regeneratePage(
   return res.ok;
 }
 
+// Try a failed preview again. The server resumes: pages that already rendered
+// are kept and only the missing ones are redone.
+export async function retryJob(jobId: string): Promise<boolean> {
+  if (!API) return false;
+  const res = await fetch(`${API}/jobs/${jobId}/retry`, { method: "POST" });
+  return res.ok;
+}
+
 // Approve the finished book for print (required before production).
 export async function approveJob(jobId: string): Promise<boolean> {
   if (!API) return false;

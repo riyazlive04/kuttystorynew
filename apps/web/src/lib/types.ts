@@ -84,6 +84,7 @@ export interface Job {
   isPurchased?: boolean;
   printApproved?: boolean;
   pdfDownloadUrl?: string | null;
+  error?: string | null;
   createdAt: string;
 }
 

@@ -17,7 +17,7 @@ import {
   type AdminStory,
   type Variant,
 } from "@/lib/admin";
-import { previewPdfUrl } from "@/lib/api";
+import { previewPdfUrl, retryJob } from "@/lib/api";
 import { previewPath } from "@/lib/format";
 
 type Filter = "all" | "purchased";
@@ -43,6 +43,17 @@ export default function AdminPreviews() {
   const [refresh, setRefresh] = useState(0);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+
+  // Restart a failed preview. It resumes, so only the pages that failed are
+  // rendered again; the list's own poll then shows it progressing.
+  async function retry(id: string) {
+    setRetryingId(id);
+    const ok = await retryJob(id);
+    setRetryingId(null);
+    if (ok) setRefresh((r) => r + 1);
+    else alert("Couldn't restart that preview.");
+  }
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
@@ -177,6 +188,23 @@ export default function AdminPreviews() {
                     </span>
                     {j.status !== "completed" && (
                       <span className="text-slate-400"> · {j.progress}%</span>
+                    )}
+                    {j.error && (
+                      <p
+                        className="mt-0.5 max-w-xs truncate text-[11px] text-red-500"
+                        title={j.error}
+                      >
+                        {j.error}
+                      </p>
+                    )}
+                    {j.status === "failed" && (
+                      <button
+                        onClick={() => retry(j.id)}
+                        disabled={retryingId === j.id}
+                        className="mt-1 text-[11px] font-bold text-brand-primary hover:underline disabled:opacity-50"
+                      >
+                        {retryingId === j.id ? "Restarting…" : "Retry"}
+                      </button>
                     )}
                   </td>
                   <td className="py-3 pr-4 text-slate-mutedText">

@@ -751,7 +751,7 @@ async def _segmind_faceswap(
     target_src: str,
     face_src: str,
     seed: int = 0,
-    attempts: int = 4,
+    attempts: int = 5,
     face_region: Optional[dict] = None,
 ) -> str:
     """Personalize a real face (`face_src`) onto an ILLUSTRATED base page
@@ -776,7 +776,11 @@ async def _segmind_faceswap(
     source_b64 = _b64(face_src)     # the real child face
     target_b64 = _b64(target_src)   # the fixed illustrated page
     last_err: Exception | None = None
-    async with httpx.AsyncClient(timeout=180) as client:
+    # Segmind queues requests: a single swap measured 99-267s in testing, and the
+    # old 180s ceiling cut off calls that were about to succeed -- a timeout's
+    # message is empty, which is why failures logged as "attempt 1/4 failed: ".
+    timeout = httpx.Timeout(360.0, connect=20.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
         for attempt in range(attempts):
             payload = {
                 "source_image": source_b64,
@@ -810,19 +814,63 @@ async def _segmind_faceswap(
                 return _save_bytes(content, prefix="page")
             except Exception as e:  # noqa: BLE001 — redo the swap on any failure
                 last_err = e
-                body = ""
-                if isinstance(e, httpx.HTTPStatusError):
-                    body = (e.response.text or "")[:300]
+                reason = _segmind_reason(e)
                 print(
                     f"[segmind] faceswap attempt {attempt + 1}/{attempts} failed: "
-                    f"{e} {body}",
+                    f"{reason}",
                     flush=True,
                 )
+                # Retrying cannot fix a bad key or an empty balance; say so now
+                # instead of burning several minutes and then failing anyway.
+                if _segmind_permanent(e):
+                    raise RuntimeError(f"Segmind: {reason}") from e
                 if attempt < attempts - 1:
-                    await asyncio.sleep(1.5 * (attempt + 1))
+                    await asyncio.sleep(_segmind_backoff(e, attempt))
     raise RuntimeError(
-        f"Segmind faceswap failed after {attempts} attempts: {last_err}"
+        f"Segmind faceswap failed after {attempts} attempts: "
+        f"{_segmind_reason(last_err) if last_err else 'unknown error'}"
     )
+
+
+def _segmind_reason(e: Exception) -> str:
+    """A failure in words an admin can act on. httpx timeouts stringify to ''."""
+    if isinstance(e, httpx.TimeoutException):
+        return f"timed out waiting for Segmind ({type(e).__name__})"
+    if isinstance(e, httpx.HTTPStatusError):
+        code = e.response.status_code
+        body = (e.response.text or "").strip()[:200]
+        label = {
+            401: "API key rejected",
+            402: "out of credits",
+            403: "API key not allowed",
+            406: "out of credits",
+            429: "rate limited",
+        }.get(code, "server error" if code >= 500 else "request rejected")
+        return f"{label} (HTTP {code}) {body}".strip()
+    if isinstance(e, httpx.TransportError):
+        return f"could not reach Segmind ({type(e).__name__})"
+    return str(e) or type(e).__name__
+
+
+def _segmind_permanent(e: Exception) -> bool:
+    return isinstance(e, httpx.HTTPStatusError) and e.response.status_code in (
+        401, 402, 403, 406,
+    )
+
+
+def _segmind_backoff(e: Exception, attempt: int) -> float:
+    """Seconds to wait before the next attempt.
+
+    The old 1.5/3/4.5s waits gave a busy Segmind about nine seconds to recover
+    before a whole preview was written off. Rate limits say how long to wait;
+    everything else backs off from 8s to about a minute.
+    """
+    if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
+        try:
+            return min(120.0, max(5.0, float(e.response.headers.get("retry-after", ""))))
+        except ValueError:
+            return 20.0 * (attempt + 1)
+    return min(60.0, 8.0 * (2 ** attempt))
 
 
 # --------------------------------------------------------------------------- #

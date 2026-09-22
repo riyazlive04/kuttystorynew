@@ -99,6 +99,37 @@ async def get_job(job_id: str):
     return job_dict(job)
 
 
+@router.post("/{job_id}/retry")
+async def retry_preview(job_id: str):
+    """Try a failed preview again — the customer's "Try again" button.
+
+    Resumes: pages that already rendered are kept and only the missing ones are
+    redone, so a retry is quick and costs only what failed. Refused while a run
+    is still going, so a double-click can't start two paid renders.
+    """
+    job = await prisma.job.find_unique(where={"id": job_id})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != "failed":
+        raise HTTPException(status_code=409, detail="This preview is not failed")
+    job = await prisma.job.update(
+        where={"id": job_id},
+        data={"status": "queued", "error": None},
+    )
+    try:
+        from ..tasks import generate_book
+
+        generate_book.delay(job.id)
+    except Exception:
+        # Put it back: "queued" with nothing queued is a new way to be stuck.
+        await prisma.job.update(
+            where={"id": job_id},
+            data={"status": "failed", "error": "Render queue unavailable"},
+        )
+        raise HTTPException(status_code=503, detail="Render queue unavailable")
+    return job_dict(job)
+
+
 @router.get("/{job_id}/preview.pdf")
 async def download_preview(job_id: str):
     """Download the generated free-preview pages as a PDF (customer + admin).

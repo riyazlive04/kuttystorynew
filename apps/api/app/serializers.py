@@ -111,6 +111,7 @@ def job_dict(j) -> dict:
         "isPurchased": j.isPurchased,
         "printApproved": j.printApproved,
         "pdfDownloadUrl": j.pdfDownloadUrl,
+        "error": getattr(j, "error", None),
         "createdAt": j.createdAt.isoformat(),
     }
 

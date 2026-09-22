@@ -118,6 +118,8 @@ export interface AdminJob {
   purged: boolean;
   renderedFreePages: number;
   previewReady: boolean;
+  /** Why the last render failed (or which pages did), in plain words. */
+  error?: string | null;
   createdAt: string;
 }
 
