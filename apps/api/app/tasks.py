@@ -84,6 +84,26 @@ async def _templates(db: Prisma, story_id: str, gender: str = "") -> dict[int, o
     return {r.pageNumber: r for r in rows}
 
 
+def _illustrated(templates: dict) -> set[int]:
+    """The page numbers that have artwork somebody actually drew.
+
+    A PageTemplate row is created as soon as a page has text, so a row existing
+    is not the same as a page being finished: the story can be written all the
+    way to page twenty-eight while only twenty-six plates were ever uploaded.
+    Those unfinished pages used to render anyway, against the gallery fallback
+    in `_base_art` -- marketing artwork, recycled by `page_number % len(gallery)`
+    -- and came out as a near-copy of an earlier page carrying a caption about
+    something that is not in the picture. That book then gets printed.
+
+    A page with no base art is a page nobody drew, so it is not in the book.
+    """
+    return {
+        n
+        for n, t in templates.items()
+        if (getattr(t, "baseImageUrl", None) or "").strip()
+    }
+
+
 def _base_art(gallery: list, page_number: int) -> str:
     """Fallback illustration when a page has no authored base art. Indexed on
     abs() so the reserved cover numbers (0, -1) don't wrap to the tail."""
@@ -317,7 +337,7 @@ async def _run_preview(job_id: str) -> None:
 
         # Reading order — the authored covers bracket the story pages, so a slot
         # is no longer the same thing as a page number.
-        order = reading_order(templates.keys(), TOTAL)
+        order = reading_order(_illustrated(templates), TOTAL)
         slot = {n: i for i, n in enumerate(order)}
         free_numbers = [n for n in order if is_free(n, FREE)]
 
@@ -431,7 +451,7 @@ async def _run_remaining(job_id: str) -> None:
 
         # Re-seat onto the current reading order: a job queued before its book
         # got covers still gets them rendered here, keeping its free pages.
-        order = reading_order(templates.keys(), TOTAL)
+        order = reading_order(_illustrated(templates), TOTAL)
         slot = {n: i for i, n in enumerate(order)}
         pages = _relayout(job.pages, order)
         # Everything still behind the paywall, plus any slot with nothing in it —
@@ -523,7 +543,7 @@ async def _run_full(job_id: str) -> None:
             )
             job = await db.job.find_unique(where={"id": job_id})
 
-        order = reading_order(templates.keys(), TOTAL)
+        order = reading_order(_illustrated(templates), TOTAL)
         slot = {n: i for i, n in enumerate(order)}
         pages = [_blank(n, i, locked=False) for i, n in enumerate(order)]
         await db.job.update(
@@ -610,7 +630,7 @@ async def _regenerate_page(job_id: str, page_number: int) -> None:
         gallery = (story.gallery if story else []) or []
         base = _base_art(gallery, page_number)
 
-        order = reading_order(templates.keys(), TOTAL)
+        order = reading_order(_illustrated(templates), TOTAL)
         if page_number not in order:
             return  # asked to refine a page this book doesn't have
 

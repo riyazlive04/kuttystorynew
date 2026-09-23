@@ -39,18 +39,24 @@ def build_pages(
     cover: str,
     gallery: list[str],
     cover_art: dict[int, str] | None = None,
+    authored: "set[int] | None" = None,
 ) -> list[dict]:
     """Synthesize the preview page list (unlocked free preview + locked rest).
 
     `cover_art` maps a reserved cover page number to its authored base art; the
     covers bracket the story pages in reading order, matching what the worker
     writes once it takes over.
+
+    `authored` is every story page the book actually has. Without it this list
+    would be `total` pages long while the worker renders only the authored ones,
+    and the flip-book would reflow under the customer the moment the first real
+    page landed.
     """
     from .pages_layout import is_free, kind_of, reading_order
 
     art = gallery or _MOCK_ART or [cover]
     cover_art = cover_art or {}
-    order = reading_order(cover_art.keys(), total)
+    order = reading_order(set(cover_art) | set(authored or ()), total)
     free = settings.free_preview_pages
     pages: list[dict] = []
     for i, n in enumerate(order):

@@ -6,8 +6,9 @@ base art, face outline, face swap, and the burned-in text layer. Nothing about
 rendering is special-cased for them — only their position and their free/locked
 status is.
 
-Reading order is  [front cover] -> 1..TOTAL -> [back cover].  Both covers are
-optional: a book without a cover template simply has no cover page.
+Reading order is  [front cover] -> the authored story pages -> [back cover].
+Every part of it is optional: a book without a cover template has no cover
+page, and a book authored to twenty pages is twenty pages long.
 """
 from __future__ import annotations
 
@@ -99,14 +100,25 @@ def label_of(page_number: int) -> str:
 def reading_order(template_numbers, total: int) -> list[int]:
     """The book's page numbers in reading order, covers included when authored.
 
+    The story pages are the ones somebody actually drew. This used to be a flat
+    `range(1, total + 1)`, which meant a book authored to twenty-six pages was
+    still assembled as twenty-eight: the last two had no template, fell through
+    to the gallery fallback in `_base_art`, and came back as recycled artwork
+    carrying captions written for pages that were never illustrated. It reads as
+    a printing error, and by the time anyone sees it the book is printed.
+
+    `total` remains the fallback for a story with no authored pages at all,
+    where there is nothing better to go on.
+
     Print-only assets (the spine) are deliberately absent: they are not pages a
     child turns, so they must not appear in the preview or shift page numbering.
     """
     have = set(template_numbers or ())
+    story_pages = sorted(n for n in have if n > 0)
     order: list[int] = []
     if FRONT_COVER in have:
         order.append(FRONT_COVER)
-    order.extend(range(1, total + 1))
+    order.extend(story_pages or range(1, total + 1))
     if BACK_COVER in have:
         order.append(BACK_COVER)
     return order

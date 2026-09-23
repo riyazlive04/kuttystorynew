@@ -9,7 +9,13 @@ from prisma import Json
 from ..config import settings
 from ..db import prisma
 from ..comfyui import build_pages
-from ..pages_layout import COVER_NUMBERS, is_free, label_of, normalize_variant
+from ..pages_layout import (
+    COVER_NUMBERS,
+    is_free,
+    label_of,
+    normalize_variant,
+    other_variant,
+)
 from ..schemas import PersonalizationIn
 from ..serializers import job_dict
 
@@ -35,19 +41,37 @@ async def create_job(payload: PersonalizationIn):
     # (the Celery worker overwrites these with identity-consistent renders).
     # Include the authored covers so the page list has its final shape from the
     # start and the flip-book doesn't reflow when the first render lands.
-    cover_rows = await prisma.pagetemplate.find_many(
-        where={
-            "bookTemplateId": story.id,
-            "variant": normalize_variant(payload.gender),
-            "pageNumber": {"in": list(COVER_NUMBERS)},
-        }
+    # Every authored page, not just the covers: the placeholder list has to be
+    # the same length as the book the worker is about to render, or the
+    # flip-book reflows under the customer when the first real page arrives.
+    variant = normalize_variant(payload.gender)
+    rows = await prisma.pagetemplate.find_many(
+        where={"bookTemplateId": story.id, "variant": variant}
     )
+    if not rows:
+        # Same rule the worker uses: a book authored for one gender still
+        # renders for every child rather than coming out empty.
+        rows = await prisma.pagetemplate.find_many(
+            where={"bookTemplateId": story.id, "variant": other_variant(variant)}
+        )
     pages = build_pages(
         child_name=payload.childName,
         total=story.pages,
         cover=story.coverImage,
         gallery=story.gallery,
-        cover_art={r.pageNumber: (r.baseImageUrl or "") for r in cover_rows},
+        cover_art={
+            r.pageNumber: r.baseImageUrl
+            for r in rows
+            if r.pageNumber in COVER_NUMBERS and (r.baseImageUrl or "").strip()
+        },
+        # Only pages whose artwork exists. A row is created as soon as a page
+        # has text, so a row is not a finished page, and a book must not be
+        # advertised as longer than the part of it anybody has drawn.
+        authored={
+            r.pageNumber
+            for r in rows
+            if r.pageNumber > 0 and (r.baseImageUrl or "").strip()
+        },
     )
     expires_at = datetime.now(timezone.utc) + timedelta(
         hours=settings.data_retention_hours
