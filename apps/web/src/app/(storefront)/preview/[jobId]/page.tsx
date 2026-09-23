@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Download, Loader2, Lock, Phone, Sparkles } from "lucide-react";
@@ -20,7 +20,7 @@ import type { Format, Job } from "@/lib/types";
 import { GenerationProgress } from "@/components/GenerationProgress";
 import { FlipBook } from "@/components/FlipBook";
 import { FORMAT_EMOJI, FORMAT_LABELS, PRICES, priceFor } from "@/lib/pricing";
-import { CURRENCY, track } from "@/lib/pixel";
+import { trackCommerce, trackOnce } from "@/lib/analytics";
 import { useCustomerAuth, formatIndianPhone } from "@/lib/auth";
 import { PhoneLoginModal } from "@/components/PhoneLoginModal";
 
@@ -91,6 +91,35 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
       clearTimeout(timer);
     };
   }, [jobId, reloadKey]);
+
+  // How the wait ended, and how long it took.
+  //
+  // This is the step that decides the business: the customer has already given
+  // us a name and a photo, and everything after this point depends on a book
+  // appearing. Whether it rendered, and how long they were made to wait for
+  // it, is the difference between a sale and a silent exit — and neither is
+  // visible in any page-view report.
+  //
+  // Timed from arriving on the page rather than from job creation, because
+  // that is the wait they actually sit through. Reported once per job, so a
+  // customer reopening a finished preview does not read as a second success.
+  const waitStart = useRef(Date.now());
+
+  useEffect(() => {
+    if (!job) return;
+    if (job.status !== "completed" && job.status !== "failed") return;
+    trackOnce(
+      `preview:${job.id}:${job.status}`,
+      job.status === "completed" ? "preview_ready" : "preview_failed",
+      {
+        job_id: job.id,
+        story_slug: job.storySlug,
+        story_title: job.storyTitle,
+        language: job.language,
+        wait_seconds: Math.round((Date.now() - waitStart.current) / 1000),
+      },
+    );
+  }, [job]);
 
   const [retrying, setRetrying] = useState(false);
   async function handleRetry() {
@@ -170,16 +199,21 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
       unitPrice: priceFor(format),
       quantity: 1,
     });
-    track("AddToCart", {
-      content_type: "product",
-      content_ids: [job.storySlug],
-      content_name: job.storyTitle,
-      contents: [{ id: job.storySlug, quantity: 1, item_price: priceFor(format) }],
+    // Which edition was picked. The format is the single biggest driver of
+    // margin, so carrying it on the event is what lets the reports show the
+    // mix rather than just the count.
+    trackCommerce("add_to_cart", {
+      lines: [
+        {
+          storySlug: job.storySlug,
+          storyTitle: job.storyTitle,
+          quantity: 1,
+          unitPrice: priceFor(format),
+          format,
+          language: job.language,
+        },
+      ],
       value: priceFor(format),
-      currency: CURRENCY,
-      // Which edition was picked — Meta can optimise toward the ones that
-      // actually convert, and the report shows the mix.
-      content_category: format,
     });
     router.push("/checkout");
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { CURRENCY, track } from "@/lib/pixel";
+import { trackCommerce } from "@/lib/analytics";
 
 /**
  * Fires ViewContent for one book.
@@ -24,13 +24,17 @@ export function TrackViewContent({
   category?: string;
 }) {
   useEffect(() => {
-    track("ViewContent", {
-      content_type: "product",
-      content_ids: [slug],
-      content_name: title,
-      content_category: category,
+    trackCommerce("view_item", {
+      lines: [
+        {
+          storySlug: slug,
+          storyTitle: title,
+          quantity: 1,
+          unitPrice: price,
+          format: category,
+        },
+      ],
       value: price,
-      currency: CURRENCY,
     });
   }, [slug, title, price, category]);
 

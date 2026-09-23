@@ -8,7 +8,7 @@ import { bookPdfUrl, downloadFile, getOrder, invoiceUrl } from "@/lib/api";
 import { useCart } from "@/lib/cart";
 import { inr } from "@/lib/format";
 import { PRICES, isPrinted } from "@/lib/pricing";
-import { CURRENCY, contentsFrom, trackOnce } from "@/lib/pixel";
+import { trackCommerceOnce } from "@/lib/analytics";
 import type { Order } from "@/lib/types";
 
 export default function OrderPage({
@@ -31,11 +31,14 @@ export default function OrderPage({
   // Meta bids on this number, and a double count teaches it the wrong price.
   useEffect(() => {
     if (!order) return;
-    trackOnce(`purchase:${order.id}`, "Purchase", {
-      ...contentsFrom(order.items),
+    trackCommerceOnce(`purchase:${order.id}`, "purchase", {
+      lines: order.items,
       value: order.total,
-      currency: CURRENCY,
-      order_id: order.id,
+      id: order.id,
+      extra: {
+        coupon: order.promoCode || undefined,
+        shipping: order.shipping,
+      },
     });
   }, [order]);
 

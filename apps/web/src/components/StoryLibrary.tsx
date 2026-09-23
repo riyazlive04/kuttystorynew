@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { track } from "@/lib/pixel";
+import { track } from "@/lib/analytics";
 import { StoryCard } from "@/components/StoryCard";
 import { CATEGORIES } from "@/lib/data";
 import type { Story } from "@/lib/types";
@@ -50,9 +50,11 @@ export function StoryLibrary({ stories }: { stories: Story[] }) {
   // of 4-5 year olds who looked at bedtime books").
   useEffect(() => {
     if (!hasActiveFilters) return;
-    track("Search", {
-      search_string: `age:${activeAge} category:${activeCategory}`,
-      content_category: activeCategory,
+    track("search", {
+      search_term: `age:${activeAge} category:${activeCategory}`,
+      filter_age: activeAge,
+      filter_category: activeCategory,
+      results_count: filtered.length,
       content_ids: filtered.slice(0, 10).map((s) => s.slug),
     });
   }, [activeAge, activeCategory]);

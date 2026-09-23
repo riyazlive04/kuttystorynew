@@ -21,7 +21,7 @@ import { useStoryGender } from "@/components/StoryGender";
 import { coverFor } from "@/lib/covers";
 import type { Personalization, Story } from "@/lib/types";
 import { createJob, uploadPhoto } from "@/lib/api";
-import { track } from "@/lib/pixel";
+import { track } from "@/lib/analytics";
 import type { PhotoQuality } from "@/lib/api";
 import { languageLabel, previewPath } from "@/lib/format";
 import { webImage } from "@/lib/img";
@@ -140,6 +140,16 @@ export function PersonalizeWizard({ story }: { story: Story }) {
     }));
   }, [photos, primaryId, primary]);
 
+  // Entering the wizard is the top of the funnel that actually matters: the
+  // ratio of this to `generate_lead` is how many people who wanted a book
+  // gave up while filling the form in.
+  useEffect(() => {
+    track("personalize_started", {
+      story_slug: story.slug,
+      story_title: story.title,
+    });
+  }, [story.slug, story.title]);
+
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files || []);
     // Clear the input so re-picking the same file after a remove still fires.
@@ -167,8 +177,21 @@ export function PersonalizeWizard({ story }: { story: Story }) {
       reader.readAsDataURL(file);
 
       uploadPhoto(file, true)
-        .then((res) =>
-          setPhotos((prev) =>
+        .then((res) => {
+          // The backend's verdict on the photo, reported as it is given. A
+          // book made from a blurry or faceless source is the most expensive
+          // thing that can happen here — it renders, it ships, and it comes
+          // back as a refund — so the share of uploads landing on each
+          // verdict is worth watching as closely as the sales.
+          track("photo_uploaded", {
+            story_slug: story.slug,
+            photo_index: photos.length,
+            source: pendingSource ?? "gallery",
+            quality_verdict: res?.quality?.verdict,
+            quality_score: res?.quality?.score,
+            quality_ok: res?.quality?.ok,
+          });
+          return setPhotos((prev) =>
             prev.some((p) => p.id === id)
               ? prev.map((p) =>
                   p.id === id
@@ -179,10 +202,12 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                   ...prev,
                   { id, dataUrl: "", url: res?.url, quality: res?.quality },
                 ],
-          ),
-        )
+          );
+        })
         // A failed upload leaves the tile as preview-only; it just won't be sent.
-        .catch(() => undefined)
+        .catch(() => {
+          track("photo_upload_failed", { story_slug: story.slug });
+        })
         .finally(() => setUploadingCount((n) => Math.max(0, n - 1)));
     }
   }
@@ -232,6 +257,20 @@ export function PersonalizeWizard({ story }: { story: Story }) {
   const canNext =
     (step === 0 && data.childName.trim().length >= 2) || step === 1;
 
+  // Moving forward through the form. Reported per step, because "people drop
+  // out of personalisation" is not an actionable fact and "people drop out on
+  // the photo step" is.
+  function goNext() {
+    if (!canNext) return;
+    track("personalize_step_completed", {
+      step_index: step,
+      step_name: STEPS[step],
+      story_slug: story.slug,
+      photo_count: photos.length,
+    });
+    setStep((s) => s + 1);
+  }
+
   // Direct step navigation via the stepper. Back is always free; jumping forward
   // only needs the child's name (the sole hard requirement, on step 0).
   const nameReady = data.childName.trim().length >= 2;
@@ -245,10 +284,12 @@ export function PersonalizeWizard({ story }: { story: Story }) {
     try {
       const job = await createJob({ ...data, gender });
       // The visitor has handed over a child's name, age and photo: a lead.
-      track("Lead", {
-        content_name: job.storyTitle,
+      track("generate_lead", {
+        story_slug: job.storySlug,
+        story_title: job.storyTitle,
+        language: data.language,
+        photo_count: photos.length,
         content_ids: [job.storySlug],
-        content_category: "preview_created",
       });
       router.push(previewPath(job.id, job.childName, job.storyTitle));
     } catch (e) {
@@ -730,7 +771,7 @@ export function PersonalizeWizard({ story }: { story: Story }) {
               <ArrowLeft className="h-4 w-4" /> Back
             </button>
             <button
-              onClick={() => canNext && setStep((s) => s + 1)}
+              onClick={goNext}
               disabled={!canNext}
               className="btn-primary !py-3 disabled:opacity-50"
             >

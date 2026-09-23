@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { track } from "@/lib/pixel";
+import { track } from "@/lib/analytics";
 import {
   X,
   Phone,
@@ -168,10 +168,7 @@ export function PhoneLoginModal({
 
     if (res.success) {
       // A verified mobile number: the visitor is now a contactable customer.
-      track("CompleteRegistration", {
-        content_name: "phone_otp",
-        status: true,
-      });
+      track("sign_up", { method: "phone_otp" });
       if (onSuccess) onSuccess();
       onClose();
     } else {

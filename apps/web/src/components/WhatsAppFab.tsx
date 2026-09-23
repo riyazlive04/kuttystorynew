@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getConfig } from "@/lib/api";
-import { track } from "@/lib/pixel";
+import { track } from "@/lib/analytics";
 
 // Floating WhatsApp support button - the #1 support/trust channel in India.
 // wa.me wants the country code and no +, so 90031 69615 becomes 919003169615.
@@ -24,7 +24,7 @@ export function WhatsAppFab() {
   return (
     <a
       href={`https://wa.me/${number}?text=${MSG}`}
-      onClick={() => track("Contact", { content_name: "whatsapp_fab" })}
+      onClick={() => track("contact", { method: "whatsapp", placement: "floating_button" })}
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Chat on WhatsApp"

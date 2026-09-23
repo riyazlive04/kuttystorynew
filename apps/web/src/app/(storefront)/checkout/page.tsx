@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Lock, ShieldCheck, Trash2 } from "lucide-react";
 import { useCart } from "@/lib/cart";
 import { isPrinted } from "@/lib/pricing";
-import { CURRENCY, contentsFrom, track } from "@/lib/pixel";
+import { trackCommerce } from "@/lib/analytics";
 import { inr } from "@/lib/format";
 import { createOrder, verifyPayment } from "@/lib/api";
 import { INDIAN_STATES, INDIAN_UNION_TERRITORIES } from "@/lib/india";
@@ -62,10 +62,10 @@ export default function CheckoutPage() {
   // is no earlier step between the paywall and this page.
   useEffect(() => {
     if (!mounted || items.length === 0) return;
-    track("InitiateCheckout", {
-      ...contentsFrom(items),
+    trackCommerce("begin_checkout", {
+      lines: items,
       value: total,
-      currency: CURRENCY,
+      extra: { coupon: promoCode || undefined },
     });
     // Once per visit to the page, not on every promo/total recalculation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -106,10 +106,10 @@ export default function CheckoutPage() {
         total,
       };
       // Card/UPI details are about to be entered: the last step before money.
-      track("AddPaymentInfo", {
-        ...contentsFrom(items),
+      trackCommerce("add_payment_info", {
+        lines: items,
         value: total,
-        currency: CURRENCY,
+        extra: { coupon: promoCode || undefined, payment_type: "razorpay" },
       });
       const order = await createOrder(input);
 
