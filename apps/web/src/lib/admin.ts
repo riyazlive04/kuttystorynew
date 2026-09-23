@@ -123,6 +123,16 @@ export interface AdminJob {
   createdAt: string;
 }
 
+/** The photographs a parent uploaded, and when they are due to be deleted. */
+export interface AdminJobPhotos {
+  jobId: string;
+  childName: string;
+  photoUrls: string[];
+  purged: boolean;
+  /** Null once purged, or when the session has no retention date yet. */
+  deletedAt: string | null;
+}
+
 export interface AdminPage {
   id?: string;
   bookTemplateId?: string;
@@ -296,6 +306,19 @@ export const adminApi = {
       `/admin/jobs?offset=${offset}&limit=${limit}` +
         (purchased === undefined ? "" : `&purchased=${purchased}`),
     ),
+  /** The source photos for one preview session, fetched only on demand. */
+  jobPhotos: async (id: string): Promise<AdminJobPhotos> => {
+    const res: AdminJobPhotos = await req(`/admin/jobs/${id}/photos`);
+    return {
+      ...res,
+      // Stored relative to the API host. A Next rewrite cannot reach them —
+      // rewrites run server-side, in the web container, where the API's
+      // hostname is not the one the browser would use.
+      photoUrls: res.photoUrls.map((u) =>
+        API && u.startsWith("/uploads/") ? `${API}${u}` : u,
+      ),
+    };
+  },
   getSettings: (): Promise<AdminSettings> => req("/admin/settings"),
   updateSettings: (patch: {
     faceOutlineEnabled?: boolean;

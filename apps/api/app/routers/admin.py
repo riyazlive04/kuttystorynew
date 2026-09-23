@@ -380,6 +380,41 @@ async def admin_list_jobs(
     return {"items": out, "total": total, "limit": limit, "offset": offset}
 
 
+@router.get("/jobs/{job_id}/photos", dependencies=[Depends(require_admin)])
+async def admin_job_photos(job_id: str):
+    """The source photographs behind one preview session.
+
+    Deliberately not part of the jobs listing. These are photographs of
+    children, and a support question is always about one book, so they are
+    fetched one session at a time and only when somebody asks for them: a
+    request that appears in the access log, rather than a table that renders
+    every child's face to whoever happens to open the page.
+
+    `deletedAt` is the answer to the question support is really asking -- can
+    this still be re-rendered or reprinted -- so it comes back with the URLs
+    instead of having to be worked out from the retention rules.
+    """
+    job = await prisma.job.find_unique(where={"id": job_id})
+    if not job:
+        raise HTTPException(status_code=404, detail="Preview session not found")
+
+    # Primary first, then the rest, de-duplicated without losing that order:
+    # the first photo is the one that drove the likeness.
+    urls: list[str] = []
+    for url in [job.photoUrl, *(getattr(job, "photoUrls", None) or [])]:
+        if url and url not in urls:
+            urls.append(url)
+
+    deleted_at = job.preservedUntil if job.isPurchased else job.expiresAt
+    return {
+        "jobId": job.id,
+        "childName": job.childName,
+        "photoUrls": urls,
+        "purged": job.purged,
+        "deletedAt": deleted_at.isoformat() if deleted_at else None,
+    }
+
+
 # ------------------------- Full test render -------------------------------
 
 class TestRenderBody(BaseModel):

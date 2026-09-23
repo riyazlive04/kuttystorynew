@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Download,
   ExternalLink,
+  ImageIcon,
   Loader2,
   Sparkles,
 } from "lucide-react";
@@ -14,10 +15,12 @@ import {
   adminApi,
   VARIANTS,
   type AdminJob,
+  type AdminJobPhotos,
   type AdminStory,
   type Variant,
 } from "@/lib/admin";
 import { previewPdfUrl, retryJob } from "@/lib/api";
+import { webImage } from "@/lib/img";
 import { previewPath } from "@/lib/format";
 
 type Filter = "all" | "purchased";
@@ -44,6 +47,24 @@ export default function AdminPreviews() {
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  // Which session's source photos are open, if any. Fetched per session and
+  // never held in the list, so opening this page does not pull down every
+  // child's face along with it.
+  const [photosFor, setPhotosFor] = useState<AdminJobPhotos | null>(null);
+  const [photosLoadingId, setPhotosLoadingId] = useState<string | null>(null);
+
+  async function openPhotos(id: string) {
+    setPhotosLoadingId(id);
+    try {
+      setPhotosFor(await adminApi.jobPhotos(id));
+    } catch (e) {
+      alert(
+        e instanceof Error ? e.message : "Could not load the photos for that preview",
+      );
+    } finally {
+      setPhotosLoadingId(null);
+    }
+  }
 
   // Restart a failed preview. It resumes, so only the pages that failed are
   // rendered again; the list's own poll then shows it progressing.
@@ -230,6 +251,21 @@ export default function AdminPreviews() {
                           {j.purged ? "purged" : "not ready"}
                         </span>
                       )}
+                      {!j.purged && (
+                        <button
+                          onClick={() => openPhotos(j.id)}
+                          disabled={photosLoadingId === j.id}
+                          title="The photos the parent uploaded for this book"
+                          className="inline-flex items-center gap-1.5 rounded-lg border-2 border-brand-borderAccent px-2.5 py-1 text-xs font-bold text-slate-mutedText transition hover:border-brand-primary hover:text-brand-primary disabled:opacity-50"
+                        >
+                          {photosLoadingId === j.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <ImageIcon className="h-3.5 w-3.5" />
+                          )}
+                          Photos
+                        </button>
+                      )}
                       <Link
                         href={previewPath(j.id, j.childName, j.storyTitle)}
                         target="_blank"
@@ -280,6 +316,10 @@ export default function AdminPreviews() {
         </div>
       )}
 
+      {photosFor && (
+        <PhotosModal data={photosFor} onClose={() => setPhotosFor(null)} />
+      )}
+
       {showTest && (
         <TestRenderModal
           onClose={() => setShowTest(false)}
@@ -289,6 +329,80 @@ export default function AdminPreviews() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// The photographs a parent uploaded for one book.
+//
+// Support asks two things when a book has gone wrong: what did they actually
+// send us, and can it still be fixed. So this shows the source photos in the
+// order that drove the likeness, and says plainly when they are due to be
+// deleted — after that date the book cannot be re-rendered or reprinted
+// without going back to the parent for the photo again.
+function PhotosModal({
+  data,
+  onClose,
+}: {
+  data: AdminJobPhotos;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4"
+      onClick={onClose}
+    >
+      <div className="card w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-bold text-slate-deep">
+          Photos for {data.childName || "this book"}
+        </h2>
+        <p className="mt-1 text-sm text-slate-mutedText">
+          {data.photoUrls.length === 0
+            ? "No photos are on file for this session."
+            : data.photoUrls.length === 1
+              ? "The photo this book's likeness was built from."
+              : `${data.photoUrls.length} photos. The first is the one that drove the likeness.`}
+        </p>
+
+        {data.photoUrls.length > 0 && (
+          <div className="mt-5 grid grid-cols-3 gap-3">
+            {data.photoUrls.map((url, i) => (
+              <a
+                key={url}
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                title="Open the full-size photo"
+                className="group relative block overflow-hidden rounded-xl border-2 border-brand-borderAccent transition hover:border-brand-primary"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={webImage(url, 480)}
+                  alt={`Uploaded photo ${i + 1}`}
+                  className="aspect-square w-full object-cover"
+                />
+                {i === 0 && data.photoUrls.length > 1 && (
+                  <span className="absolute left-1.5 top-1.5 rounded-full bg-brand-primary px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+                    Primary
+                  </span>
+                )}
+              </a>
+            ))}
+          </div>
+        )}
+
+        <p className="mt-5 text-xs text-slate-mutedText">
+          {data.deletedAt
+            ? `Deleted on ${fmtDate(data.deletedAt)}. After that this book cannot be re-rendered or reprinted without asking the parent again.`
+            : "No deletion date on file for this session."}
+        </p>
+
+        <div className="mt-5 flex justify-end">
+          <button onClick={onClose} className="btn-primary !py-2">
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
