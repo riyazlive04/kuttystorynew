@@ -98,9 +98,11 @@ class Settings(BaseSettings):
     # and 1.3 left a trace of the largest mark, 1.6 covered it, and clean faces
     # were indistinguishable at every setting. 0 disables it.
     forehead_patch: float = 1.6
-    # Keep the artwork's hair out of the face composite's blend rather than
-    # crossfading it with the swapper's. Two hair renderings averaged together
-    # is what makes strands run in conflicting directions along the hairline.
+    # Keep the artwork's hair out of the face composite rather than crossfading
+    # it with the swapper's. Two hair renderings averaged together is what makes
+    # strands run in conflicting directions along the hairline, and a traced
+    # outline -- which follows the real silhouette, fringe included -- puts the
+    # child's photographed hair on the character's head outright.
     # A kill switch, not a dial: 0 blending of hair is the correct amount.
     keep_artwork_hair: bool = True
     # Recolour the artwork's ears and neck to the swapped face's skin tone, so a

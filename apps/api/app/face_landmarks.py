@@ -134,6 +134,28 @@ def face_box(image_bytes: bytes) -> Optional[dict]:
         return None
 
 
+def brow_line(image_bytes: bytes) -> Optional[dict]:
+    """The brow line as `{y, span}` in PIXELS, or None.
+
+    The boundary between "hair" and "face". Everything above it on an
+    illustrated plate is forehead and fringe; the eyebrows sit on it. A hair
+    guard needs that line because the only cheap way to tell hair from an
+    eyebrow is that both are dark and one of them is higher up.
+
+    `span` comes back with it so a caller can soften the cut in proportion to
+    the face rather than by a fixed number of pixels.
+    """
+    try:
+        found = _landmarks(image_bytes)
+        if not found:
+            return None
+        lm, W, H, span = found
+        return {"y": min(lm[BROW_L].y, lm[BROW_R].y) * H, "span": span}
+    except Exception as e:  # noqa: BLE001
+        print(f"[landmarks] brow line skipped: {e}", flush=True)
+        return None
+
+
 def forehead_spot(image_bytes: bytes) -> Optional[dict]:
     """Where an invented bindi goes, as `{x, y, rx, ry}` in PIXELS.
 

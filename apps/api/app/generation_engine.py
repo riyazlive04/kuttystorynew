@@ -403,6 +403,103 @@ def _save_bytes(data: bytes, prefix: str = "swap") -> str:
     return f"/uploads/{name}"
 
 
+def _brow_from_region(region: dict, size):
+    """Last resort: the brow line, estimated from the face region.
+
+    A traced outline runs from the hairline to the chin, and on the plates
+    measured the brows sit a little over a third of the way down it.
+    """
+    W, H = size
+    pts = (region or {}).get("points")
+    if pts and len(pts) >= 3:
+        ys = [float(p[1]) / 100.0 * H for p in pts]
+        top, bottom = min(ys), max(ys)
+    elif region and region.get("h"):
+        top = float(region["y"]) / 100.0 * H
+        bottom = top + float(region["h"]) / 100.0 * H
+    else:
+        return None
+    if bottom - top < 8:
+        return None
+    return {"y": top + (bottom - top) * 0.36, "span": bottom - top}
+
+
+def _keep_template_hair(mask, swapped: bytes, swapped_size, template: bytes, region):
+    """Take the plate's hair out of the mask, including where the mask is solid.
+
+    `_keep_artwork_hair` guards the feathered BAND only, and deliberately so:
+    the eyebrows sit deep inside the fully-swapped core, and a luminance test
+    cannot tell an eyebrow from a fringe. That is enough when the region came
+    from the Haar detector, which runs brow to chin and so never contained hair
+    to begin with.
+
+    A traced outline is a different shape. SAM3, and a careful hand trace,
+    follow the real silhouette -- hairline, ears, chin -- which puts the fringe
+    INSIDE the region at full mask strength, exactly where the band guard is
+    inert. The child's own hair is then composited over the character's, and a
+    photograph's hair on an illustrated head is what reads as odd: it falls the
+    way the camera saw it, not the way the plate was drawn.
+
+    The brow line settles which dark pixels are which. Above it nothing needs
+    protecting -- a forehead carries no identity, and every dark pixel up there
+    is hair -- so the same luminance test runs at full strength, core included.
+    Below it nothing changes and the child keeps their own brows.
+    """
+    try:
+        import numpy as np
+
+        from .face_landmarks import brow_line
+
+        H = mask.size[1]
+        # The swap first, because that is the face the mask is being cut for,
+        # then the plate, which shares the composition, then the region itself.
+        brow = brow_line(swapped)
+        if brow and swapped_size and swapped_size[1]:
+            brow = {"y": brow["y"] * H / swapped_size[1],
+                    "span": brow["span"] * H / swapped_size[1]}
+        else:
+            brow = brow_line(template)
+            tmpl_size = _decoded_size(template)
+            if brow and tmpl_size and tmpl_size[1]:
+                brow = {"y": brow["y"] * H / tmpl_size[1],
+                        "span": brow["span"] * H / tmpl_size[1]}
+            else:
+                brow = None
+        if not brow:
+            brow = _brow_from_region(region, mask.size)
+        if not brow:
+            print("[retouch] hair guard: no brow line found by any method", flush=True)
+            return mask
+
+        m = np.asarray(mask, dtype=np.float32) / 255.0
+        core = m > 0.99
+        if not core.any():
+            return mask
+        tmpl = Image.open(io.BytesIO(template)).convert("L").resize(
+            mask.size, Image.LANCZOS
+        )
+        lum = np.asarray(tmpl, dtype=np.float32)
+        # Median skin INSIDE the face, so the threshold follows the plate's own
+        # lighting rather than a fixed number that would call a dark-skinned
+        # child's cheek "hair".
+        skin = float(np.median(lum[core]))
+        lo, hi = skin * 0.45, skin * 0.70
+        keep = np.clip((lum - lo) / max(1e-3, hi - lo), 0.0, 1.0)  # 0 hair, 1 skin
+
+        # A soft cut at the brows rather than a straight one: a hard line across
+        # a forehead is itself an artifact, and the brows are not perfectly
+        # level on a tilted head.
+        ramp = max(4.0, brow["span"] * 0.08)
+        ys = np.arange(mask.size[1], dtype=np.float32)[:, None]
+        above = np.clip((brow["y"] - ys) / ramp, 0.0, 1.0)
+
+        out = m * (1.0 - above * (1.0 - keep))
+        return Image.fromarray(np.clip(out * 255.0, 0, 255).astype("uint8"), "L")
+    except Exception as e:  # noqa: BLE001 -- a fringe is not worth a failed page
+        print(f"[retouch] template hair guard skipped: {e}", flush=True)
+        return mask
+
+
 def _keep_artwork_hair(template: Image.Image, mask: Image.Image) -> Image.Image:
     """Take the plate's hair out of the blend, so it is never averaged with the
     swapper's.
@@ -650,6 +747,11 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
             print(f"[retouch] ear patch skipped: {e}", flush=True)
 
     if settings.keep_artwork_hair:
+        # Above the brows first, where a traced outline puts the fringe inside
+        # the solid core, then the feathered band, where two hair renderings
+        # would otherwise be crossfaded. Different problems, different halves
+        # of the mask; the band guard cannot reach the core and is not meant to.
+        mask = _keep_template_hair(mask, swapped, swapped_size, tmpl_bytes, region)
         mask = _keep_artwork_hair(tmpl, mask)
     out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
     # The artwork's ears and neck stay the illustrated child's skin tone; move
