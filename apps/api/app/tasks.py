@@ -733,7 +733,54 @@ async def _purge() -> int:
                 ],
             }
         )
+        # A job is only marked purchased when the post-purchase render finishes,
+        # but the money arrives earlier, at payment verification. Anything that
+        # stops the render in between -- a worker restart, a 429 from the image
+        # API, a broker that was down when the task was queued -- leaves a paid
+        # book still looking like an abandoned preview. Forty-eight hours later
+        # this sweep would delete the one thing nobody can recreate: the
+        # photograph the parent uploaded. The book could then be neither
+        # re-rendered nor reprinted without going back to ask them for it again.
+        #
+        # So ask the orders, not just the job.
+        paid_by_job = {}
+        if expired:
+            paid_orders = await db.order.find_many(
+                where={
+                    "status": "paid",
+                    "previewSessionId": {"in": [j.id for j in expired]},
+                }
+            )
+            paid_by_job = {
+                o.previewSessionId: o for o in paid_orders if o.previewSessionId
+            }
+
         for job in expired:
+            order = paid_by_job.get(job.id)
+            if order is not None:
+                # Put the job back on the preserved footing it should have had
+                # all along, and let the ordinary 30-day rule decide when it
+                # goes. Dated from the order, not from now, so a render that
+                # failed months ago does not buy itself another 30 days every
+                # time this runs.
+                placed = order.createdAt or now
+                # Comparing a naive datetime against an aware one raises, and a
+                # raise here would stop the sweep for every job behind this one.
+                if placed.tzinfo is None:
+                    placed = placed.replace(tzinfo=timezone.utc)
+                preserved_until = placed + timedelta(
+                    days=settings.preserved_retention_days
+                )
+                if preserved_until > now:
+                    await db.job.update(
+                        where={"id": job.id},
+                        data={
+                            "isPurchased": True,
+                            "preservedUntil": preserved_until,
+                        },
+                    )
+                    continue
+
             # Delete the raw uploaded face photos -- ALL of them.
             #
             # This used to unlink job.photoUrl alone. The wizard accepts up to
