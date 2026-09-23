@@ -58,6 +58,11 @@ services:
         # or /opt/kuttystory/.env. Without it the checkout refuses to run
         # rather than pretending a payment succeeded.
         NEXT_PUBLIC_RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+        # Google Tag Manager container. Public by design — it ships in the
+        # page source — so it is pinned here rather than read from the shell
+        # env. Only the production build gets an ID, which keeps dev and
+        # local traffic out of the analytics.
+        NEXT_PUBLIC_GTM_ID: GTM-KGPJC2HG
     ports: !override
       - "127.0.0.1:3000:3000"
     restart: unless-stopped
