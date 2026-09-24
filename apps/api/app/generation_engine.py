@@ -1836,6 +1836,19 @@ async def render_page(
             from .app_settings import image_provider
 
             active = image_provider()
+            # Which swapper ran, and whether anything constrained it. Both
+            # decide what comes back, neither was recoverable from the finished
+            # image, and the provider is a runtime toggle rather than a deploy
+            # -- so "we deployed the fix" and "the fix was in the path that
+            # ran" were impossible to tell apart. region=NONE is the loud case:
+            # no authored region means the full-head swap is used exactly as it
+            # returns, composite and hair guard included in what is skipped.
+            _pts = (face_region or {}).get("points") if face_region else None
+            print(
+                f"[render] provider={active} "
+                f"region={'traced' if _pts else ('box' if face_region else 'NONE')}",
+                flush=True,
+            )
             if active == "openai" and not current_openai_key():
                 # Do NOT quietly fall through to another swapper: the admin chose
                 # this provider, and a silent switch would make an A/B comparison
