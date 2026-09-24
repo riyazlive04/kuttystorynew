@@ -448,7 +448,24 @@ def _keep_template_hair(mask, swapped: bytes, swapped_size, template: bytes, reg
     try:
         import numpy as np
 
+        from .app_settings import keep_template_above_brows
         from .face_landmarks import brow_line
+
+        if not keep_template_above_brows():
+            # The child's own hair, exactly as the swapper drew it. Nothing
+            # above the brows is taken back.
+            #
+            # This branch used to run the luminance test instead, which is not
+            # an option anybody would choose: it returned the plate's hair
+            # where the plate was dark and the child's where the plate's
+            # forehead was bare, so a page came back as the plate's hairstyle
+            # with the child's fringe hanging in front of it -- both answers at
+            # once, and the complaint that started all of this. The feathered
+            # band guard still runs below, because crossfading two hair
+            # renderings is a different problem and still worth avoiding.
+            print("[retouch] hair guard: hair=child, mask left as traced",
+                  flush=True)
+            return mask
 
         H = mask.size[1]
         # The swap first, because that is the face the mask is being cut for,
@@ -472,34 +489,7 @@ def _keep_template_hair(mask, swapped: bytes, swapped_size, template: bytes, reg
             return mask
 
         m = np.asarray(mask, dtype=np.float32) / 255.0
-        core = m > 0.99
-        if not core.any():
-            return mask
-        tmpl = Image.open(io.BytesIO(template)).convert("L").resize(
-            mask.size, Image.LANCZOS
-        )
-        lum = np.asarray(tmpl, dtype=np.float32)
-
-        # Median skin INSIDE the face, so the threshold follows the plate's own
-        # lighting rather than a fixed number that would call a dark-skinned
-        # child's cheek "hair".
-        #
-        # Measured BELOW the brow line, not across the whole region, and that
-        # distinction is the difference between this working and not. A trace
-        # that follows the silhouette can be half hair; once hair is much past
-        # half, the median of the whole region IS hair, every threshold derived
-        # from it sinks below the hair's own luminance, and the guard quietly
-        # decides there is no hair to remove. Below the brows the region is
-        # face by construction, however much hair sits above it.
         ys_all = np.arange(mask.size[1], dtype=np.float32)[:, None]
-        face_only = core & (ys_all > brow["y"])
-        # Unless the brow line left almost nothing to measure, in which case the
-        # whole core is a worse reference but the only one there is.
-        if face_only.sum() < 0.05 * core.sum():
-            face_only = core
-        skin = float(np.median(lum[face_only]))
-        lo, hi = skin * 0.45, skin * 0.70
-        keep = np.clip((lum - lo) / max(1e-3, hi - lo), 0.0, 1.0)  # 0 hair, 1 skin
 
         # A soft cut at the brows rather than a straight one: a hard line across
         # a forehead is itself an artifact, and the brows are not perfectly
@@ -507,35 +497,19 @@ def _keep_template_hair(mask, swapped: bytes, swapped_size, template: bytes, reg
         ramp = max(4.0, brow["span"] * 0.08)
         above = np.clip((brow["y"] - ys_all) / ramp, 0.0, 1.0)
 
-        # Above the brows, take the plate outright rather than only where the
-        # plate happens to be dark.
-        #
-        # Testing against the plate's own luminance answers "is there hair HERE
-        # in the artwork", and that is the wrong question. The fringe being
-        # complained about is the CHILD's, and it lands wherever their hair
-        # falls -- most often on a forehead the artwork drew bare. Bare
-        # forehead reads as skin, the guard keeps the swap, and the swap is
-        # what the hair came in on. Measured on a plate whose hair starts high:
-        # the strip of drawn hair was taken back and the whole forehead below
-        # it, where the fringe actually sits, was left alone.
-        #
-        # The luminance test only ever existed to protect eyebrows, and the
-        # brow line already does that -- everything it protects is below.
-        from .app_settings import keep_template_above_brows
-
-        if keep_template_above_brows():
-            out = m * (1.0 - above)
-        else:
-            out = m * (1.0 - above * (1.0 - keep))
+        # Above the brows the plate wins outright, whatever it looks like
+        # there. Asking whether the PLATE has hair at a spot answers the wrong
+        # question: the fringe is the CHILD's, and it falls where their hair
+        # falls, most often on a forehead the artist drew bare.
+        out = m * (1.0 - above)
         # Say what it did. Whether the fringe on a finished page is the plate's
         # or the child's is the one thing that cannot be read back off the
         # image afterwards, and a guard that silently does nothing looks
         # exactly like a guard that was never deployed.
         removed = float((m - out).sum()) / max(1.0, float(m.sum())) * 100.0
         print(
-            f"[retouch] hair guard: brow at y={brow['y']:.0f}, skin={skin:.0f}, "
+            f"[retouch] hair guard: hair=plate, brow at y={brow['y']:.0f}, "
             f"above-brow {float((m * above).sum()) / max(1.0, float(m.sum())) * 100.0:.1f}%, "
-            f"hair={'plate' if keep_template_above_brows() else 'child'}, "
             f"took back {removed:.1f}% of the mask",
             flush=True,
         )

@@ -416,7 +416,8 @@ export default function AdminSettingsPage() {
                 The swapper returns the child&apos;s own hair. When ON, a
                 finished page keeps the <b>illustrated character&apos;s</b> hair
                 instead, everywhere above the brow line. When OFF, the
-                child&apos;s hair is kept as the swapper drew it.
+                child&apos;s hair is kept exactly as the swapper drew it,
+                fringe and all.
               </p>
               <p className="mt-2 text-xs text-slate-400">
                 Nothing about the likeness is lost either way: a face is
