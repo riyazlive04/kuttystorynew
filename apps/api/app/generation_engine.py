@@ -773,6 +773,31 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
         mask = _keep_template_hair(mask, swapped, swapped_size, tmpl_bytes, region)
         mask = _keep_artwork_hair(tmpl, mask)
     out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
+
+    # Every stage, side by side, when asked. Which image a fringe came from is
+    # invisible in the finished page -- the plate and the swap are the only two
+    # candidates, and looking at all four settles it in seconds.
+    if settings.debug_render_stages:
+        try:
+            import io as _io
+
+            def _stage(img, tag):
+                b = _io.BytesIO()
+                img.convert("RGB").save(b, format="JPEG", quality=92)
+                return _save_bytes(b.getvalue(), f"stage_{tag}")
+
+            print(
+                "[stages] plate=%s swap=%s mask=%s result=%s"
+                % (
+                    _stage(tmpl, "1plate"),
+                    _stage(swp, "2swap"),
+                    _stage(mask, "3mask"),
+                    _stage(out, "4result"),
+                ),
+                flush=True,
+            )
+        except Exception as e:  # noqa: BLE001 -- debugging must not fail a page
+            print(f"[stages] skipped: {e}", flush=True)
     # The artwork's ears and neck stay the illustrated child's skin tone; move
     # them to the swapped face's, or the face reads as a mask on a pale head.
     if settings.match_surrounding_skin:

@@ -41,6 +41,9 @@ services:
       DATABASE_URL: postgresql://kutty:${POSTGRES_PASSWORD}@db:5432/kuttystory
       REDIS_URL: redis://redis:6379/0
       ENVIRONMENT: production
+      # Dump the plate, the swap, the mask and the result of every composite.
+      # Off unless the shell sets it: DEBUG_RENDER_STAGES=true docker compose …
+      DEBUG_RENDER_STAGES: ${DEBUG_RENDER_STAGES:-false}
     volumes: !override
       - api_storage:/app/storage
     restart: unless-stopped

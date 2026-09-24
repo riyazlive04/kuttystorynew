@@ -113,6 +113,12 @@ class Settings(BaseSettings):
     # recognised by eyes, nose, mouth and jaw, all of which sit below the line.
     # Kill switch. With it off the swap keeps its own forehead and fringe.
     keep_template_above_brows: bool = True
+    # Write every stage of one page's composite to the storage volume and log
+    # the URLs: the plate, the raw swap, the mask, and the result. Off by
+    # default -- it is four extra files per page. Turn it on when an argument
+    # about where a pixel came from has gone round more than twice, because
+    # the finished image cannot answer that and neither can reading the code.
+    debug_render_stages: bool = False
     # Recolour the artwork's ears and neck to the swapped face's skin tone, so a
     # warmer-skinned child doesn't get a tanned face on pale ears. Kill switch.
     match_surrounding_skin: bool = True
