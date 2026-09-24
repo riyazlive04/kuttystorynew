@@ -340,6 +340,20 @@ export default function AdminPreviews() {
 // order that drove the likeness, and says plainly when they are due to be
 // deleted — after that date the book cannot be re-rendered or reprinted
 // without going back to the parent for the photo again.
+/** What the downloaded file should be called on someone's desktop.
+ *
+ *  The photos are stored under a uuid, which is right for the server and
+ *  useless in a Downloads folder: three of them and nobody can tell which
+ *  book, or which child, any of them belongs to.
+ */
+function photoFileName(childName: string, url: string, i: number, count: number) {
+  const safe =
+    (childName || "child").replace(/[^a-zA-Z0-9 _-]/g, "").trim() || "child";
+  const ext = (url.split("?")[0].match(/\.[a-z0-9]+$/i) || [".jpg"])[0];
+  const which = count > 1 ? `-${i + 1}${i === 0 ? "-primary" : ""}` : "";
+  return `KuttyStory-${safe}-photo${which}${ext}`;
+}
+
 function PhotosModal({
   data,
   onClose,
@@ -367,26 +381,42 @@ function PhotosModal({
         {data.photoUrls.length > 0 && (
           <div className="mt-5 grid grid-cols-3 gap-3">
             {data.photoUrls.map((url, i) => (
-              <a
-                key={url}
-                href={url}
-                target="_blank"
-                rel="noreferrer"
-                title="Open the full-size photo"
-                className="group relative block overflow-hidden rounded-xl border-2 border-brand-borderAccent transition hover:border-brand-primary"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={webImage(url, 480)}
-                  alt={`Uploaded photo ${i + 1}`}
-                  className="aspect-square w-full object-cover"
-                />
-                {i === 0 && data.photoUrls.length > 1 && (
-                  <span className="absolute left-1.5 top-1.5 rounded-full bg-brand-primary px-2 py-0.5 text-[10px] font-bold uppercase text-white">
-                    Primary
-                  </span>
-                )}
-              </a>
+              <div key={url} className="space-y-1.5">
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open the full-size photo"
+                  className="group relative block overflow-hidden rounded-xl border-2 border-brand-borderAccent transition hover:border-brand-primary"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={webImage(url, 480)}
+                    alt={`Uploaded photo ${i + 1}`}
+                    className="aspect-square w-full object-cover"
+                  />
+                  {i === 0 && data.photoUrls.length > 1 && (
+                    <span className="absolute left-1.5 top-1.5 rounded-full bg-brand-primary px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+                      Primary
+                    </span>
+                  )}
+                </a>
+                {/* The original, never the resized copy: a reprint or a
+                    re-render needs the pixels the parent actually sent. */}
+                <a
+                  href={url}
+                  download={photoFileName(
+                    data.childName,
+                    url,
+                    i,
+                    data.photoUrls.length,
+                  )}
+                  title="Download the original photo"
+                  className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-brand-borderAccent px-2 py-1 text-xs font-bold text-slate-mutedText transition hover:border-brand-primary hover:text-brand-primary"
+                >
+                  <Download className="h-3.5 w-3.5" /> Download
+                </a>
+              </div>
             ))}
           </div>
         )}
