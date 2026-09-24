@@ -479,10 +479,25 @@ def _keep_template_hair(mask, swapped: bytes, swapped_size, template: bytes, reg
             mask.size, Image.LANCZOS
         )
         lum = np.asarray(tmpl, dtype=np.float32)
+
         # Median skin INSIDE the face, so the threshold follows the plate's own
         # lighting rather than a fixed number that would call a dark-skinned
         # child's cheek "hair".
-        skin = float(np.median(lum[core]))
+        #
+        # Measured BELOW the brow line, not across the whole region, and that
+        # distinction is the difference between this working and not. A trace
+        # that follows the silhouette can be half hair; once hair is much past
+        # half, the median of the whole region IS hair, every threshold derived
+        # from it sinks below the hair's own luminance, and the guard quietly
+        # decides there is no hair to remove. Below the brows the region is
+        # face by construction, however much hair sits above it.
+        ys_all = np.arange(mask.size[1], dtype=np.float32)[:, None]
+        face_only = core & (ys_all > brow["y"])
+        # Unless the brow line left almost nothing to measure, in which case the
+        # whole core is a worse reference but the only one there is.
+        if face_only.sum() < 0.05 * core.sum():
+            face_only = core
+        skin = float(np.median(lum[face_only]))
         lo, hi = skin * 0.45, skin * 0.70
         keep = np.clip((lum - lo) / max(1e-3, hi - lo), 0.0, 1.0)  # 0 hair, 1 skin
 
@@ -490,10 +505,19 @@ def _keep_template_hair(mask, swapped: bytes, swapped_size, template: bytes, reg
         # a forehead is itself an artifact, and the brows are not perfectly
         # level on a tilted head.
         ramp = max(4.0, brow["span"] * 0.08)
-        ys = np.arange(mask.size[1], dtype=np.float32)[:, None]
-        above = np.clip((brow["y"] - ys) / ramp, 0.0, 1.0)
+        above = np.clip((brow["y"] - ys_all) / ramp, 0.0, 1.0)
 
         out = m * (1.0 - above * (1.0 - keep))
+        # Say what it did. Whether the fringe on a finished page is the plate's
+        # or the child's is the one thing that cannot be read back off the
+        # image afterwards, and a guard that silently does nothing looks
+        # exactly like a guard that was never deployed.
+        removed = float((m - out).sum()) / max(1.0, float(m.sum())) * 100.0
+        print(
+            f"[retouch] hair guard: brow at y={brow['y']:.0f}, skin={skin:.0f}, "
+            f"took back {removed:.1f}% of the mask",
+            flush=True,
+        )
         return Image.fromarray(np.clip(out * 255.0, 0, 255).astype("uint8"), "L")
     except Exception as e:  # noqa: BLE001 -- a fringe is not worth a failed page
         print(f"[retouch] template hair guard skipped: {e}", flush=True)
