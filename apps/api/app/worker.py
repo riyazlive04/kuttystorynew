@@ -32,6 +32,12 @@ celery_app.conf.update(
             "task": "app.tasks.purge_expired",
             "schedule": 3600.0,  # every hour
         },
+        # Often enough that a dead render is caught while the customer is still
+        # on the page, rather than found the next morning.
+        "reap-stalled-renders": {
+            "task": "app.tasks.reap_stalled",
+            "schedule": 300.0,  # every 5 minutes
+        },
     },
 )
 

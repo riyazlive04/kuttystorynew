@@ -858,6 +858,69 @@ def _safe_unlink(path: str) -> None:
         pass
 
 
+# --------------------------------------------------------------------------- #
+#  Stalled renders (runs every few minutes via Celery beat)                     #
+# --------------------------------------------------------------------------- #
+
+async def _reap_stalled() -> int:
+    """Fail renders that stopped reporting, so they can be retried.
+
+    A render only leaves `rendering` because the task that owns it says so. If
+    that task is not there any more -- the worker was restarted for a deploy,
+    the container was killed, Celery's hard time limit fired -- nobody updates
+    the row, and nothing was watching. The job sits at ninety-nine per cent
+    with a spinner on it until somebody notices by hand, which in practice
+    means a customer waiting all night.
+
+    Worse, it could not even be retried: /retry refuses anything that is not
+    `failed`, precisely so a double-click cannot start two paid renders. A
+    stalled job was therefore unreachable from the UI in both directions.
+
+    Every finished page writes progress to the row, so `updatedAt` is the
+    heartbeat. Silence for longer than a page could plausibly take means the
+    task is gone, and the row should say so -- at which point the existing
+    "Try again" works, and resumes from the pages that did render.
+    """
+    db = Prisma()
+    await db.connect()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            minutes=settings.render_stall_minutes
+        )
+        stalled = await db.job.find_many(
+            where={
+                "status": {"in": ["queued", "processing", "rendering"]},
+                "updatedAt": {"lt": cutoff},
+            }
+        )
+        for job in stalled:
+            await db.job.update(
+                where={"id": job.id},
+                data={
+                    "status": "failed",
+                    # Written for whoever reads it in the admin list, which is
+                    # the only place this surfaces.
+                    "error": (
+                        "The render stopped responding and was declared dead "
+                        f"after {settings.render_stall_minutes} minutes without "
+                        "progress. Try again resumes from the pages that "
+                        "finished."
+                    ),
+                },
+            )
+            print(f"[reaper] {job.id} stalled at {job.progress}% -- marked failed",
+                  flush=True)
+        return len(stalled)
+    finally:
+        await _disconnect(db)
+
+
+@celery_app.task(name="app.tasks.reap_stalled")
+def reap_stalled() -> int:
+    """Mark renders that stopped reporting as failed. Returns count reaped."""
+    return asyncio.run(_reap_stalled())
+
+
 @celery_app.task(name="app.tasks.purge_expired")
 def purge_expired() -> int:
     """Permanently delete raw photos + preview assets for non-purchased sessions

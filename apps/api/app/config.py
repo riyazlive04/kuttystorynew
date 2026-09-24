@@ -206,6 +206,13 @@ class Settings(BaseSettings):
 
     # Data retention: non-purchased previews purged this long after expiry;
     # purchased/approved books preserved this many days (Diffrun: 48h / 30 days).
+    # How long a render may go without recording any progress before it is
+    # declared dead. Every finished page writes to the job row, so this is the
+    # gap between pages, not the length of the render: comfortably longer than
+    # the slowest single page (a 360s provider call plus its one retry) and
+    # comfortably shorter than Celery's 60-minute hard kill, which is what used
+    # to leave a customer on a spinner overnight with nothing watching.
+    render_stall_minutes: int = 25
     data_retention_hours: int = 48
     preserved_retention_days: int = 30
     storage_dir: str = "/app/storage"
