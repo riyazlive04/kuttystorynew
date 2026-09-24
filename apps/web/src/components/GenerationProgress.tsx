@@ -24,12 +24,17 @@ export function GenerationProgress({
   childName,
   pagesReady,
   pagesTotal,
+  variant = "card",
 }: {
   status: Status;
   serverProgress: number;
   childName: string;
   pagesReady: number;
   pagesTotal: number;
+  /** "card" stands on its own; "inline" fills the page area of the flip-book,
+   *  so the wait and the book it is producing are one thing on the screen and
+   *  the finished page appears where the customer is already looking. */
+  variant?: "card" | "inline";
 }) {
   const name = childName?.trim() || "your little one";
   const started = useRef(Date.now());
@@ -94,12 +99,21 @@ export function GenerationProgress({
     },
   ];
 
+  const inline = variant === "inline";
+
   return (
     <div
-      className="mx-auto mb-8 max-w-lg rounded-3xl border-2 border-brand-borderAccent bg-white/80 p-6 text-center shadow-sm"
+      className={
+        inline
+          ? // Fills the square the page will occupy. Scrolls only if a small
+            // phone cannot fit the checklist, which beats clipping it.
+            "flex h-full w-full flex-col items-center justify-center overflow-y-auto px-5 py-6 text-center"
+          : "mx-auto mb-8 max-w-lg rounded-3xl border-2 border-brand-borderAccent bg-white/80 p-6 text-center shadow-sm"
+      }
       role="status"
       aria-live="polite"
     >
+      <div className="w-full max-w-sm">
       <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-brand-gradient text-white shadow-glow">
         <Sparkles className="h-6 w-6 animate-pulse" />
       </div>
@@ -171,6 +185,7 @@ export function GenerationProgress({
           than usual. It&apos;s still working — thank you for waiting!
         </p>
       )}
+      </div>
     </div>
   );
 }

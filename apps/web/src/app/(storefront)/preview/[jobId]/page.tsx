@@ -300,16 +300,10 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
         </div>
       )}
 
-      {rendering && (
-        <GenerationProgress
-          status={job.status}
-          serverProgress={job.progress}
-          childName={job.childName}
-          pagesReady={renderedFree}
-          pagesTotal={effectiveFreePages}
-        />
-      )}
-
+      {/* The wait lives inside the book, not above it. Two stacked panels meant
+          the progress filled the screen and the page it was producing appeared
+          below the fold — so the moment it arrived was the moment nobody saw.
+          One section: the same square holds the wait and then the page. */}
       <FlipBook
         pages={job.pages}
         freeCount={effectiveFreePages}
@@ -319,6 +313,18 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
         onSelect={handleSelect}
         onRegenerate={job.status === "completed" ? handleRegenerate : undefined}
         regeneratingPage={regeneratingPage}
+        placeholder={
+          rendering ? (
+            <GenerationProgress
+              status={job.status}
+              serverProgress={job.progress}
+              childName={job.childName}
+              pagesReady={renderedFree}
+              pagesTotal={effectiveFreePages}
+              variant="inline"
+            />
+          ) : undefined
+        }
       />
 
       <PhoneLoginModal

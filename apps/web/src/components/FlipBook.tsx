@@ -22,6 +22,7 @@ export function FlipBook({
   onSelect,
   onRegenerate,
   regeneratingPage,
+  placeholder,
 }: {
   pages: PreviewPage[];
   freeCount: number;
@@ -31,6 +32,10 @@ export function FlipBook({
   onSelect: (format: Format) => void;
   onRegenerate?: (pageNumber: number) => void;
   regeneratingPage?: number | null;
+  /** Shown inside the page area while a free page has no image yet. The
+   *  preview passes its progress panel here so the wait happens where the
+   *  finished page will appear, rather than above it. */
+  placeholder?: React.ReactNode;
 }) {
   const [i, setI] = useState(0);
   const [flip, setFlip] = useState<"none" | "next" | "prev">("none");
@@ -88,13 +93,16 @@ export function FlipBook({
             // Locked page with no base-art teaser — decorative placeholder.
             <div className="h-full w-full bg-gradient-to-br from-brand-lilac/60 to-brand-borderAccent" />
           ) : (
-            // Free page still rendering — visible loader inside the page area.
-            <div className="shimmer flex h-full w-full flex-col items-center justify-center gap-3">
-              <Loader2 className="h-9 w-9 animate-spin text-brand-primary" />
-              <span className="text-sm font-semibold text-slate-mutedText">
-                Creating this page…
-              </span>
-            </div>
+            // Free page still rendering. The caller can put something more
+            // substantial here; this is the fallback when it does not.
+            (placeholder ?? (
+              <div className="shimmer flex h-full w-full flex-col items-center justify-center gap-3">
+                <Loader2 className="h-9 w-9 animate-spin text-brand-primary" />
+                <span className="text-sm font-semibold text-slate-mutedText">
+                  Creating this page…
+                </span>
+              </div>
+            ))
           )}
 
           {/* The story text is already burned into the page image (authored
