@@ -105,6 +105,14 @@ class Settings(BaseSettings):
     # child's photographed hair on the character's head outright.
     # A kill switch, not a dial: 0 blending of hair is the correct amount.
     keep_artwork_hair: bool = True
+    # Everything above the brows belongs to the artwork: its hairline, its
+    # fringe, its forehead. A swap brings the child's own hair with it, and
+    # where the plate's forehead is bare the child's fringe lands straight on
+    # it -- a photograph's hair, falling the way the camera saw it, on a drawn
+    # head. No identity is lost by taking that strip from the plate: a face is
+    # recognised by eyes, nose, mouth and jaw, all of which sit below the line.
+    # Kill switch. With it off the swap keeps its own forehead and fringe.
+    keep_template_above_brows: bool = True
     # Recolour the artwork's ears and neck to the swapped face's skin tone, so a
     # warmer-skinned child doesn't get a tanned face on pale ears. Kill switch.
     match_surrounding_skin: bool = True
