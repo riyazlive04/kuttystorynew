@@ -521,7 +521,9 @@ def _keep_template_hair(mask, swapped: bytes, swapped_size, template: bytes, reg
         #
         # The luminance test only ever existed to protect eyebrows, and the
         # brow line already does that -- everything it protects is below.
-        if settings.keep_template_above_brows:
+        from .app_settings import keep_template_above_brows
+
+        if keep_template_above_brows():
             out = m * (1.0 - above)
         else:
             out = m * (1.0 - above * (1.0 - keep))
@@ -533,6 +535,7 @@ def _keep_template_hair(mask, swapped: bytes, swapped_size, template: bytes, reg
         print(
             f"[retouch] hair guard: brow at y={brow['y']:.0f}, skin={skin:.0f}, "
             f"above-brow {float((m * above).sum()) / max(1.0, float(m.sum())) * 100.0:.1f}%, "
+            f"hair={'plate' if keep_template_above_brows() else 'child'}, "
             f"took back {removed:.1f}% of the mask",
             flush=True,
         )

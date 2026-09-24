@@ -98,6 +98,8 @@ export interface ProviderKeyStatus {
 
 export interface AdminSettings {
   faceOutlineEnabled: boolean;
+  /** Whose hair a finished page shows above the brow line. */
+  keepTemplateAboveBrows: boolean;
   whatsappNumber: string;
   imageProvider: ImageProvider;
   segmind: ProviderKeyStatus;
@@ -322,6 +324,7 @@ export const adminApi = {
   getSettings: (): Promise<AdminSettings> => req("/admin/settings"),
   updateSettings: (patch: {
     faceOutlineEnabled?: boolean;
+    keepTemplateAboveBrows?: boolean;
     imageProvider?: ImageProvider;
     segmindApiKey?: string;
     openaiApiKey?: string;

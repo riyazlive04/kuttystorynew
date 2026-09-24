@@ -222,6 +222,8 @@ async def admin_delete_order(order_id: str):
 
 class SettingsPatch(BaseModel):
     faceOutlineEnabled: Optional[bool] = None
+    # Whether a finished page keeps the plate's hair above the brow line.
+    keepTemplateAboveBrows: Optional[bool] = None
     whatsappNumber: Optional[str] = None
     # "segmind" | "openai" — which service personalizes the child's face.
     imageProvider: Optional[str] = None
@@ -275,6 +277,10 @@ async def admin_update_settings(body: SettingsPatch):
     data = body.model_dump()
     if data.get("faceOutlineEnabled") is not None:
         update_settings({"faceOutlineEnabled": data["faceOutlineEnabled"]})
+    if data.get("keepTemplateAboveBrows") is not None:
+        update_settings(
+            {"keepTemplateAboveBrows": data["keepTemplateAboveBrows"]}
+        )
     if data.get("whatsappNumber") is not None:
         from ..app_settings import normalize_whatsapp
 

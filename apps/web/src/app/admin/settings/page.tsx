@@ -143,6 +143,7 @@ export default function AdminSettingsPage() {
   const [s, setS] = useState<AdminSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingToggle, setSavingToggle] = useState(false);
+  const [savingHair, setSavingHair] = useState(false);
 
   // WhatsApp number behind the site's chat button
   const [waInput, setWaInput] = useState("");
@@ -176,6 +177,22 @@ export default function AdminSettingsPage() {
       setWaMsg(e instanceof Error ? e.message : "Failed to save the number");
     } finally {
       setSavingWa(false);
+    }
+  }
+
+  async function toggleTemplateHair() {
+    if (!s) return;
+    setSavingHair(true);
+    try {
+      setS(
+        await adminApi.updateSettings({
+          keepTemplateAboveBrows: !s.keepTemplateAboveBrows,
+        }),
+      );
+    } catch {
+      alert("Failed to update setting");
+    } finally {
+      setSavingHair(false);
     }
   }
 
@@ -383,6 +400,57 @@ export default function AdminSettingsPage() {
         </div>
         <p className="mt-3 text-xs font-semibold text-slate-mutedText">
           Currently: {s.faceOutlineEnabled ? "ON — outlines applied" : "OFF — full-head swap"}
+        </p>
+      </div>
+
+      {/* Whose hair */}
+      <div className="card mb-6 p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-lilac text-brand-primary">
+              <ScanFace className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="font-bold text-slate-deep">Hair above the brows</h2>
+              <p className="mt-1 text-sm text-slate-mutedText">
+                The swapper returns the child&apos;s own hair. When ON, a
+                finished page keeps the <b>illustrated character&apos;s</b> hair
+                instead, everywhere above the brow line. When OFF, the
+                child&apos;s hair is kept as the swapper drew it.
+              </p>
+              <p className="mt-2 text-xs text-slate-400">
+                Nothing about the likeness is lost either way: a face is
+                recognised by eyes, nose, mouth and jaw, and all of them sit
+                below the line. ON is steadier from page to page and avoids a
+                photograph&apos;s fringe on a drawn head. OFF is closer to the
+                real child, which matters most for distinctive hair — long or
+                curly — and least for a short crop.
+              </p>
+            </div>
+          </div>
+          <button
+            role="switch"
+            aria-checked={s.keepTemplateAboveBrows}
+            onClick={toggleTemplateHair}
+            disabled={savingHair}
+            className={`relative mt-1 h-7 w-12 shrink-0 rounded-full transition ${
+              s.keepTemplateAboveBrows ? "bg-brand-primary" : "bg-slate-300"
+            } disabled:opacity-60`}
+          >
+            <span
+              className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                s.keepTemplateAboveBrows ? "left-6" : "left-1"
+              }`}
+            />
+          </button>
+        </div>
+        <p className="mt-3 text-xs font-semibold text-slate-mutedText">
+          Currently:{" "}
+          {s.keepTemplateAboveBrows
+            ? "ON — the storybook character's hair"
+            : "OFF — the child's own hair"}
+          . Takes effect on the next render, so re-render a job to see the
+          difference.
         </p>
       </div>
 
