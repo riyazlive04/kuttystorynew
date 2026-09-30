@@ -252,10 +252,19 @@ export function PersonalizeWizard({ story }: { story: Story }) {
     launchSource(source);
   }
 
+  // A tile renders from the local file the moment it is picked, so "there is a
+  // photo on screen" says nothing about whether it reached the server. Only an
+  // uploaded one has a url, and only that one can render the book.
+  const uploadedCount = photos.filter((p) => p.url).length;
+  const uploadFailed = !uploadingCount && photos.length > 0 && !uploadedCount;
+
   // Nav (Back/Continue) only shows on Child(0) & Photo(1); Review(2) has its own
-  // generate button. Continuing from Child needs a valid name; Photo is optional.
+  // generate button. Continuing from Child needs a valid name; leaving Photo
+  // needs one that actually uploaded -- without it every page fails in the
+  // worker later, where the customer can only watch a dead preview.
   const canNext =
-    (step === 0 && data.childName.trim().length >= 2) || step === 1;
+    (step === 0 && data.childName.trim().length >= 2) ||
+    (step === 1 && uploadedCount > 0 && !uploadingCount);
 
   // Moving forward through the form. Reported per step, because "people drop
   // out of personalisation" is not an actionable fact and "people drop out on
@@ -420,9 +429,9 @@ export function PersonalizeWizard({ story }: { story: Story }) {
             <p className="text-sm text-slate-mutedText">
               1–3 clear, front-facing photos — we use the clearest one for every
               page, and you can pick a different one.{" "}
-              {photos.length > 0 && (
+              {uploadedCount > 0 && (
                 <span className="font-semibold text-emerald-600">
-                  {photos.length} {photos.length === 1 ? "photo" : "photos"}{" "}
+                  {uploadedCount} {uploadedCount === 1 ? "photo" : "photos"}{" "}
                   added ✓
                 </span>
               )}
@@ -433,6 +442,15 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                 </span>
               )}
             </p>
+            {/* The tiles below render from the local files, so without this the
+                only sign of a failed upload is a book that fails to render
+                minutes later, on a page the customer cannot do anything about. */}
+            {uploadFailed && (
+              <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                That photo didn&apos;t reach us — please check your connection
+                and add it again.
+              </p>
+            )}
             {/* Gallery / file picker (mobile also offers camera here) */}
             <input
               ref={fileRef}
@@ -704,7 +722,11 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                 <Summary k="Language" v={languageLabel(data.language)} />
                 <Summary
                   k="Photo"
-                  v={photos.length ? `${photos.length} uploaded ✓` : "Skipped"}
+                  v={
+                    uploadedCount
+                      ? `${uploadedCount} uploaded ✓`
+                      : "Not uploaded"
+                  }
                 />
                 <Summary k="Pages" v={`${story.pages}`} />
               </dl>
@@ -739,8 +761,14 @@ export function PersonalizeWizard({ story }: { story: Story }) {
 
             <button
               onClick={handleCreate}
-              disabled={submitting || !consent}
-              title={!consent ? "Please confirm consent to continue" : undefined}
+              disabled={submitting || !consent || !uploadedCount}
+              title={
+                !consent
+                  ? "Please confirm consent to continue"
+                  : !uploadedCount
+                    ? "Add a photo of your child first"
+                    : undefined
+              }
               className="btn-primary w-full text-base disabled:opacity-70"
             >
               {submitting ? (
@@ -754,6 +782,15 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                 </>
               )}
             </button>
+            {!uploadedCount && (
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="w-full text-center text-sm font-semibold text-rose-700 underline"
+              >
+                A photo is needed to make the book — go back and add one
+              </button>
+            )}
             <p className="flex items-center justify-center gap-1.5 text-xs text-slate-mutedText">
               <Lock className="h-3.5 w-3.5" /> Your data is protected
             </p>

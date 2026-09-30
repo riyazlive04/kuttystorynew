@@ -82,6 +82,16 @@ async def create_job(payload: PersonalizationIn):
     photo_urls = payload.photoUrls or ([payload.photoUrl] if payload.photoUrl else [])
     primary_photo = payload.photoUrl or (photo_urls[0] if photo_urls else None)
 
+    # The photo is the book. Without one every authored page fails in the worker
+    # minutes later, where the customer sees a dead preview and nobody can
+    # recover it -- so refuse here, while they are still on the form and the
+    # upload can simply be retried.
+    if not primary_photo:
+        raise HTTPException(
+            status_code=400,
+            detail="Add a photo of the child before creating the book.",
+        )
+
     job = await prisma.job.create(
         data={
             "storySlug": story.slug,
