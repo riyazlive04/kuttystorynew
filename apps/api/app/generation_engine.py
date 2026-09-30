@@ -1621,6 +1621,31 @@ async def _replicate_post(
     return r  # last (still-429) response; caller raises_for_status
 
 
+def _replicate_raise(r: httpx.Response, what: str) -> None:
+    """Raise with Replicate's own explanation, not just the status code.
+
+    A bare "422 Unprocessable Entity" in the admin list says nothing about which
+    input was rejected, so the detail Replicate sends is the whole diagnosis.
+    """
+    if r.status_code < 400:
+        return
+    detail = ""
+    try:
+        body = r.json()
+        detail = body.get("detail") or body.get("title") or ""
+        if isinstance(body.get("invalid_fields"), list):
+            fields = ", ".join(
+                f"{f.get('field')}: {f.get('description')}"
+                for f in body["invalid_fields"]
+            )
+            detail = f"{detail} ({fields})" if detail else fields
+    except Exception:  # noqa: BLE001
+        detail = (r.text or "")[:300]
+    raise RuntimeError(
+        f"Replicate {r.status_code} on {what}: {detail or 'no detail given'}"
+    )
+
+
 async def _replicate_create(
     client: httpx.AsyncClient, model: str, inp: dict, headers: dict
 ) -> dict:
@@ -1646,13 +1671,13 @@ async def _replicate_create(
             {"input": inp},
         )
         if r.status_code != 404:
-            r.raise_for_status()
+            _replicate_raise(r, f"{model} (model endpoint)")
             return r.json()
         # Community model — resolve its latest version and use /v1/predictions.
         m = await client.get(
             f"https://api.replicate.com/v1/models/{model}", headers=headers
         )
-        m.raise_for_status()
+        _replicate_raise(m, f"resolving version of {model}")
         version = m.json()["latest_version"]["id"]
     else:
         version = model.split(":", 1)[1]
@@ -1662,7 +1687,7 @@ async def _replicate_create(
         wait,
         {"version": version, "input": inp},
     )
-    r.raise_for_status()
+    _replicate_raise(r, f"{model} (versioned endpoint)")
     return r.json()
 
 
@@ -1830,6 +1855,19 @@ async def render_page(
             and _is_raster(base_image_url or "")
             and face_image_name
         )
+        # An authored page that cannot reach the swapper must not quietly become a
+        # txt2img invention: that ignores the illustration the book was drawn with
+        # and hands the customer an off-model page. Same contract the segmind
+        # branch below states for its own failures -- say why, and stop.
+        if not can_faceswap and _is_raster(base_image_url or ""):
+            why = (
+                "no usable child photo for this render"
+                if not face_image_name
+                else f"replicate_mode is {settings.replicate_mode!r}, not 'faceswap'"
+            )
+            raise RuntimeError(
+                f"This page has base art but could not be personalized: {why}."
+            )
         if can_faceswap:
             # Which service personalizes the face is an ADMIN RUNTIME toggle
             # (Settings -> Image provider), not an env var, so the two can be
