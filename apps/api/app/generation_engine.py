@@ -868,12 +868,16 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
 # result follows the face's own shading instead of flattening it.
 
 # A dark region this size or smaller, on skin, is an artefact rather than a
-# feature. The largest real speck measured was 36px; the smallest feature
-# (a nostril) was several hundred.
-SPECK_MAX_AREA = 80
+# feature. Measured across two real renders: the marks run from a few pixels up
+# to ~1000 (a patch 52x32 on a cheek), while hair and the eye sockets come back
+# as single regions of 35,000-60,000. There is three orders of magnitude between
+# the two, so this sits well clear of both.
+SPECK_MAX_AREA = 1400
 
-# How much darker than the surrounding skin a region must be to count.
-SPECK_DARK_RATIO = 0.62
+# How much darker than the surrounding skin a region must be to count. The
+# marks measured 46-86 against skin at 133, i.e. 35-65% of it; a brow or a
+# lash clump is darker still and far too large to qualify on area anyway.
+SPECK_DARK_RATIO = 0.78
 
 
 def _remove_skin_specks(data: bytes, region: dict) -> bytes:
