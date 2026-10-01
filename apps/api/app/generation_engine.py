@@ -392,6 +392,48 @@ def _b64(src: str) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
+# How much room to leave around the child's own face when cropping the SOURCE
+# photo. Enough for the whole head -- the swapper reads hair, jaw and neck to
+# judge what it is transplanting, and a crop tight to the eyes loses the very
+# proportions that make a toddler read as a toddler -- and no more, because
+# everything past that is the room he was photographed in.
+SOURCE_FACE_PADDING = 0.45
+
+
+def _b64_face(src: str) -> str:
+    """The child's face from a holiday snap, not the holiday snap.
+
+    An uploaded photo is a room with a child in it -- measured on a real
+    upload, the face was 12.7% of the frame -- and the swapper was being handed
+    all of it. What it has to work from is then a face a couple of hundred
+    pixels wide inside a bed, a wardrobe and a phone, which is how a toddler
+    comes back as a generic older child: there was never enough of him to copy.
+
+    Crop to the detected face with room around it and the same request carries
+    an order of magnitude more of the only thing it is being asked about. Falls
+    back to the whole photo when no face is found, which is the behaviour this
+    replaces.
+    """
+    from .color import open_srgb
+    from .face_detect import detect_face_region_for
+
+    region = detect_face_region_for(src)
+    img = open_srgb(_image_bytes(src))
+    if region:
+        box = _face_crop_box(region, img.size, padding=SOURCE_FACE_PADDING)
+        if box:
+            img = img.crop(box)
+            print(
+                f"[segmind] source cropped to face: {img.size[0]}x{img.size[1]}",
+                flush=True,
+            )
+    else:
+        print("[segmind] no face detected in the photo; sending it whole", flush=True)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=95, subsampling=0)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
 def _save_bytes(data: bytes, prefix: str = "swap") -> str:
     """Persist raw image bytes to the shared volume, return its /uploads URL."""
     import uuid
@@ -919,7 +961,7 @@ async def _segmind_faceswap(
     # cfg default is ~1.6 so we stay low to avoid over-cooking the face.
     url = f"https://api.segmind.com/v1/{settings.segmind_faceswap_model}"
     headers = {"x-api-key": api_key, "Content-Type": "application/json"}
-    source_b64 = _b64(face_src)     # the real child face
+    source_b64 = _b64_face(face_src)  # the real child's face, cropped out of the photo
     target_b64 = _b64(target_src)   # the fixed illustrated page
     last_err: Exception | None = None
     # Segmind queues requests: a single swap measured 99-267s in testing, and the
