@@ -968,19 +968,37 @@ async def _segmind_faceswap(
     # old 180s ceiling cut off calls that were about to succeed -- a timeout's
     # message is empty, which is why failures logged as "attempt 1/4 failed: ".
     timeout = httpx.Timeout(360.0, connect=20.0)
+    # faceswap-comic is a diffusion model: it does not paste a face, it GENERATES
+    # one to fill the region, which is why a toddler comes back as a generic
+    # older child however the strength dials are set (measured: hair toggle,
+    # source crop 12.7%->35.6%, face_strength 1.0 with style_strength 0.25 --
+    # none of them moved the likeness). The inswapper-family models transfer the
+    # actual face instead, and take a different payload, so the request is shaped
+    # to whichever model is configured.
+    comic = "comic" in settings.segmind_faceswap_model
     async with httpx.AsyncClient(timeout=timeout) as client:
         for attempt in range(attempts):
-            payload = {
-                "source_image": source_b64,
-                "target_image": target_b64,
-                "face_strength": settings.segmind_face_strength,
-                "style_strength": settings.segmind_style_strength,
-                "steps": settings.segmind_steps,
-                "cfg": 2,
-                "seed": seed + attempt * 1009,  # fresh seed each redo
-                "base64": False,
-                "output_format": "jpeg",
-            }
+            if comic:
+                payload = {
+                    "source_image": source_b64,
+                    "target_image": target_b64,
+                    "face_strength": settings.segmind_face_strength,
+                    "style_strength": settings.segmind_style_strength,
+                    "steps": settings.segmind_steps,
+                    "cfg": 2,
+                    "seed": seed + attempt * 1009,  # fresh seed each redo
+                    "base64": False,
+                    "output_format": "jpeg",
+                }
+            else:
+                payload = {
+                    "source_img": source_b64,
+                    "target_img": target_b64,
+                    "input_faces_index": 0,
+                    "source_faces_index": 0,
+                    "face_restore": "codeformer-v0.1.0.pth",
+                    "base64": False,
+                }
             try:
                 r = await client.post(url, headers=headers, json=payload)
                 r.raise_for_status()
