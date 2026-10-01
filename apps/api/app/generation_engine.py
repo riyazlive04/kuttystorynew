@@ -1044,7 +1044,10 @@ def _segmind_reason(e: Exception) -> str:
         return f"timed out waiting for Segmind ({type(e).__name__})"
     if isinstance(e, httpx.HTTPStatusError):
         code = e.response.status_code
-        body = (e.response.text or "").strip()[:200]
+        # Segmind answers with pretty-printed JSON, and a log line stops at the
+        # first newline -- which is how "request rejected (HTTP 400) {" reached
+        # the admin with the one useful sentence on the line after it.
+        body = " ".join((e.response.text or "").split())[:300]
         label = {
             401: "API key rejected",
             402: "out of credits",
@@ -1059,8 +1062,11 @@ def _segmind_reason(e: Exception) -> str:
 
 
 def _segmind_permanent(e: Exception) -> bool:
+    # 400 means the request itself is wrong -- a misnamed field, a model that
+    # wants different inputs. Five identical retries cannot make it right, and
+    # on a 28-page book that is 140 pointless calls before anyone is told.
     return isinstance(e, httpx.HTTPStatusError) and e.response.status_code in (
-        401, 402, 403, 406,
+        400, 401, 402, 403, 406,
     )
 
 
