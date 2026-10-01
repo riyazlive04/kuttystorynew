@@ -851,6 +851,87 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
     return buf.getvalue()
 
 
+# Speck removal, on the finished page.
+#
+# The swapper leaves small dark marks on otherwise clean skin -- measured on a
+# real render: 29 of them across the chin, cheeks and nose, each about half the
+# brightness of the skin around it (luma ~55 against ~111). On a printed page
+# they read as dirt on the child's face.
+#
+# What makes them safe to remove is that a face's real dark parts -- hair,
+# brows, lashes, pupils, nostrils, the line of the mouth -- are LARGE connected
+# regions, and these are not: the same measurement found 10 large regions and
+# 29 specks of 60px or less. So the rule is size, not darkness, and the
+# features every face needs are never candidates.
+#
+# Each speck is filled from the skin immediately around it (inpainting), so the
+# result follows the face's own shading instead of flattening it.
+
+# A dark region this size or smaller, on skin, is an artefact rather than a
+# feature. The largest real speck measured was 36px; the smallest feature
+# (a nostril) was several hundred.
+SPECK_MAX_AREA = 80
+
+# How much darker than the surrounding skin a region must be to count.
+SPECK_DARK_RATIO = 0.62
+
+
+def _remove_skin_specks(data: bytes, region: dict) -> bytes:
+    """Erase the swapper's dark flecks from skin, leaving real features alone."""
+    if not region:
+        return data
+    try:
+        import cv2
+        import numpy as np
+
+        from .color import open_srgb
+
+        img = open_srgb(data)
+        W, H = img.size
+        bounds = _region_bounds_pct(region)
+        if not bounds:
+            return data
+        bx, by, bw, bh = bounds
+        x0, y0 = int(bx / 100 * W), int(by / 100 * H)
+        x1, y1 = int((bx + bw) / 100 * W), int((by + bh) / 100 * H)
+        x0, y0 = max(0, x0), max(0, y0)
+        x1, y1 = min(W, x1), min(H, y1)
+        if x1 - x0 < 8 or y1 - y0 < 8:
+            return data
+
+        rgb = np.array(img.convert("RGB"))  # a copy: the patch is written back
+        face = rgb[y0:y1, x0:x1]
+        lum = face.mean(axis=2).astype(np.float32)
+        skin = float(np.median(lum))
+        dark = (lum < skin * SPECK_DARK_RATIO).astype(np.uint8)
+        if not dark.any():
+            return data
+
+        n, labels, stats, _ = cv2.connectedComponentsWithStats(dark, 8)
+        specks = np.zeros_like(dark)
+        count = 0
+        for i in range(1, n):
+            if stats[i, cv2.CC_STAT_AREA] <= SPECK_MAX_AREA:
+                specks[labels == i] = 1
+                count += 1
+        if not count:
+            return data
+
+        # Grow slightly so the speck's own soft edge goes with it, then fill
+        # from the skin around it.
+        specks = cv2.dilate(specks, np.ones((3, 3), np.uint8), iterations=1)
+        healed = cv2.inpaint(face, specks, 4, cv2.INPAINT_TELEA)
+        rgb[y0:y1, x0:x1] = healed
+        print(f"[retouch] removed {count} skin specks", flush=True)
+
+        buf = io.BytesIO()
+        Image.fromarray(rgb).save(buf, format="JPEG", quality=95, subsampling=0)
+        return buf.getvalue()
+    except Exception as e:  # noqa: BLE001 -- a retouch is never worth a failed page
+        print(f"[retouch] speck removal skipped: {e}", flush=True)
+        return data
+
+
 # Under-eye retouch, on the finished page.
 #
 # A child photographed from above in a room lit from above has their eye sockets
@@ -1022,6 +1103,7 @@ async def _segmind_faceswap(
                         )
                     except Exception as ce:  # noqa: BLE001
                         print(f"[segmind] face composite skipped: {ce}", flush=True)
+                content = _remove_skin_specks(content, face_region)
                 content = _soften_undereye(
                     content, face_region, settings.undereye_softening
                 )
@@ -1522,6 +1604,7 @@ async def _openai_faceswap(
             content = _composite_face_region(target_src, content, face_region)
         except Exception as ce:  # noqa: BLE001
             print(f"[openai] face composite skipped: {ce}", flush=True)
+    content = _remove_skin_specks(content, face_region)
     content = _soften_undereye(content, face_region, settings.undereye_softening)
 
     url = _save_bytes(content, prefix="page")
