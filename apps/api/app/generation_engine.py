@@ -1065,9 +1065,14 @@ async def _segmind_faceswap(
     # one to fill the region, which is why a toddler comes back as a generic
     # older child however the strength dials are set (measured: hair toggle,
     # source crop 12.7%->35.6%, face_strength 1.0 with style_strength 0.25 --
-    # none of them moved the likeness). The inswapper-family models transfer the
-    # actual face instead, and take a different payload, so the request is shaped
-    # to whichever model is configured.
+    # none of them moved the likeness), and why it leaves dark marks on the skin
+    # that no safe rule could remove afterwards.
+    #
+    # faceswap-v4 transfers the real face instead: on the same photo and plate
+    # it returned the actual child, and with none of the marks. It takes the
+    # same two images but none of the comic model's dials -- verified against
+    # the live API, which answers "Both source_image and target_image are
+    # required" to anything else -- so only those are sent.
     comic = "comic" in settings.segmind_faceswap_model
     async with httpx.AsyncClient(timeout=timeout) as client:
         for attempt in range(attempts):
@@ -1085,12 +1090,10 @@ async def _segmind_faceswap(
                 }
             else:
                 payload = {
-                    "source_img": source_b64,
-                    "target_img": target_b64,
-                    "input_faces_index": 0,
-                    "source_faces_index": 0,
-                    "face_restore": "codeformer-v0.1.0.pth",
+                    "source_image": source_b64,
+                    "target_image": target_b64,
                     "base64": False,
+                    "output_format": "jpeg",
                 }
             try:
                 r = await client.post(url, headers=headers, json=payload)
