@@ -884,7 +884,15 @@ def _soften_undereye(data: bytes, region: dict, strength: float) -> bytes:
         from .face_detect import eyes_in_face
 
         img = open_srgb(data)
-        eyes = eyes_in_face(data, region)
+        # eyes_in_face wants a box. A traced page's region is a polygon with no
+        # "x" in it, so this raised KeyError: 'x' and the retouch was skipped on
+        # exactly the pages that have an authored outline -- the good ones. The
+        # shadow it exists to lift stayed on every one of them.
+        bounds = _region_bounds_pct(region)
+        if not bounds:
+            return data
+        bx, by, bw, bh = bounds
+        eyes = eyes_in_face(data, {"x": bx, "y": by, "w": bw, "h": bh})
         if not eyes:
             return data  # no eyes located means nothing to be careful around
 
