@@ -1110,10 +1110,17 @@ async def _segmind_faceswap(
                         )
                     except Exception as ce:  # noqa: BLE001
                         print(f"[segmind] face composite skipped: {ce}", flush=True)
-                content = _remove_skin_specks(content, face_region)
-                content = _soften_undereye(
-                    content, face_region, settings.undereye_softening
-                )
+                # Both retouches exist to clean up after the COMIC model: the
+                # specks it paints on skin, and the shadow it carries over from
+                # the photo. faceswap-v4 produces neither, so running them on
+                # its output is all risk and no benefit -- measured, the speck
+                # remover found "91 specks" in a face that had none and ate the
+                # child's eye and mouth.
+                if comic:
+                    content = _remove_skin_specks(content, face_region)
+                    content = _soften_undereye(
+                        content, face_region, settings.undereye_softening
+                    )
                 return _save_bytes(content, prefix="page")
             except Exception as e:  # noqa: BLE001 — redo the swap on any failure
                 last_err = e
