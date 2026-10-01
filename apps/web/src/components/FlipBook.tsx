@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, Loader2, Lock, Phone, RefreshCw } from "lucide-react";
 import type { PreviewPage } from "@/lib/types";
+import { webImage } from "@/lib/img";
 import { inr } from "@/lib/format";
 import { FORMAT_LABELS, PRICES, type Format } from "@/lib/pricing";
 
@@ -83,7 +84,12 @@ export function FlipBook({
           {page?.imageUrl ? (
             <Image
               key={page.imageUrl}
-              src={page.imageUrl}
+              // Rendered pages are print originals: CMYK, and a browser handed a
+              // CMYK JPEG renders it dull and colour-shifted however much of it
+              // it downloaded. The flip-book is where the customer judges the
+              // book, so it wants the sRGB derivative like every other view --
+              // 1600 is the 672px frame at 2x, so nothing is lost but the cast.
+              src={webImage(page.imageUrl, 1600)}
               alt={locked ? `Locked — ${label}` : label}
               fill
               sizes="(max-width: 768px) 100vw, 672px"
