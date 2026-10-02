@@ -852,9 +852,17 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
 
 
 # How far a pixel's colour may sit from the face's own skin and still count as
-# skin. Measured in Lab a/b units: the blotches share the skin's hue (they are
-# shading, not pigment), while hair, eyes and the painted background do not.
-SKIN_CHROMA_TOLERANCE = 14.0
+# skin, in Lab a/b units: full strength to NEAR, fading to nothing at FAR.
+#
+# A hard cutoff at 14 was leaving the worst of the marks untouched. Measured on
+# a page that still showed them: of the dark skin inside the face, 7538 pixels
+# sat between 14 and 25 and were refused -- deep shade pulls a skin tone's
+# chroma away from the lit skin it is measured against, so the darker the
+# blotch the more likely it was to fail the very test meant to find it. Fading
+# out instead of cutting off recovers them without letting hair (chroma 25+)
+# in.
+SKIN_CHROMA_NEAR = 14.0
+SKIN_CHROMA_FAR = 26.0
 
 
 # Speck removal, on the finished page.
@@ -933,7 +941,10 @@ def _even_skin_shading(data: bytes, region: dict, strength: float) -> bytes:
         if sL <= 0:
             return data
 
-        skin = ((np.hypot(A - sA, B - sB) < SKIN_CHROMA_TOLERANCE) & (L > sL * 0.45))
+        chroma = np.hypot(A - sA, B - sB)
+        skin = np.clip(
+            (SKIN_CHROMA_FAR - chroma) / (SKIN_CHROMA_FAR - SKIN_CHROMA_NEAR), 0.0, 1.0
+        ) * (L > sL * 0.35)
         skin = cv2.GaussianBlur(skin.astype(np.float32), (0, 0), 4)  # no hard edge
         low = cv2.GaussianBlur(L, (0, 0), 12)  # shading only; detail untouched
         lift = (np.clip(sL - low, 0, None) * skin * strength)[..., None]
