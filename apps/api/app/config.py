@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     # component -- so lashes, brows and the mouth are invisible to it and a
     # well-lit face comes back unchanged. 0.75 clears the marks while leaving
     # the face its natural shading; 0 disables it.
-    skin_shading_lift: float = 1.5
+    skin_shading_lift: float = 0.85
     # Size of the patch of lower forehead taken from the TEMPLATE rather than
     # from the swap, as a multiple of the landmark-derived spot. The swapper
     # invents a bindi there and no dial it exposes prevents it, so that spot
