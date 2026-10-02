@@ -861,8 +861,17 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
 # blotch the more likely it was to fail the very test meant to find it. Fading
 # out instead of cutting off recovers them without letting hair (chroma 25+)
 # in.
-SKIN_CHROMA_NEAR = 14.0
-SKIN_CHROMA_FAR = 26.0
+# Widened again after the marks were still visible at 14/26: measured on that
+# page, 3321 dark pixels sat at chroma 26-40 with a median L of 74 -- shading
+# deep enough to read as a smudge, and still refused. Hair and eyes sit past
+# 40 at a median L of 18, so there is room to reach the first without touching
+# the second.
+SKIN_CHROMA_NEAR = 20.0
+SKIN_CHROMA_FAR = 38.0
+
+# Brightness floor, as a fraction of the face's own skin. Anything below is
+# too dark to be shaded skin -- it is a pupil, a nostril or hair.
+SKIN_DARK_FLOOR = 0.28
 
 
 # Speck removal, on the finished page.
@@ -944,7 +953,7 @@ def _even_skin_shading(data: bytes, region: dict, strength: float) -> bytes:
         chroma = np.hypot(A - sA, B - sB)
         skin = np.clip(
             (SKIN_CHROMA_FAR - chroma) / (SKIN_CHROMA_FAR - SKIN_CHROMA_NEAR), 0.0, 1.0
-        ) * (L > sL * 0.35)
+        ) * (L > sL * SKIN_DARK_FLOOR)
         skin = cv2.GaussianBlur(skin.astype(np.float32), (0, 0), 4)  # no hard edge
         low = cv2.GaussianBlur(L, (0, 0), 12)  # shading only; detail untouched
         lift = (np.clip(sL - low, 0, None) * skin * strength)[..., None]
