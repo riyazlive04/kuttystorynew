@@ -98,6 +98,13 @@ class Settings(BaseSettings):
     # eye is a refund, so the trade is not close. Turn it on only once it can
     # be shown to leave every feature alone.
     speck_removal_enabled: bool = False
+    # Lift the swapper's dark blotches toward the face's own skin tone, 0-1.
+    # Unlike the speck remover above this cuts nothing out: it only adds light,
+    # only to pixels that match the skin's own hue, and only to the blurred
+    # component -- so lashes, brows and the mouth are invisible to it and a
+    # well-lit face comes back unchanged. 0.75 clears the marks while leaving
+    # the face its natural shading; 0 disables it.
+    skin_shading_lift: float = 0.75
     # Size of the patch of lower forehead taken from the TEMPLATE rather than
     # from the swap, as a multiple of the landmark-derived spot. The swapper
     # invents a bindi there and no dial it exposes prevents it, so that spot

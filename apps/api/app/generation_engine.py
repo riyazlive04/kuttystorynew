@@ -851,6 +851,12 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
     return buf.getvalue()
 
 
+# How far a pixel's colour may sit from the face's own skin and still count as
+# skin. Measured in Lab a/b units: the blotches share the skin's hue (they are
+# shading, not pigment), while hair, eyes and the painted background do not.
+SKIN_CHROMA_TOLERANCE = 14.0
+
+
 # Speck removal, on the finished page.
 #
 # The swapper leaves small dark marks on otherwise clean skin -- measured on a
@@ -878,6 +884,72 @@ SPECK_MAX_AREA = 1400
 # marks measured 46-86 against skin at 133, i.e. 35-65% of it; a brow or a
 # lash clump is darker still and far too large to qualify on area anyway.
 SPECK_DARK_RATIO = 0.78
+
+
+def _even_skin_shading(data: bytes, region: dict, strength: float) -> bytes:
+    """Lift the swapper's dark blotches toward the face's own skin tone.
+
+    The marks left on cheeks, beside the nose and under the eyes are SHADING:
+    smooth, low-frequency and the same hue as the skin they sit on. That is
+    what makes them safe to treat, and it is the opposite of the approach that
+    had to be abandoned -- nothing is cut out or filled in, so there is no
+    region to misidentify and no eye to lose.
+
+    Three things keep it to skin. Only pixels whose CHROMA matches the face's
+    own are touched, so hair, eyes and the painted background are excluded by
+    colour. Only the BLURRED component is measured, so lashes, brows and the
+    line of the mouth are invisible to it. And the correction only ever adds
+    light, so a well-lit face comes back unchanged.
+    """
+    if not region or strength <= 0:
+        return data
+    try:
+        import cv2
+        import numpy as np
+
+        from .color import open_srgb
+
+        img = open_srgb(data).convert("RGB")
+        W, H = img.size
+        bounds = _region_bounds_pct(region)
+        if not bounds:
+            return data
+        bx, by, bw, bh = bounds
+        x0, y0 = max(0, int(bx / 100 * W)), max(0, int(by / 100 * H))
+        x1, y1 = min(W, int((bx + bw) / 100 * W)), min(H, int((by + bh) / 100 * H))
+        if x1 - x0 < 16 or y1 - y0 < 16:
+            return data
+
+        rgb = np.array(img, dtype=np.float32)
+        face = rgb[y0:y1, x0:x1]
+        lab = cv2.cvtColor(face.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
+        L, A, B = lab[..., 0], lab[..., 1], lab[..., 2]
+
+        # The face's own skin, measured from the middle of the region where the
+        # cheeks and nose are -- not the edges, which hold hair and background.
+        fh, fw = L.shape
+        mid = (slice(int(fh * 0.35), int(fh * 0.85)), slice(int(fw * 0.25), int(fw * 0.75)))
+        sL, sA, sB = (float(np.median(c[mid])) for c in (L, A, B))
+        if sL <= 0:
+            return data
+
+        skin = ((np.hypot(A - sA, B - sB) < SKIN_CHROMA_TOLERANCE) & (L > sL * 0.45))
+        skin = cv2.GaussianBlur(skin.astype(np.float32), (0, 0), 4)  # no hard edge
+        low = cv2.GaussianBlur(L, (0, 0), 12)  # shading only; detail untouched
+        lift = (np.clip(sL - low, 0, None) * skin * strength)[..., None]
+        if float(lift.max()) < 1.0:
+            return data
+
+        rgb[y0:y1, x0:x1] = np.clip(face + lift, 0, 255)
+        print(f"[retouch] evened skin shading (max +{lift.max():.0f})", flush=True)
+        buf = io.BytesIO()
+        Image.fromarray(rgb.astype(np.uint8)).save(
+            buf, format="JPEG", quality=95, subsampling=0
+        )
+        return buf.getvalue()
+    except Exception as e:  # noqa: BLE001 -- a retouch is never worth a failed page
+        print(f"[retouch] skin shading skipped: {e}", flush=True)
+        return data
 
 
 def _remove_skin_specks(data: bytes, region: dict) -> bytes:
@@ -1118,6 +1190,9 @@ async def _segmind_faceswap(
                 # child's eye and mouth.
                 if comic:
                     content = _remove_skin_specks(content, face_region)
+                    content = _even_skin_shading(
+                        content, face_region, settings.skin_shading_lift
+                    )
                     content = _soften_undereye(
                         content, face_region, settings.undereye_softening
                     )
