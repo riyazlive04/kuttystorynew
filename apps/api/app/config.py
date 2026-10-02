@@ -91,6 +91,13 @@ class Settings(BaseSettings):
     # erasing them, which is deliberate -- the point is a real face that looks
     # well lit, not a retouched one. 0 disables it.
     undereye_softening: float = 0.65
+    # Erase the small dark marks faceswap-comic paints on skin. OFF, because it
+    # cannot yet tell a mark from an eye: on two real pages it reported dozens
+    # of "specks" in a clean face and left the child with a white blob where an
+    # eye had been. A faint patch on a cheek is a cosmetic complaint; a ruined
+    # eye is a refund, so the trade is not close. Turn it on only once it can
+    # be shown to leave every feature alone.
+    speck_removal_enabled: bool = False
     # Size of the patch of lower forehead taken from the TEMPLATE rather than
     # from the swap, as a multiple of the landmark-derived spot. The swapper
     # invents a bindi there and no dial it exposes prevents it, so that spot

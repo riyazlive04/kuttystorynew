@@ -882,7 +882,7 @@ SPECK_DARK_RATIO = 0.78
 
 def _remove_skin_specks(data: bytes, region: dict) -> bytes:
     """Erase the swapper's dark flecks from skin, leaving real features alone."""
-    if not region:
+    if not region or not settings.speck_removal_enabled:
         return data
     try:
         import cv2
