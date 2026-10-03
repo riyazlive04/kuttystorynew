@@ -897,6 +897,109 @@ async def _run_autotrace(key: str, story_id: str, variant: str, body: AutoTraceI
         _TRACE_TASKS.pop(key, None)
 
 
+def _page_region(page) -> Optional[dict]:
+    """The page's face region, the same way the renderer resolves it: a traced
+    outline first, then an authored box, then nothing. No autodetect fallback --
+    this is only used to decide WHERE the head is, and a guess there would put
+    the repaint somewhere there is no child."""
+    path = getattr(page, "facePath", None)
+    if path and len(path) >= 3:
+        return {"points": path}
+    if page.faceX is not None and page.faceW is not None:
+        return {"x": page.faceX, "y": page.faceY, "w": page.faceW, "h": page.faceH}
+    return None
+
+
+class SmoothHairIn(BaseModel):
+    variant: Literal["boy", "girl"] = "boy"
+    pageNumbers: Optional[list[int]] = None  # None = every page with a face region
+    restore: bool = False                    # put the saved original back
+
+
+@router.post("/stories/{slug}/smooth-hair", dependencies=[Depends(require_admin)])
+async def admin_smooth_hair(slug: str, body: SmoothHairIn):
+    """Repaint the hair on a page's PLATE so it is smooth instead of spiky.
+
+    An authoring tool, not a render step. The spikes and the speckled dots are
+    drawn into the artwork -- the renderer reproduces them faithfully -- so the
+    fix belongs in the plate, done once, rather than in every customer's render
+    at ~25s and a charge a page.
+
+    The previous plate is kept in `baseImageUrlOriginal`, so `restore: true`
+    undoes this for a page whose repaint came back wrong. Pages whose hair
+    cannot be found (a helmet, a hat, a head too small in frame) are reported
+    and left exactly as they were.
+    """
+    from ..generation_engine import _image_bytes, _save_bytes, current_openai_key
+    from ..hair_smooth import smooth_hair
+
+    story = await prisma.story.find_unique(where={"slug": slug})
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    variant = normalize_variant(body.variant)
+    pages = await prisma.pagetemplate.find_many(
+        where={"bookTemplateId": story.id, "variant": variant},
+        order={"pageNumber": "asc"},
+    )
+
+    key = current_openai_key()
+    if not key and not body.restore:
+        raise HTTPException(status_code=400, detail="OPENAI_API_KEY not set")
+
+    results = []
+    for page in pages:
+        if body.pageNumbers is not None and page.pageNumber not in body.pageNumbers:
+            continue
+        original = getattr(page, "baseImageUrlOriginal", None)
+
+        if body.restore:
+            if original:
+                await prisma.pagetemplate.update(
+                    where={"id": page.id},
+                    data={"baseImageUrl": original, "baseImageUrlOriginal": None},
+                )
+                results.append({"pageNumber": page.pageNumber, "status": "restored"})
+            else:
+                results.append({"pageNumber": page.pageNumber, "status": "nothing to restore"})
+            continue
+
+        if original:
+            results.append({"pageNumber": page.pageNumber, "status": "already smoothed"})
+            continue
+        if not (page.baseImageUrl or "").strip():
+            results.append({"pageNumber": page.pageNumber, "status": "no base art"})
+            continue
+        region = _page_region(page)
+        if not region:
+            results.append({"pageNumber": page.pageNumber, "status": "no face region"})
+            continue
+
+        try:
+            out = await asyncio.to_thread(
+                smooth_hair, _image_bytes(page.baseImageUrl), region, key
+            )
+        except Exception as e:  # noqa: BLE001 -- one bad plate must not stop the run
+            results.append({"pageNumber": page.pageNumber, "status": "failed", "detail": str(e)[:200]})
+            continue
+        if out.get("error"):
+            results.append({"pageNumber": page.pageNumber, "status": "skipped", "detail": out["error"]})
+            continue
+
+        url = _save_bytes(out["image"], prefix="plate")
+        await prisma.pagetemplate.update(
+            where={"id": page.id},
+            data={"baseImageUrl": url, "baseImageUrlOriginal": page.baseImageUrl},
+        )
+        results.append({
+            "pageNumber": page.pageNumber,
+            "status": "smoothed",
+            "hairPct": round(out.get("changed_pct", 0), 1),
+        })
+
+    done = sum(1 for r in results if r["status"] in ("smoothed", "restored"))
+    return {"ok": True, "variant": variant, "changed": done, "pages": results}
+
+
 @router.post("/stories/{slug}/autotrace", dependencies=[Depends(require_admin)])
 async def admin_autotrace_faces(slug: str, body: AutoTraceIn):
     """Start tracing face outlines with SAM3; returns the run's status at once.

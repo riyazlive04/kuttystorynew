@@ -91,6 +91,9 @@ model PageTemplate {
   // The pre-drawn illustrated scene (fixed style + character body). The child's
   // face is inpainted into it, so the whole scene stays consistent page to page.
   baseImageUrl  String?
+  // The plate as the illustrator drew it, kept when the hair is repainted so the
+  // admin can put it back. Null = this page has never been repainted.
+  baseImageUrlOriginal String?
   stylePrompt   String  @default("children's storybook illustration, soft colours, consistent character, clean line art")
   // Optional manual face region (% of canvas). If null, the face is auto-detected.
   faceX         Float?
