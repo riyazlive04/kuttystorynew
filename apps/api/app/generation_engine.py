@@ -609,6 +609,48 @@ def _keep_artwork_hair(template: Image.Image, mask: Image.Image) -> Image.Image:
         return mask
 
 
+def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
+    """Stop the blend band crossfading the child's hair with the artwork's.
+
+    The mirror of `_keep_artwork_hair`, for the case where the CHILD's hair is
+    the one being kept. Same detection -- the plate much darker than the face's
+    own skin is hair -- and the same two safeguards: it acts only on the partial
+    band, never the core where the brows sit, and the threshold is relative to
+    the skin inside the face, so it follows the plate's lighting rather than a
+    fixed number.
+
+    Where that band falls on hair the mask is pushed to 1 instead of toward 0,
+    so the child's hair is taken whole rather than averaged. A 50/50 average of
+    two hair drawings is what reads as a translucent patch beside the temple;
+    hair has to come from one source or the other, and here it is the child's.
+    Skin is left alone -- two versions of a cheek average into a cheek.
+    """
+    try:
+        import numpy as np
+
+        m = np.asarray(mask, dtype=np.float32) / 255.0
+        core = m > 0.99
+        band = (m > 0.02) & (m < 0.99)
+        if not core.any() or not band.any():
+            return mask
+        lum = np.asarray(template.convert("L"), dtype=np.float32)
+        skin = float(np.median(lum[core]))
+        lo, hi = skin * 0.45, skin * 0.70
+        is_hair = 1.0 - np.clip((lum - lo) / max(1e-3, hi - lo), 0.0, 1.0)
+        # Only in the band, and ramped so hardening an edge does not draw one.
+        strength = np.clip((1.0 - m) / 0.25, 0.0, 1.0)
+        out = np.clip(m + (1.0 - m) * is_hair * strength, 0.0, 1.0)
+        hardened = float((out - m).sum()) / max(1.0, float(m.sum())) * 100.0
+        print(
+            f"[retouch] hair edge: hair=child, hardened {hardened:.1f}% of the mask",
+            flush=True,
+        )
+        return Image.fromarray(np.clip(out * 255.0, 0, 255).astype("uint8"), "L")
+    except Exception as e:  # noqa: BLE001 -- a hairline is not worth a failed page
+        print(f"[retouch] hair edge skipped: {e}", flush=True)
+        return mask
+
+
 def _keep_template_forehead(mask, swapped: bytes, swapped_size, template: bytes, region: dict):
     """Take the lower forehead from the TEMPLATE, not from the swap.
 
@@ -820,6 +862,12 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
         # of the mask; the band guard cannot reach the core and is not meant to.
         mask = _keep_template_hair(mask, swapped, swapped_size, tmpl_bytes, region)
         mask = _keep_artwork_hair(tmpl, mask)
+    else:
+        # Keeping the CHILD's hair does not mean the band can be left to blend:
+        # it still averages their hair with the plate's, which is the translucent
+        # patch beside the temple. Same detection, opposite direction -- take the
+        # child's hair whole instead of half.
+        mask = _harden_hair_edge(tmpl, mask)
     out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
 
     # Every stage, side by side, when asked. Which image a fringe came from is
