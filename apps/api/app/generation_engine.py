@@ -648,10 +648,14 @@ def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
         is_hair = cv2.GaussianBlur(is_hair.astype(np.float32), (0, 0), 9)
         is_hair = np.clip(is_hair * 1.8, 0.0, 1.0)
 
-        # Only in the band, and ramped so hardening an edge does not draw one.
-        strength = np.clip((1.0 - m) / 0.25, 0.0, 1.0)
-        out = np.clip(m + (1.0 - m) * is_hair * strength, 0.0, 1.0)
-        hardened = float((out - m).sum()) / max(1.0, float(m.sum())) * 100.0
+        # ONLY the partial band. `1 - m` is 1 across the whole page outside the
+        # face, so weighting by it pulled the entire plate into the mask wherever
+        # it was dark -- the log said "hardened 7765% of the mask", which is the
+        # shape of that bug rather than a hairline. The band is where m is
+        # strictly between 0 and 1; everything else keeps the value it has.
+        in_band = band.astype(np.float32)
+        out = np.clip(m + (1.0 - m) * is_hair * in_band, 0.0, 1.0)
+        hardened = float((out - m).sum()) / max(1.0, float(band.sum())) * 100.0
         print(
             f"[retouch] hair edge: hair=child, hardened {hardened:.1f}% of the mask",
             flush=True,
