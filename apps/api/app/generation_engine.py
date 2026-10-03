@@ -781,12 +781,18 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
     # The feather only has to hide a seam, which takes a few pixels, not a third
     # of the face. At 3% of the region's span the eyes, nose and mouth are all
     # inside the fully-swapped core and only the rim blends.
+    # The ceiling has to scale with the plate, not sit at a fixed pixel count.
+    # These are print plates: 2482px square, where a traced face spans 400-600px
+    # and 3% of it is 13-19px. A flat 16px cap silently clipped the widest faces
+    # back to 2.6% -- measured on the-dinosaur-egg p2, span 621px wanting 18.6px
+    # and getting 16 -- and a transition that narrow on a plate this size is a
+    # visible line down the temple rather than a blend.
     span = max(cw, ch)
     bbox = mask.getbbox()
     if bbox:
         span = max(bbox[2] - bbox[0], bbox[3] - bbox[1])
     mask = mask.filter(
-        ImageFilter.GaussianBlur(radius=max(3.0, min(span * 0.03, 16.0)))
+        ImageFilter.GaussianBlur(radius=max(3.0, min(span * 0.03, max(cw, ch) * 0.012)))
     )
     # After the feather, not before: the feather is wide enough to fill a hole
     # this small straight back in, which is why an earlier version left the
