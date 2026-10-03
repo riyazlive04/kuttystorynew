@@ -614,7 +614,7 @@ def _keep_artwork_hair(template: Image.Image, mask: Image.Image) -> Image.Image:
 # fully-out. 3.0 keeps a soft pixel or two -- the edge still reads as drawn
 # rather than cut out -- while stopping the half of the band that lies on
 # background from averaging a wall into the child's hair.
-EDGE_CONTRAST = 3.0
+EDGE_CONTRAST = 10.0
 
 
 def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
