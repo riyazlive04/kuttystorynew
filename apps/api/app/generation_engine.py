@@ -626,6 +626,7 @@ def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
     Skin is left alone -- two versions of a cheek average into a cheek.
     """
     try:
+        import cv2
         import numpy as np
 
         m = np.asarray(mask, dtype=np.float32) / 255.0
