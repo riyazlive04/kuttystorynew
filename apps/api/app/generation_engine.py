@@ -648,6 +648,19 @@ def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
         is_hair = cv2.GaussianBlur(is_hair.astype(np.float32), (0, 0), 9)
         is_hair = np.clip(is_hair * 1.8, 0.0, 1.0)
 
+        # ...and darkness is not the whole test. On speed-racer the outer strands
+        # are pale straw against a warm wall, lighter than the skin they are
+        # measured against, so they score 0 on the luminance test and the band
+        # kept blending them -- the last of the "transparency" by the hairline.
+        #
+        # The traced outline already IS the hair boundary: it was measured on the
+        # plate, and an overlay confirms the spikes sit inside it. So inside that
+        # outline there is nothing to protect and no reason to feather -- whatever
+        # the plate has there is hair the child's own replaces. Take the whole
+        # inner band, and let the luminance test speak only for the rim beyond it.
+        inner = cv2.GaussianBlur((m > 0.25).astype(np.float32), (0, 0), 3)
+        is_hair = np.maximum(is_hair, inner)
+
         # ONLY the partial band. `1 - m` is 1 across the whole page outside the
         # face, so weighting by it pulled the entire plate into the mask wherever
         # it was dark -- the log said "hardened 7765% of the mask", which is the
