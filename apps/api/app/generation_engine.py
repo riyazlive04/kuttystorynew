@@ -637,6 +637,16 @@ def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
         skin = float(np.median(lum[core]))
         lo, hi = skin * 0.45, skin * 0.70
         is_hair = 1.0 - np.clip((lum - lo) / max(1e-3, hi - lo), 0.0, 1.0)
+
+        # Strands are not solid: a spiky fringe is dark hair interleaved with the
+        # background behind it, so testing a single pixel finds a gap as often as
+        # a strand and the band keeps half of them. Blur the test instead, so the
+        # whole fringe counts as hair rather than only the strands that happen to
+        # be opaque -- otherwise the plate's spikes come through in a ring around
+        # the hairline, which is exactly where the complaint was.
+        is_hair = cv2.GaussianBlur(is_hair.astype(np.float32), (0, 0), 9)
+        is_hair = np.clip(is_hair * 1.8, 0.0, 1.0)
+
         # Only in the band, and ramped so hardening an edge does not draw one.
         strength = np.clip((1.0 - m) / 0.25, 0.0, 1.0)
         out = np.clip(m + (1.0 - m) * is_hair * strength, 0.0, 1.0)
