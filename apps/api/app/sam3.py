@@ -30,6 +30,19 @@ SAM3_URL = "https://api.segmind.com/v1/sam3-image"
 FACE_PROMPT = "the young girl's face, human face only"
 FACE_PROMPT_BOY = "the young boy's face, human face only"
 
+# Hair too, when the child's own hair is the one being kept. "face only" stops
+# at the brow by design, which leaves the plate's hair on the finished page --
+# measured on speed-racer p3, the face prompt traces y 23.2%..42.1% and this one
+# 9.5%..33.5%, so the fringe is inside the region instead of above it.
+#
+# Worth the second prompt rather than growing the face outline by a rule: the
+# hair's silhouette is drawn, not geometric, and every attempt to guess it (an
+# ellipse, a fixed rise, the measured hairline) either reached past the hair
+# into the background -- a pale halo, grey smudges on the skin -- or stopped
+# short of it. SAM3 follows the strands.
+HEAD_PROMPT = "the young girl's head including all of her hair, human head only"
+HEAD_PROMPT_BOY = "the young boy's head including all of his hair, human head only"
+
 # A face is a small part of a page. Anything outside this band is the model
 # having segmented a body, a background, or nothing at all.
 MIN_AREA_PCT = 0.15
@@ -78,9 +91,17 @@ def _mask_to_points(mask_bytes: bytes) -> Optional[list]:
 
 
 async def trace_face(
-    image_src: str, variant: str = "girl", timeout: float = 420.0
+    image_src: str,
+    variant: str = "girl",
+    timeout: float = 420.0,
+    include_hair: bool = False,
 ) -> dict:
     """Ask SAM3 for the face outline of one plate.
+
+    `include_hair` traces the whole head instead, for books where the child's
+    own hair should replace the character's. The region is what the renderer
+    swaps, so a hair-inclusive outline is the only thing that puts the child's
+    hair on the page -- a face outline leaves the plate's hair above it.
 
     Returns {"points": [...]} on success, or {"error": "..."} — a failed trace is
     reported to the admin, never raised into a render path.
@@ -99,9 +120,13 @@ async def trace_face(
     except Exception as e:  # noqa: BLE001
         return {"error": f"could not read the plate: {e}"}
 
+    if include_hair:
+        prompt = HEAD_PROMPT_BOY if variant == "boy" else HEAD_PROMPT
+    else:
+        prompt = FACE_PROMPT_BOY if variant == "boy" else FACE_PROMPT
     payload = {
         "image": image_b64,
-        "text_prompt": FACE_PROMPT_BOY if variant == "boy" else FACE_PROMPT,
+        "text_prompt": prompt,
         "return_preview": True,
         "return_masks": False,
         "return_overlay": False,

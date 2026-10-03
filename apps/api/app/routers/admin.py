@@ -825,6 +825,11 @@ class AutoTraceIn(BaseModel):
     variant: Literal["boy", "girl"] = "boy"
     pageNumbers: Optional[list[int]] = None  # None = every page missing an outline
     overwrite: bool = False                  # re-trace pages that already have one
+    # Trace the whole head rather than the face. The region is what the renderer
+    # swaps, so this is what puts the CHILD's hair on the page instead of the
+    # character's -- a face outline stops at the brow and leaves the plate's
+    # hair above it, whatever the hair settings say.
+    includeHair: bool = False
 
 
 # One SAM3 run per story+variant, held in this process. A trace takes 2-5
@@ -869,7 +874,9 @@ async def _run_autotrace(key: str, story_id: str, variant: str, body: AutoTraceI
             run["current"] = page.pageNumber
             # One bad plate is reported, never allowed to end the whole run.
             try:
-                traced = await trace_face(page.baseImageUrl, variant=variant)
+                traced = await trace_face(
+                    page.baseImageUrl, variant=variant, include_hair=body.includeHair
+                )
                 if traced.get("error"):
                     entry = {"pageNumber": page.pageNumber, "status": "failed",
                              "detail": traced["error"]}
