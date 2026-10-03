@@ -1372,13 +1372,25 @@ def _segmind_reason(e: Exception) -> str:
     return str(e) or type(e).__name__
 
 
+# Segmind answers its own internal faults with 400 as well -- "Internal Polling
+# Error" is theirs, not ours, and it comes and goes. Treating it as permanent
+# failed a 28-page book twice in a row on a service hiccup, which on a real
+# order is a customer watching a dead preview.
+SEGMIND_TRANSIENT_400 = ("internal polling error", "internal server", "try again")
+
+
 def _segmind_permanent(e: Exception) -> bool:
-    # 400 means the request itself is wrong -- a misnamed field, a model that
-    # wants different inputs. Five identical retries cannot make it right, and
-    # on a 28-page book that is 140 pointless calls before anyone is told.
-    return isinstance(e, httpx.HTTPStatusError) and e.response.status_code in (
-        400, 401, 402, 403, 406,
-    )
+    # 400 usually means the request itself is wrong -- a misnamed field, a model
+    # that wants different inputs. Five identical retries cannot make it right,
+    # and on a 28-page book that is 140 pointless calls before anyone is told.
+    # But only when the 400 is actually about the request: the body says which.
+    if not isinstance(e, httpx.HTTPStatusError):
+        return False
+    code = e.response.status_code
+    if code == 400:
+        body = (e.response.text or "").lower()
+        return not any(s in body for s in SEGMIND_TRANSIENT_400)
+    return code in (401, 402, 403, 406)
 
 
 def _segmind_backoff(e: Exception, attempt: int) -> float:
