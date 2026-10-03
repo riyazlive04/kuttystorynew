@@ -72,11 +72,15 @@ class Settings(BaseSettings):
     #   "replicate"-> a Replicate faceswap model (replicate_faceswap_model)
     faceswap_provider: str = "segmind"
     segmind_api_key: str = ""
-    # faceswap-v4 transfers the real face; faceswap-comic generated one, which
-    # is why a toddler came back as a generic older child, why the skin arrived
-    # marked, and why a bindi had to be patched over. Every retouch below exists
-    # to clean up after that model and is off by default with this one.
-    segmind_faceswap_model: str = "faceswap-v4"  # segmind model slug
+    # faceswap-comic, judged on real pages against faceswap-v4. v4 transfers the
+    # photographed face, which sounds like what a personalised book wants and is
+    # not: the result reads as a cut-out laid on the painting -- flat, waxy, and
+    # on a three-quarter pose (beach-story p1) a visible pale seam round the jaw
+    # with the ear and arm left the plate's colour. The comic model paints a face
+    # INTO the artwork, so it carries the illustration's own light and sits in
+    # the scene. Keep it, and keep the retouches below that exist to clean up
+    # after it -- except the two that were taking eyes.
+    segmind_faceswap_model: str = "faceswap-comic"  # segmind model slug
     # The swap's own dials. These are the values the Segmind path ran with
     # before the OpenAI provider landed, which is the configuration that was
     # personalising faces well; they are settings rather than literals so they
@@ -103,15 +107,16 @@ class Settings(BaseSettings):
     # be shown to leave every feature alone.
     speck_removal_enabled: bool = False
     # Lift the swapper's dark blotches toward the face's own skin tone, 0-1.
-    # Unlike the speck remover above this cuts nothing out: it only adds light,
-    # only to pixels that match the skin's own hue, and only to the blurred
-    # component -- so lashes, brows and the mouth are invisible to it and a
-    # well-lit face comes back unchanged. 0.75 clears the marks while leaving
-    # the face its natural shading; 0 disables it.
-    # OFF: deep skin shadow and eye detail overlap in both darkness and colour,
-    # and widening the gate far enough to reach the cheeks flattened the irises
-    # and erased the catchlights. faceswap-v4 does not leave the blotches this
-    # was lifting, so there is nothing left for it to do.
+    # It cuts nothing out -- it only adds light, only to pixels matching the
+    # skin's own hue, and only to the blurred component, so detail is invisible
+    # to it and a well-lit face comes back unchanged.
+    #
+    # OFF all the same: deep skin shadow and eye detail overlap in both darkness
+    # and colour, and the gate had to be widened to chroma 20-38 to reach the
+    # cheeks at all -- which is where the eye sockets and the shadowed whites
+    # live. At that setting the irises flattened to grey and the catchlights
+    # went. The marks it was for are a cosmetic complaint; dead eyes are a
+    # refund. Raise it only with evidence that the eyes survive.
     skin_shading_lift: float = 0.0
     # Size of the patch of lower forehead taken from the TEMPLATE rather than
     # from the swap, as a multiple of the landmark-derived spot. The swapper
@@ -119,11 +124,7 @@ class Settings(BaseSettings):
     # comes from the artwork instead. Chosen by eye against marked plates: 1.0
     # and 1.3 left a trace of the largest mark, 1.6 covered it, and clean faces
     # were indistinguishable at every setting. 0 disables it.
-    # OFF: it cuts a hole in the face so the PLATE's forehead shows through,
-    # and the seam where painted brow meets swapped face reads as a scar above
-    # the eyebrow. It was there for the bindi faceswap-comic invented on Indian
-    # children; faceswap-v4 invents nothing, so the patch is pure damage.
-    forehead_patch: float = 0.0
+    forehead_patch: float = 1.6
     # Keep the artwork's hair out of the face composite rather than crossfading
     # it with the swapper's. Two hair renderings averaged together is what makes
     # strands run in conflicting directions along the hairline, and a traced
