@@ -72,7 +72,11 @@ class Settings(BaseSettings):
     #   "replicate"-> a Replicate faceswap model (replicate_faceswap_model)
     faceswap_provider: str = "segmind"
     segmind_api_key: str = ""
-    segmind_faceswap_model: str = "faceswap-comic"  # segmind model slug
+    # faceswap-v4 transfers the real face; faceswap-comic generated one, which
+    # is why a toddler came back as a generic older child, why the skin arrived
+    # marked, and why a bindi had to be patched over. Every retouch below exists
+    # to clean up after that model and is off by default with this one.
+    segmind_faceswap_model: str = "faceswap-v4"  # segmind model slug
     # The swap's own dials. These are the values the Segmind path ran with
     # before the OpenAI provider landed, which is the configuration that was
     # personalising faces well; they are settings rather than literals so they
@@ -104,14 +108,22 @@ class Settings(BaseSettings):
     # component -- so lashes, brows and the mouth are invisible to it and a
     # well-lit face comes back unchanged. 0.75 clears the marks while leaving
     # the face its natural shading; 0 disables it.
-    skin_shading_lift: float = 0.85
+    # OFF: deep skin shadow and eye detail overlap in both darkness and colour,
+    # and widening the gate far enough to reach the cheeks flattened the irises
+    # and erased the catchlights. faceswap-v4 does not leave the blotches this
+    # was lifting, so there is nothing left for it to do.
+    skin_shading_lift: float = 0.0
     # Size of the patch of lower forehead taken from the TEMPLATE rather than
     # from the swap, as a multiple of the landmark-derived spot. The swapper
     # invents a bindi there and no dial it exposes prevents it, so that spot
     # comes from the artwork instead. Chosen by eye against marked plates: 1.0
     # and 1.3 left a trace of the largest mark, 1.6 covered it, and clean faces
     # were indistinguishable at every setting. 0 disables it.
-    forehead_patch: float = 1.6
+    # OFF: it cuts a hole in the face so the PLATE's forehead shows through,
+    # and the seam where painted brow meets swapped face reads as a scar above
+    # the eyebrow. It was there for the bindi faceswap-comic invented on Indian
+    # children; faceswap-v4 invents nothing, so the patch is pure damage.
+    forehead_patch: float = 0.0
     # Keep the artwork's hair out of the face composite rather than crossfading
     # it with the swapper's. Two hair renderings averaged together is what makes
     # strands run in conflicting directions along the hairline, and a traced
@@ -126,7 +138,9 @@ class Settings(BaseSettings):
     # head. No identity is lost by taking that strip from the plate: a face is
     # recognised by eyes, nose, mouth and jaw, all of which sit below the line.
     # Kill switch. With it off the swap keeps its own forehead and fringe.
-    keep_template_above_brows: bool = True
+    # OFF: the child's own hair. Judged against a printed copy -- the template's
+    # hairstyle on a real book did not read as the child.
+    keep_template_above_brows: bool = False
     # Write every stage of one page's composite to the storage volume and log
     # the URLs: the plate, the raw swap, the mask, and the result. Off by
     # default -- it is four extra files per page. Turn it on when an argument
