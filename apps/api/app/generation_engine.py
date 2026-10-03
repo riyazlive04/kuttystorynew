@@ -609,6 +609,14 @@ def _keep_artwork_hair(template: Image.Image, mask: Image.Image) -> Image.Image:
         return mask
 
 
+# How hard to steepen the mask's edge when the CHILD's hair is being kept.
+# 1.0 leaves the feather as it is; higher pushes the band toward fully-in or
+# fully-out. 3.0 keeps a soft pixel or two -- the edge still reads as drawn
+# rather than cut out -- while stopping the half of the band that lies on
+# background from averaging a wall into the child's hair.
+EDGE_CONTRAST = 3.0
+
+
 def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
     """Stop the blend band crossfading the child's hair with the artwork's.
 
@@ -668,7 +676,21 @@ def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
         # strictly between 0 and 1; everything else keeps the value it has.
         in_band = band.astype(np.float32)
         out = np.clip(m + (1.0 - m) * is_hair * in_band, 0.0, 1.0)
-        hardened = float((out - m).sum()) / max(1.0, float(band.sum())) * 100.0
+
+        # The other half of the problem: measured on speed-racer p1 the feather
+        # is 27px wide and only 25% of it lands on the plate's hair -- the rest
+        # is wall. Softly averaging the child's hair into a wall is what draws
+        # the pale rim around the silhouette, and no amount of pushing the mask
+        # UP fixes it, because the fault is the half that stays partial.
+        #
+        # So steepen the band instead of widening or narrowing it: pull values
+        # below the midpoint down toward 0 and above it up toward 1. The edge
+        # keeps a soft pixel or two -- enough that it is not a cut-out -- but
+        # stops carrying 50% of a wall into the hair.
+        out = np.clip((out - 0.5) * EDGE_CONTRAST + 0.5, 0.0, 1.0)
+        out = np.where(band, out, m)  # outside the band nothing moves
+
+        hardened = float(np.abs(out - m).sum()) / max(1.0, float(band.sum())) * 100.0
         print(
             f"[retouch] hair edge: hair=child, hardened {hardened:.1f}% of the mask",
             flush=True,
