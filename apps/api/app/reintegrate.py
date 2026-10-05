@@ -29,6 +29,25 @@ ASPECT_TOLERANCE = 0.04
 # region's size. Enough to hide the seam without dragging in the background.
 FEATHER = 0.18
 
+# How hard to steepen the feather band after it's drawn, so a pixel that
+# would have averaged roughly half the swap into half the base art instead
+# resolves toward one side or the other. 1.0 leaves the blur exactly as it
+# is; higher narrows the zone that stays a visible 50/50 blend.
+#
+# This mask is a hard polygon (or ellipse) re-blurred with a single flat
+# Gaussian and no awareness of what's underneath -- the same shape of bug
+# already found and fixed, independently, in generation_engine.py's swap-
+# resolution composite (_keep_artwork_hair/_harden_hair_edge): a half-hair,
+# half-background pixel in the band doesn't read as a soft edge, it reads as
+# a pale/grey rim, because it IS a 50% mix of two different images' pixels.
+#
+# Deliberately conservative and deliberately NOT a change to FEATHER itself
+# -- the blur's width is untouched, only how steeply its existing values
+# resolve. A soft pixel or two stays right at the edge, so the seam this
+# mask exists to hide is still hidden; only the band's widest, most visible
+# half-and-half stretch is pulled out of the "still blending" zone.
+REGION_EDGE_CONTRAST = 4.0
+
 
 def _region_mask(size: tuple[int, int], face_region: dict) -> Optional[Image.Image]:
     """A feathered white-on-black mask for the authored face region."""
@@ -56,7 +75,18 @@ def _region_mask(size: tuple[int, int], face_region: dict) -> Optional[Image.Ima
         return None
 
     blur = max(2.0, span * FEATHER * 0.5)
-    return mask.filter(ImageFilter.GaussianBlur(blur))
+    mask = mask.filter(ImageFilter.GaussianBlur(blur))
+
+    try:
+        import numpy as np
+
+        arr = np.asarray(mask, dtype=np.float32) / 255.0
+        arr = np.clip((arr - 0.5) * REGION_EDGE_CONTRAST + 0.5, 0.0, 1.0)
+        mask = Image.fromarray((arr * 255.0).astype("uint8"), "L")
+    except Exception as e:  # noqa: BLE001 -- a softer seam beats a failed page
+        print(f"[reintegrate] edge steepen skipped: {e}", flush=True)
+
+    return mask
 
 
 def merge_face(
