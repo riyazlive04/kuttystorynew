@@ -161,6 +161,13 @@ class Settings(BaseSettings):
     # about where a pixel came from has gone round more than twice, because
     # the finished image cannot answer that and neither can reading the code.
     debug_render_stages: bool = False
+    # Print a number for how much the area right around the head is brighter
+    # than the page's own far background -- the signature of the glow/vignette
+    # some Segmind swap calls return. Log-only: nothing acts on this number
+    # yet. On by default -- one line in the worker log per page composited,
+    # cheap enough to always run, and the only way to build a real threshold
+    # is from real traffic rather than the handful of pages measured by hand.
+    log_halo_signal: bool = True
     # Recolour the artwork's ears and neck to the swapped face's skin tone, so a
     # warmer-skinned child doesn't get a tanned face on pale ears. Kill switch.
     match_surrounding_skin: bool = True

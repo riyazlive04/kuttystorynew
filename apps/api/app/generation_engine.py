@@ -837,6 +837,62 @@ def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
         return mask
 
 
+def _log_halo_signal(img: Image.Image, mask: Image.Image) -> None:
+    """Measure, and log only, whether this page has the glow/vignette halo the
+    swap provider occasionally returns around the face.
+
+    Confirmed on a real page (2026-10-05, speed-racer p3, Segmind): the exact
+    same job/page/photo, regenerated a second time with identical code, came
+    back once with a visible soft bright ring around the head and once
+    without -- same mask, same compositing, two different Segmind calls. The
+    halo is provider output variance, not anything the mask or the blend
+    code controls, so there is nothing here to correct. This only measures
+    and prints a number, so the distribution can be read back from the logs
+    before any threshold is trusted to gate a retry.
+
+    The signal: Lab L (lightness) in a ring just outside the traced region,
+    compared to the page's far background (well outside any dilation of the
+    region). A halo brightens the area immediately around the head relative
+    to the rest of the scene; a clean render's ring is at or below the far
+    background, because it is dominated by the hair's own shadow/edge.
+    Measured so far: the one confirmed halo scored +7.2 (ring brighter than
+    far background); two mild blue-background pages with only a thin strand
+    fringe scored +4.5 to +4.7; a clean render of the same halo'd page
+    scored -23.4. Four points, which is not enough to set a cutoff -- this
+    logs the number so a real threshold can be read off real traffic later.
+    """
+    if not settings.log_halo_signal:
+        return
+    try:
+        import cv2
+        import numpy as np
+
+        m = np.asarray(mask, dtype=np.float32) / 255.0
+        mask_bin = (m > 0.5).astype("uint8")
+        if not mask_bin.any():
+            return
+        outside = m < 0.02
+
+        # A ring 0-30px outside the traced region, and the far background well
+        # clear of it (outside a 75px dilation) -- two concentric bands so the
+        # comparison is "right around the head" against "the rest of the page",
+        # not against a fixed-size crop that would scale wrong on a tight vs.
+        # wide shot.
+        near_dilate = cv2.dilate(mask_bin, np.ones((61, 61), "uint8"))
+        far_dilate = cv2.dilate(mask_bin, np.ones((151, 151), "uint8"))
+        ring = (near_dilate > 0) & (mask_bin == 0) & outside
+        far_bg = outside & (far_dilate == 0)
+        if ring.sum() < 200 or far_bg.sum() < 200:
+            return  # too little of either band to mean anything
+
+        lab = cv2.cvtColor(np.asarray(img.convert("RGB")), cv2.COLOR_RGB2LAB)
+        L = lab[:, :, 0].astype(np.float32)
+        signal = float(L[ring].mean() - L[far_bg].mean())
+        print(f"[halo-signal] ring-vs-background Lab L delta: {signal:+.1f}", flush=True)
+    except Exception as e:  # noqa: BLE001 -- a logging probe is never worth a failed page
+        print(f"[halo-signal] skipped: {e}", flush=True)
+
+
 def _despeckle_hair(img: Image.Image, mask: Image.Image) -> Image.Image:
     """Remove the artwork's sparkle layer from the hair, and nowhere else.
 
@@ -1232,6 +1288,7 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
     out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
     out = _despeckle_hair(out, mask)
     out = _remove_template_hair_tips(out, mask)
+    _log_halo_signal(out, mask)
 
     # Every stage, side by side, when asked. Which image a fringe came from is
     # invisible in the finished page -- the plate and the swap are the only two
