@@ -106,6 +106,14 @@ class Settings(BaseSettings):
     # eye is a refund, so the trade is not close. Turn it on only once it can
     # be shown to leave every feature alone.
     speck_removal_enabled: bool = False
+    # Remove the artwork's painted sparkle layer from the HAIR. Not the same
+    # thing as speck_removal_enabled above, which hunts marks on skin and is off
+    # because it could not tell a mark from an eye. This one is confined three
+    # ways: inside the face/hair mask only, only where the local background is
+    # hair-dark, and only on blobs too small to be a catchlight. Run without the
+    # mask the identical filter stripped the night sky out of a space book, so
+    # the confinement is the feature.
+    hair_despeckle_enabled: bool = True
     # Lift the swapper's dark blotches toward the face's own skin tone, 0-1.
     # It cuts nothing out -- it only adds light, only to pixels matching the
     # skin's own hue, and only to the blurred component, so detail is invisible

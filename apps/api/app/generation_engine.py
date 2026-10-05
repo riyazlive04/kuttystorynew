@@ -630,6 +630,22 @@ EDGE_CONTRAST = 10.0
 # pixel by what lies OUTSIDE the mask there -- skin or not.
 EDGE_CONTRAST_SKIN = 1.6
 
+# Sparkle removal inside the hair. Thresholds are relative to each speck's own
+# surroundings, measured on the space-explorer plate (hair lum 30, specks 116
+# median / 247 max). The size caps are what keep an eye catchlight safe; they
+# are given for a 1200px page and scaled up for a print plate.
+HAIR_SPECK_MAX_BG = 90.0    # local background must be this dark to count as hair
+HAIR_SPECK_MIN_LIFT = 22.0  # how far above its background a dot must sit
+HAIR_SPECK_MAX_AREA = 28    # px, at 1200px wide -- a sparkle, not a highlight
+HAIR_SPECK_MAX_SIDE = 8     # px, at 1200px wide -- bounding box limit
+# How much of the neighbourhood must itself be dark before a dot counts as
+# being "in hair". An eyelash is a dark thread on lit skin and scores low; the
+# inside of a head of hair scores near 1.
+# 0.85 measured on the space-explorer plate: at 0.75 the filter still took 24px
+# of eyebrow, at 0.85 both eye boxes drop to zero while the hair still loses
+# 1243px of sparkle. Eyes before sparkles, every time.
+HAIR_SPECK_MIN_DENSITY = 0.85
+
 
 def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
     """Stop the blend band crossfading the child's hair with the artwork's.
@@ -746,6 +762,91 @@ def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
     except Exception as e:  # noqa: BLE001 -- a hairline is not worth a failed page
         print(f"[retouch] hair edge skipped: {e}", flush=True)
         return mask
+
+
+def _despeckle_hair(img: Image.Image, mask: Image.Image) -> Image.Image:
+    """Remove the artwork's sparkle layer from the hair, and nowhere else.
+
+    The plates are painted with a scatter of tiny white dots. On a starry
+    Space Explorer page the effect is deliberate -- the night sky through the
+    window, the galaxy poster -- but the same layer lies over the child's hair,
+    where it reads as glitter or dandruff rather than as stars.
+
+    Three constraints, each one measured rather than guessed, and each one
+    there because dropping it did visible damage in testing:
+
+    1. ONLY inside the face/hair mask. Run page-wide, the identical filter
+       stripped the window's starfield down to a few lonely dots -- the sky in
+       a space book. The mask is the whole safeguard; there is no attempt to
+       find hair anywhere else on the page.
+    2. ONLY where the LOCAL background is dark. A speck is defined against its
+       own surroundings, so this follows the plate's lighting instead of a
+       fixed threshold, and it cannot fire on a lit forehead or a white collar.
+    3. ONLY tiny, isolated blobs. A sparkle is a few pixels; an eye catchlight
+       is bigger and brighter. A speck remover destroyed a child's eye on this
+       codebase once before, which is why the size cap is hard and low.
+
+    Measured on the space-explorer plate: hair sits at luminance 30 and the
+    specks at 116 median / 247 max, so they separate cleanly.
+    """
+    if not settings.hair_despeckle_enabled:
+        return img
+    try:
+        import cv2
+        import numpy as np
+
+        rgb = np.asarray(img.convert("RGB"))
+        lum = np.asarray(img.convert("L"), dtype=np.float32)
+        m = np.asarray(mask.convert("L"), dtype=np.float32) / 255.0
+        inside = m > 0.5
+        if not inside.any():
+            return img
+
+        bg = cv2.medianBlur(lum.astype(np.uint8), 9).astype(np.float32)
+        dark = bg < HAIR_SPECK_MAX_BG
+        bright = (lum - bg) > HAIR_SPECK_MIN_LIFT
+
+        # Hair only -- the face is excluded outright. Measured on the
+        # space-explorer plate, the mask-plus-darkness test alone still reached
+        # 135px of eyelash: lashes are thin and dark, which is exactly the
+        # signature being hunted. No sparkle is worth a filter that can touch an
+        # eye, so anything that is not a solid block of dark is dropped. Hair is
+        # a large connected dark mass; a lash is a thread against lit skin, so
+        # requiring the neighbourhood to be MOSTLY dark separates them.
+        hairish = cv2.GaussianBlur((bg < HAIR_SPECK_MAX_BG).astype(np.float32), (0, 0), 9)
+        cand = (dark & bright & inside & (hairish > HAIR_SPECK_MIN_DENSITY)).astype(np.uint8)
+        if not cand.any():
+            return img
+
+        # Scale the size cap with the plate: a 2482px print page carries bigger
+        # sparkles than a 1200px preview, and a fixed pixel count would clear
+        # one and miss the other.
+        scale = max(1.0, max(rgb.shape[:2]) / 1200.0)
+        max_area = int(HAIR_SPECK_MAX_AREA * scale * scale)
+        max_side = int(HAIR_SPECK_MAX_SIDE * scale)
+
+        n, lab, stats, _ = cv2.connectedComponentsWithStats(cand, 8)
+        keep = np.zeros_like(cand)
+        for i in range(1, n):
+            a = stats[i, cv2.CC_STAT_AREA]
+            w = stats[i, cv2.CC_STAT_WIDTH]
+            h = stats[i, cv2.CC_STAT_HEIGHT]
+            if a <= max_area and w <= max_side and h <= max_side:
+                keep[lab == i] = 1
+        if not keep.any():
+            return img
+
+        k = cv2.dilate(keep, np.ones((3, 3), np.uint8))
+        fixed = cv2.inpaint(rgb, k, 3, cv2.INPAINT_TELEA)
+        print(
+            f"[retouch] hair despeckle: removed {int(keep.sum())} sparkle px "
+            f"inside the face region",
+            flush=True,
+        )
+        return Image.fromarray(fixed, "RGB")
+    except Exception as e:  # noqa: BLE001 -- sparkles are not worth a failed page
+        print(f"[retouch] hair despeckle skipped: {e}", flush=True)
+        return img
 
 
 def _keep_template_forehead(mask, swapped: bytes, swapped_size, template: bytes, region: dict):
@@ -966,6 +1067,7 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
         # child's hair whole instead of half.
         mask = _harden_hair_edge(tmpl, mask)
     out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
+    out = _despeckle_hair(out, mask)
 
     # Every stage, side by side, when asked. Which image a fringe came from is
     # invisible in the finished page -- the plate and the swap are the only two
