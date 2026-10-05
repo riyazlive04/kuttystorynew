@@ -611,10 +611,24 @@ def _keep_artwork_hair(template: Image.Image, mask: Image.Image) -> Image.Image:
 
 # How hard to steepen the mask's edge when the CHILD's hair is being kept.
 # 1.0 leaves the feather as it is; higher pushes the band toward fully-in or
-# fully-out. 3.0 keeps a soft pixel or two -- the edge still reads as drawn
-# rather than cut out -- while stopping the half of the band that lies on
-# background from averaging a wall into the child's hair.
+# fully-out. High values stop the half of the band that lies on background from
+# averaging a wall into the child's hair -- that is what drew the pale rim
+# around the silhouette.
 EDGE_CONTRAST = 10.0
+
+# ...but the same steepening along the FRONT hairline is what makes the hair sit
+# on the head like a moulded cap. The two edges are not the same problem:
+#
+#   side/top  -- hair meets background. Any blending there is a visible halo,
+#                so it wants the full EDGE_CONTRAST.
+#   front     -- hair meets the child's own forehead. Both sides of that edge
+#                are the child, there is no wall to leak in, and a real hairline
+#                is soft: individual strands, not a stencil cut.
+#
+# Steepening the front edge buys nothing (no background to exclude) and costs
+# the thing that makes a hairline read as hair. So the contrast is chosen per
+# pixel by what lies OUTSIDE the mask there -- skin or not.
+EDGE_CONTRAST_SKIN = 1.6
 
 
 def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
@@ -669,6 +683,34 @@ def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
         inner = cv2.GaussianBlur((m > 0.25).astype(np.float32), (0, 0), 3)
         is_hair = np.maximum(is_hair, inner)
 
+        # Which edge is this? Along the front hairline the plate just outside the
+        # mask is the character's forehead; along the sides and top it is the
+        # room behind them. Luminance alone cannot tell those apart -- a sunlit
+        # wall and a lit forehead sit at the same brightness, which is why the
+        # earlier pass hardened both -- so ask Lab: skin holds a warm a*/b*, the
+        # pastel walls in these plates do not.
+        lab = cv2.cvtColor(np.asarray(template.convert("RGB")), cv2.COLOR_RGB2LAB)
+        a_ch = lab[:, :, 1].astype(np.float32)
+        b_ch = lab[:, :, 2].astype(np.float32)
+        sA = float(np.median(a_ch[core]))
+        sB = float(np.median(b_ch[core]))
+        # Distance from the face's OWN skin colour, so it follows the plate's
+        # palette rather than a fixed notion of what skin looks like.
+        dist = np.hypot(a_ch - sA, b_ch - sB)
+        is_skin = 1.0 - np.clip((dist - 6.0) / 14.0, 0.0, 1.0)
+        # Reject the hair itself, which shares the warm cast in these drawings.
+        # The gate has to sit LOW: measured on the-dinosaur-egg plate, the strip
+        # of forehead under the fringe -- the exact pixels that must stay soft --
+        # reads lum 95 against a face median of 140, because it is in the
+        # fringe's shadow. A gate at 0.72*skin scored it 0.00 and hardened the
+        # hairline, which is the moulded-cap edge. Hair there is 8-15, so 0.35
+        # separates them with room to spare and the colour test does the work.
+        is_skin *= np.clip((lum - skin * 0.35) / max(1e-3, skin * 0.25), 0.0, 1.0)
+        # Judge the neighbourhood, not the pixel: at the hairline every other
+        # pixel is a strand, and a per-pixel test would alternate hard and soft
+        # along the very edge it is meant to keep smooth.
+        is_skin = cv2.GaussianBlur(is_skin.astype(np.float32), (0, 0), 7)
+
         # ONLY the partial band. `1 - m` is 1 across the whole page outside the
         # face, so weighting by it pulled the entire plate into the mask wherever
         # it was dark -- the log said "hardened 7765% of the mask", which is the
@@ -687,12 +729,17 @@ def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
         # below the midpoint down toward 0 and above it up toward 1. The edge
         # keeps a soft pixel or two -- enough that it is not a cut-out -- but
         # stops carrying 50% of a wall into the hair.
-        out = np.clip((out - 0.5) * EDGE_CONTRAST + 0.5, 0.0, 1.0)
+        # Full contrast against background, gentle against skin, blended in
+        # between so there is no seam where one regime becomes the other.
+        contrast = EDGE_CONTRAST + (EDGE_CONTRAST_SKIN - EDGE_CONTRAST) * is_skin
+        out = np.clip((out - 0.5) * contrast + 0.5, 0.0, 1.0)
         out = np.where(band, out, m)  # outside the band nothing moves
 
         hardened = float(np.abs(out - m).sum()) / max(1.0, float(band.sum())) * 100.0
+        soft = float((is_skin[band] > 0.5).mean()) * 100.0 if band.any() else 0.0
         print(
-            f"[retouch] hair edge: hair=child, hardened {hardened:.1f}% of the mask",
+            f"[retouch] hair edge: hair=child, hardened {hardened:.1f}% of the mask, "
+            f"{soft:.0f}% of the band kept soft (hairline against skin)",
             flush=True,
         )
         return Image.fromarray(np.clip(out * 255.0, 0, 255).astype("uint8"), "L")
