@@ -40,7 +40,9 @@ export function PhoneLoginModal({
   onClose,
   onSuccess,
   title = "Unlock the Full Story Preview",
-  subtitle = "Enter your mobile number to instantly read all 28 pages of your personalized storybook.",
+  // No page count here on purpose: books are 24 or 28 pages, and callers that
+  // know which book it is pass an exact subtitle.
+  subtitle = "Enter your mobile number to instantly read every page of your personalized storybook.",
 }: PhoneLoginModalProps) {
   const { sendOtp, verifyOtp, attemptCount } = useCustomerAuth();
 

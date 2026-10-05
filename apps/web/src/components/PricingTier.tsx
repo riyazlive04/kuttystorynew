@@ -66,8 +66,8 @@ export function PricingTier() {
             Choose Your Book Format
           </h2>
           <p className="text-slate-mutedText">
-            Every format features 28 beautifully customized illustrations with a
-            free preview.
+            Every format features 24-28 beautifully customized illustrations
+            with a free preview.
           </p>
         </div>
 

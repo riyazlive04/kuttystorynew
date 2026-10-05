@@ -29,7 +29,7 @@ export function Hero({ stories }: { stories: Story[] }) {
           </h1>
           <p className="mt-5 max-w-lg text-lg text-slate-mutedText">
             Upload a photo, pick a name, choose a story - and watch a beautiful
-            28-page book come to life, personalized just for them. In English, as an
+            24-28 page book come to life, personalized just for them. In English, as an
             instant PDF or a premium printed hardcover.
           </p>
 

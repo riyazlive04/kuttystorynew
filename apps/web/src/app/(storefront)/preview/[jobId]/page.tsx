@@ -7,6 +7,7 @@ import { CheckCircle2, Download, Loader2, Lock, Phone, Sparkles } from "lucide-r
 import {
   approveJob,
   downloadFile,
+  fetchStory,
   getConfig,
   getJob,
   previewPdfUrl,
@@ -34,22 +35,46 @@ export default function PreviewPage({ params }: { params: { jobId: string } }) {
   const [job, setJob] = useState<Job | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [freePages, setFreePages] = useState(3);
-  const [totalPages, setTotalPages] = useState(28);
+  // Site-wide fallback from /config. Books are not all the same length (24 or
+  // 28), so it is only the floor — storyPages below is the real number.
+  const [configTotalPages, setConfigTotalPages] = useState(28);
+  const [storyPages, setStoryPages] = useState<number | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [regeneratingPage, setRegeneratingPage] = useState<number | null>(null);
   const [approving, setApproving] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
 
   const GUEST_FREE_PAGES = 3;
+  // What this particular book actually contains. Advertising "all 28 pages" on a
+  // 24-page title overstates the product, so prefer the story's own count and
+  // fall back to the site-wide default only until it has loaded.
+  const totalPages = storyPages ?? configTotalPages;
   // If user is logged in with their phone number or purchased, they unlock all pages for preview
   const effectiveFreePages = job?.isPurchased || isLoggedIn ? totalPages : GUEST_FREE_PAGES;
 
   useEffect(() => {
     getConfig().then((c) => {
       setFreePages(c.freePreviewPages);
-      setTotalPages(c.totalPages);
+      setConfigTotalPages(c.totalPages);
     });
   }, []);
+
+  // The job tells us which book this is; the book tells us how long it is.
+  const storySlug = job?.storySlug;
+  useEffect(() => {
+    if (!storySlug) return;
+    let cancelled = false;
+    fetchStory(storySlug)
+      .then((s) => {
+        if (!cancelled && s?.pages) setStoryPages(s.pages);
+      })
+      .catch(() => {
+        /* keep the /config fallback */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [storySlug]);
 
   useEffect(() => {
     let cancelled = false;

@@ -77,7 +77,7 @@ export default function OrderPage({
     setDownloading(false);
     if (!ok)
       alert(
-        "Your book is still being prepared (all 28 pages are rendering). Please try again in a couple of minutes.",
+        "Your book is still being prepared (every page is still rendering). Please try again in a couple of minutes.",
       );
   }
 
@@ -159,7 +159,7 @@ export default function OrderPage({
             <Download className="mx-auto h-8 w-8 text-brand-primary" />
             <h3 className="mt-3 font-bold text-slate-deep">Your PDF</h3>
             <p className="mt-1 text-sm text-slate-mutedText">
-              High-resolution, all 28 pages.
+              High-resolution, every page of the book.
             </p>
             <button
               onClick={downloadBook}

@@ -97,7 +97,7 @@ export default function AdminOrders() {
     setDownloadingId(null);
     if (!ok)
       alert(
-        "The full book isn't ready yet (all 28 pages may still be rendering). Try again shortly.",
+        "The full book isn't ready yet (pages may still be rendering). Try again shortly.",
       );
   }
 
