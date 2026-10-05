@@ -561,6 +561,17 @@ def _keep_template_hair(mask, swapped: bytes, swapped_size, template: bytes, reg
         return mask
 
 
+# How hard to steepen the feathered band's edge when the ARTWORK's hair is
+# being kept (the default -- `keep_artwork_hair=True`). Same rationale as
+# EDGE_CONTRAST below, for the mirror-image function: a half-hair/half-wall
+# pixel in the band is the pale rim, whichever direction the mask is being
+# pulled. Kept as its own constant rather than reusing EDGE_CONTRAST because
+# the two functions' classification signals are shaped differently (blur
+# sigma, and max- vs min-combined with the colour test) and were not
+# measured against the same plates.
+ARTWORK_EDGE_CONTRAST = 6.0
+
+
 def _keep_artwork_hair(template: Image.Image, mask: Image.Image) -> Image.Image:
     """Take the plate's hair out of the blend, so it is never averaged with the
     swapper's.
@@ -587,20 +598,75 @@ def _keep_artwork_hair(template: Image.Image, mask: Image.Image) -> Image.Image:
 
     The ramp on both edges -- soft between hair and skin, soft between band and
     core -- is what stops removing an edge from drawing one.
+
+    Two more things carried over from `_harden_hair_edge`, where the same
+    translucent rim showed up and got fixed there first:
+
+      * luminance alone misses pale or warm-toned hair against a background
+        that happens to sit at the same brightness -- straw-blond strands on
+        a sunlit wall, or light brown hair on a saturated colour backdrop,
+        both score "skin" on brightness alone and the band keeps blending
+        them. The Lab a*/b* distance from the face's own skin tone catches
+        what luminance cannot: a background colour, however bright, is
+        rarely close to a cheek's actual hue.
+      * a fringe is strands interleaved with gaps, not a solid mass, so a
+        per-pixel test flips between "hair" and "not hair" along the very
+        edge it is meant to smooth. Blurring the test first makes the whole
+        fringe read as hair rather than only the opaque threads.
+      * even once hair is identified correctly, a half-hair/half-background
+        band still averages 50% of the background into the edge -- that
+        average is the pale rim itself. Steepening the band after
+        classification (push below the midpoint toward 0, above it toward 1)
+        is what actually removes the rim rather than just finding it.
     """
     try:
+        import cv2
         import numpy as np
 
         m = np.asarray(mask, dtype=np.float32) / 255.0
         core = m > 0.99
+        band = (m > 0.02) & (m < 0.99)
         if not core.any():
             return mask
         lum = np.asarray(template.convert("L"), dtype=np.float32)
         skin = float(np.median(lum[core]))
         lo, hi = skin * 0.45, skin * 0.70
         keep = np.clip((lum - lo) / max(1e-3, hi - lo), 0.0, 1.0)  # 0 hair, 1 skin
+
+        # Colour, not just brightness: a background can sit at the same
+        # luminance as skin while being nowhere near its hue.
+        lab = cv2.cvtColor(np.asarray(template.convert("RGB")), cv2.COLOR_RGB2LAB)
+        a_ch = lab[:, :, 1].astype(np.float32)
+        b_ch = lab[:, :, 2].astype(np.float32)
+        sA = float(np.median(a_ch[core]))
+        sB = float(np.median(b_ch[core]))
+        dist = np.hypot(a_ch - sA, b_ch - sB)
+        is_skin_colour = 1.0 - np.clip((dist - 6.0) / 14.0, 0.0, 1.0)
+        keep = np.minimum(keep, is_skin_colour)
+
+        # A fringe is strands with gaps, not a solid block; judge the
+        # neighbourhood so the whole fringe reads as hair.
+        keep = cv2.GaussianBlur(keep.astype(np.float32), (0, 0), 7)
+
         strength = np.clip((1.0 - m) / 0.25, 0.0, 1.0)  # 0 in the core, 1 in the band
         out = m * (1.0 - strength * (1.0 - keep))
+
+        # Steepen the band itself: a half-and-half mix of hair and background
+        # is the pale rim, independent of how well the classification above
+        # worked. Pull values below the midpoint toward 0 (artwork wins),
+        # above it toward 1 (child's own pixel kept), leaving a soft pixel or
+        # two so the edge still reads as drawn rather than cut out.
+        out = np.where(
+            band, np.clip((out - 0.5) * ARTWORK_EDGE_CONTRAST + 0.5, 0.0, 1.0), out
+        )
+
+        steepened = (
+            float(np.abs(out - m)[band].sum()) / max(1.0, float(band.sum())) * 100.0
+        )
+        print(
+            f"[retouch] hair edge: hair=artwork, steepened {steepened:.1f}% of the band",
+            flush=True,
+        )
         return Image.fromarray(
             np.clip(out * 255.0, 0, 255).astype("uint8"), "L"
         )
