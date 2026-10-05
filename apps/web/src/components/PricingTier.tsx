@@ -20,7 +20,7 @@ const TIERS: {
     blurb:
       "Your personalised storybook as a high-quality PDF. Download it within minutes and print it anywhere.",
     features: [
-      "28 illustrated pages",
+      "24-28 illustrated pages",
       "High-resolution PDF",
       "Print-ready quality",
       "Instant download",
@@ -33,7 +33,7 @@ const TIERS: {
     blurb:
       "A softcover printed book with a stapled spine — the same pages, lighter and easier on the budget.",
     features: [
-      "28 illustrated pages",
+      "24-28 illustrated pages",
       "210mm × 210mm square format",
       "Softcover, stapled spine",
       "170gsm art paper",
@@ -46,7 +46,7 @@ const TIERS: {
     blurb:
       "Our premium hard cover keepsake, made to order in 4-7 days and delivered free anywhere in India.",
     features: [
-      "28 illustrated pages",
+      "24-28 illustrated pages",
       "210mm × 210mm square format",
       "Hard cover binding",
       "170gsm art paper",
