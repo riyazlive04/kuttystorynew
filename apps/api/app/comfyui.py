@@ -13,7 +13,12 @@ import httpx
 
 from .config import settings
 
-# Placeholder illustration pool used by the mock renderer.
+# Placeholder illustration pool used by the mock renderer, when there is NO
+# backend GPU at all. It must never reach a real customer: these are unrelated
+# Unsplash stock photos -- a snake on a branch turned up on page 3 of a Space
+# Explorer book, because the story's gallery was empty and a queued job had not
+# yet rendered anything over them. An un-rendered page shows nothing and lets
+# the flip-book's own spinner speak; a wrong picture looks like the product.
 _MOCK_ART = [
     "https://images.unsplash.com/photo-1587654780291-39c9404d746b?w=600&q=80&auto=format&fit=crop",
     "https://images.unsplash.com/photo-1516627145497-ae6968895b74?w=600&q=80&auto=format&fit=crop",
@@ -54,7 +59,17 @@ def build_pages(
     """
     from .pages_layout import is_free, kind_of, reading_order
 
-    art = gallery or _MOCK_ART or [cover]
+    # Real deployments have a GPU, so every story page is about to be rendered
+    # for this child. Until that lands the page carries no image at all rather
+    # than a stand-in from another book -- a stock photo of a snake in a Space
+    # Explorer preview reads as a broken product, while an empty page reads as
+    # one still being painted, which is what it is.
+    if gallery:
+        art = gallery
+    elif settings.gpu_provider == "mock":
+        art = _MOCK_ART or [cover]
+    else:
+        art = []  # pending: the worker is about to paint every page
     cover_art = cover_art or {}
     order = reading_order(set(cover_art) | set(authored or ()), total)
     free = settings.free_preview_pages
@@ -66,7 +81,11 @@ def build_pages(
                 "index": i,
                 "pageNumber": n,
                 "kind": kind_of(n),
-                "imageUrl": cover_art.get(n) or art[abs(n) % len(art)] or cover,
+                # No art and no stand-in = "" : the page is pending, and the
+                # flip-book renders its own spinner for an empty imageUrl.
+                "imageUrl": cover_art.get(n)
+                or (art[abs(n) % len(art)] if art else "")
+                or "",
                 "caption": "" if n in cover_art else caption_tpl.format(name=child_name),
                 "locked": not is_free(n, free),
             }
