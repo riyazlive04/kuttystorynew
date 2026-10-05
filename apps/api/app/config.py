@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     # mask the identical filter stripped the night sky out of a space book, so
     # the confinement is the feature.
     hair_despeckle_enabled: bool = True
+    # Erase the TEMPLATE child's hair tips left stranded on the background when
+    # the real child's hair is a different shape. Guarded by the convex hull of
+    # the hair, which is what separates a stray tip from an eye -- a colour test
+    # could not, and selected both eyes on the first attempt.
+    hair_tip_cleanup_enabled: bool = True
     # Lift the swapper's dark blotches toward the face's own skin tone, 0-1.
     # It cuts nothing out -- it only adds light, only to pixels matching the
     # skin's own hue, and only to the blurred component, so detail is invisible

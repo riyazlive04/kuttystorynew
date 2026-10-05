@@ -646,6 +646,13 @@ HAIR_SPECK_MAX_SIDE = 8     # px, at 1200px wide -- bounding box limit
 # 1243px of sparkle. Eyes before sparkles, every time.
 HAIR_SPECK_MIN_DENSITY = 0.85
 
+# The template child's hair tips, stranded on the background outside the traced
+# outline. Measured on speed-racer p2: 12 blobs, 261px, all 0% inside the hair's
+# convex hull, while every eye and eyebrow scored 100% inside it.
+HAIR_TIP_DARK = 70.0             # what counts as "hair dark" when finding the mass
+HAIR_TIP_DARKER_THAN_BG = 40.0   # a stray tip is this much darker than its surround
+HAIR_TIP_BLOB_MAX_AREA = 600     # px at 800px wide -- a tip, not a drawn object
+
 
 def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
     """Stop the blend band crossfading the child's hair with the artwork's.
@@ -846,6 +853,96 @@ def _despeckle_hair(img: Image.Image, mask: Image.Image) -> Image.Image:
         return Image.fromarray(fixed, "RGB")
     except Exception as e:  # noqa: BLE001 -- sparkles are not worth a failed page
         print(f"[retouch] hair despeckle skipped: {e}", flush=True)
+        return img
+
+
+def _remove_template_hair_tips(img: Image.Image, mask: Image.Image) -> Image.Image:
+    """Erase the TEMPLATE child's hair tips left stranded on the background.
+
+    The traced outline is the shape of the template's head. When the real
+    child's hair is a different shape -- usually fuller -- the template's spiky
+    tips stick out past the outline, nothing is composited over them, and they
+    survive as dark flecks floating on the wall beside the new hair. They read
+    as dirt, and they are the previous child's hair on this child's page.
+
+    The guard is geometric, because colour could not do it. A dark blob on a
+    light surround describes a stray tip and an EYE equally well, and a first
+    version selected both eyes and both eyebrows; a Lab test against skin did
+    not separate them either, since the shadowed skin around an eye sits far
+    from the median skin tone.
+
+    What does separate them is the convex hull of the hair mass -- the head's
+    outer shape. Eyes and brows are inside it; stranded tips are outside it.
+    Measured on speed-racer p2 the split is absolute: every facial feature
+    scored 100% inside, every stray tip 0%.
+
+    Only blobs that are (a) outside the hull, (b) small, (c) clearly darker
+    than their own local background and (d) close to the hair are touched, so
+    nothing in the open artwork can be reached.
+    """
+    if not settings.hair_tip_cleanup_enabled:
+        return img
+    try:
+        import cv2
+        import numpy as np
+
+        rgb = np.asarray(img.convert("RGB"))
+        lum = np.asarray(img.convert("L"), dtype=np.float32)
+        m = np.asarray(mask.convert("L"), dtype=np.float32) / 255.0
+
+        # The hair mass: the biggest dark component that the face region covers.
+        dark = ((lum < HAIR_TIP_DARK) & (m > 0.02)).astype(np.uint8)
+        if not dark.any():
+            return img
+        n, lab, st, _ = cv2.connectedComponentsWithStats(dark, 8)
+        if n < 2:
+            return img
+        i = 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))
+        hair = lab == i
+        if hair.sum() < 400:
+            return img
+
+        cnts, _ = cv2.findContours(
+            hair.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        if not cnts:
+            return img
+        hull = cv2.convexHull(np.vstack(cnts))
+        in_hull = np.zeros(lum.shape, np.uint8)
+        cv2.fillConvexPoly(in_hull, hull, 1)
+
+        scale = max(1.0, max(rgb.shape[:2]) / 800.0)
+        reach = max(3, int(51 * scale)) | 1
+        near = cv2.dilate(hair.astype(np.uint8), np.ones((reach, reach), np.uint8)) > 0
+        bg = cv2.medianBlur(lum.astype(np.uint8), 31).astype(np.float32)
+
+        cand = (((bg - lum) > HAIR_TIP_DARKER_THAN_BG) & (in_hull == 0) & near).astype(
+            np.uint8
+        )
+        if not cand.any():
+            return img
+
+        tn, tlab, tst, _ = cv2.connectedComponentsWithStats(cand, 8)
+        keep = np.zeros(lum.shape, np.uint8)
+        lo = max(3, int(3 * scale * scale))
+        hi = int(HAIR_TIP_BLOB_MAX_AREA * scale * scale)
+        for k in range(1, tn):
+            a = tst[k, cv2.CC_STAT_AREA]
+            if lo <= a <= hi:
+                keep[tlab == k] = 1
+        if not keep.any():
+            return img
+
+        kk = cv2.dilate(keep, np.ones((3, 3), np.uint8))
+        fixed = cv2.inpaint(rgb, kk, 3, cv2.INPAINT_TELEA)
+        print(
+            f"[retouch] template hair tips: removed {int(keep.sum())} px "
+            f"stranded outside the hair",
+            flush=True,
+        )
+        return Image.fromarray(fixed, "RGB")
+    except Exception as e:  # noqa: BLE001 -- stray flecks are not worth a failed page
+        print(f"[retouch] template hair tips skipped: {e}", flush=True)
         return img
 
 
@@ -1068,6 +1165,7 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
         mask = _harden_hair_edge(tmpl, mask)
     out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
     out = _despeckle_hair(out, mask)
+    out = _remove_template_hair_tips(out, mask)
 
     # Every stage, side by side, when asked. Which image a fringe came from is
     # invisible in the finished page -- the plate and the swap are the only two
