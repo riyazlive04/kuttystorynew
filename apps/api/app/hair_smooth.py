@@ -146,11 +146,13 @@ def _edit_segmind(crop: Image.Image, mask, api_key: str, timeout: float) -> dict
     crop.save(cb, format="PNG")
     Image.fromarray(mask).save(mb, format="PNG")
 
-    # The "uri" format this endpoint validates against accepts a data: URI as
-    # well as an http(s) one -- confirmed by Segmind 400ing on bare base64
-    # ("Does not match format 'uri'") and accepting the prefixed form.
-    image_uri = f"data:image/png;base64,{base64.b64encode(cb.getvalue()).decode()}"
-    mask_uri = f"data:image/png;base64,{base64.b64encode(mb.getvalue()).decode()}"
+    # sdxl-inpaint takes bare base64 (unlike flux-fill-dev's `uri`-format
+    # field, which 400'd on this same bare string and needed a data: prefix
+    # instead) -- the data: prefix on THIS endpoint instead 400'd as
+    # "Invalid Image", so the two Segmind endpoints disagree on the encoding
+    # despite both calling it "image"/"mask".
+    image_uri = base64.b64encode(cb.getvalue()).decode()
+    mask_uri = base64.b64encode(mb.getvalue()).decode()
 
     try:
         r = httpx.post(
