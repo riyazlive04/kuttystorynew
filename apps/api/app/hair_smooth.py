@@ -28,10 +28,17 @@ import httpx
 from PIL import Image
 
 OPENAI_EDITS_URL = "https://api.openai.com/v1/images/edits"
-# FLUX.1 Fill: a purpose-built inpainting model, same provider (Segmind) already
-# paying for the per-page face swap, so a plate repaint needs no second API key.
-# Mask convention is the OPPOSITE of OpenAI's: black=preserve, white=repaint.
-SEGMIND_FILL_URL = "https://api.segmind.com/v1/flux-fill-dev"
+# SDXL inpaint: same provider (Segmind) already paying for the per-page face
+# swap, so a plate repaint needs no second API key. Mask convention is the
+# OPPOSITE of OpenAI's: black=preserve, white=repaint.
+#
+# flux-fill-dev was tried first (newer model, matches the rest of this
+# project's FLUX usage) but its endpoint wants a `version` field this account
+# doesn't have -- it 406s with "none is not an allowed value", the shape of a
+# Replicate-style versioned-prediction wrapper around a community model, not
+# a flat synchronous call. sdxl-inpaint is the plain, documented shape this
+# module actually needs; nothing here depends on which model draws the hair.
+SEGMIND_FILL_URL = "https://api.segmind.com/v1/sdxl-inpaint"
 
 # The square sent to the editor, as a multiple of the face region's width. Wide
 # enough to hold the whole head with room around it, so the model sees where the
@@ -130,10 +137,11 @@ def _edit_openai(crop: Image.Image, mask, api_key: str, timeout: float) -> dict:
 
 
 def _edit_segmind(crop: Image.Image, mask, api_key: str, timeout: float) -> dict:
-    """{"image": PIL.Image} or {"error": "..."}. Segmind FLUX Fill: grayscale
-    mask, OPPOSITE convention from OpenAI -- black=preserve, white=repaint, so
-    the hair-is-255 mask this module already builds is sent as-is, unlike the
-    OpenAI path which has to invert it into an alpha channel."""
+    """{"image": PIL.Image} or {"error": "..."}. Segmind SDXL inpaint:
+    grayscale mask, OPPOSITE convention from OpenAI -- black=preserve,
+    white=repaint, so the hair-is-255 mask this module already builds is
+    sent as-is, unlike the OpenAI path which has to invert it into an
+    alpha channel."""
     cb, mb = io.BytesIO(), io.BytesIO()
     crop.save(cb, format="PNG")
     Image.fromarray(mask).save(mb, format="PNG")
@@ -152,10 +160,13 @@ def _edit_segmind(crop: Image.Image, mask, api_key: str, timeout: float) -> dict
                 "image": image_uri,
                 "mask": mask_uri,
                 "prompt": PROMPT,
+                "negative_prompt": "spiky, messy, speckled, dotted, sparkle, glitter",
+                "samples": 1,
                 "num_inference_steps": 30,
-                "guidance": 30,
-                "output_format": "png",
-                "megapixels": "1",
+                "guidance_scale": 7.5,
+                "strength": 0.9,
+                "scheduler": "DPM2 Karras",
+                "base64": False,
             },
             timeout=httpx.Timeout(timeout, connect=20.0),
         )
