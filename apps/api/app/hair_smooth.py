@@ -82,7 +82,10 @@ HAIR_WARM_MIN = 126     # Lab b* above neutral
 # only ever sees a seam with hair-colour on one side and background-colour
 # on the other, which is a much narrower task than "paint a hairstyle" and
 # can run at a high strength without room to invent a new shape.
-RING_OUTER_GROW_PX = 21  # at 1024px wide: how far out the ring reaches
+RING_OUTER_GROW_PX = 33  # at 1024px wide -- first attempt (21) still left a
+# faint residual pale line on some pages, confirmed by direct comparison
+# against naturally-clean pages (speed-racer p2/p3, never touched, fully
+# sharp). Widened so the ring reliably reaches past the fringe's full extent.
 RING_INNER_SHRINK_PX = 9  # how far in; together these set the ring's width
 
 PROMPT = (
@@ -217,9 +220,9 @@ def _edit_segmind(crop: Image.Image, mask, api_key: str, timeout: float) -> dict
                 # Whole-hair masks needed a compromise strength because the
                 # model could see (and reshape) the whole hairstyle. The
                 # ring mask only ever exposes a thin seam, so there is no
-                # hairstyle left to reshape -- safe to run high and let it
-                # actually repaint the seam instead of barely touching it.
-                "strength": 0.85,
+                # hairstyle left to reshape -- pushed near max so the seam
+                # is fully repainted rather than partially blended.
+                "strength": 0.95,
                 "scheduler": "DPM2 Karras",
                 "base64": False,
             },
