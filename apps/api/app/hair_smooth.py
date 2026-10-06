@@ -28,6 +28,10 @@ import httpx
 from PIL import Image
 
 OPENAI_EDITS_URL = "https://api.openai.com/v1/images/edits"
+# FLUX.1 Fill: a purpose-built inpainting model, same provider (Segmind) already
+# paying for the per-page face swap, so a plate repaint needs no second API key.
+# Mask convention is the OPPOSITE of OpenAI's: black=preserve, white=repaint.
+SEGMIND_FILL_URL = "https://api.segmind.com/v1/flux-fill-dev"
 
 # The square sent to the editor, as a multiple of the face region's width. Wide
 # enough to hold the whole head with room around it, so the model sees where the
@@ -87,12 +91,92 @@ def _hair_mask(crop: Image.Image, brow_y: float, head_x: float):
     return cv2.GaussianBlur(sel, (0, 0), 8)
 
 
-def smooth_hair(plate_bytes: bytes, region: dict, api_key: str, timeout: float = 300.0) -> dict:
+def _edit_openai(crop: Image.Image, mask, api_key: str, timeout: float) -> dict:
+    """{"image": PIL.Image} or {"error": "..."}. OpenAI edits: alpha channel,
+    transparent = repaint."""
+    import numpy as np
+
+    rgba = np.zeros((1024, 1024, 4), "uint8")
+    rgba[..., 3] = 255 - mask
+    cb, mb = io.BytesIO(), io.BytesIO()
+    crop.save(cb, format="PNG")
+    Image.fromarray(rgba).save(mb, format="PNG")
+
+    try:
+        r = httpx.post(
+            OPENAI_EDITS_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            data={
+                "model": "gpt-image-1",
+                "prompt": PROMPT,
+                "size": "1024x1024",
+                "input_fidelity": "high",
+                "quality": "high",
+            },
+            files={
+                "image": ("plate.png", cb.getvalue(), "image/png"),
+                "mask": ("mask.png", mb.getvalue(), "image/png"),
+            },
+            timeout=httpx.Timeout(timeout, connect=20.0),
+        )
+    except httpx.HTTPError as e:
+        return {"error": f"could not reach OpenAI: {type(e).__name__}"}
+    if r.status_code != 200:
+        return {"error": f"OpenAI {r.status_code}: {' '.join(r.text.split())[:200]}"}
+    img = Image.open(
+        io.BytesIO(base64.b64decode(r.json()["data"][0]["b64_json"]))
+    ).convert("RGB")
+    return {"image": img}
+
+
+def _edit_segmind(crop: Image.Image, mask, api_key: str, timeout: float) -> dict:
+    """{"image": PIL.Image} or {"error": "..."}. Segmind FLUX Fill: grayscale
+    mask, OPPOSITE convention from OpenAI -- black=preserve, white=repaint, so
+    the hair-is-255 mask this module already builds is sent as-is, unlike the
+    OpenAI path which has to invert it into an alpha channel."""
+    cb, mb = io.BytesIO(), io.BytesIO()
+    crop.save(cb, format="PNG")
+    Image.fromarray(mask).save(mb, format="PNG")
+
+    try:
+        r = httpx.post(
+            SEGMIND_FILL_URL,
+            headers={"x-api-key": api_key},
+            json={
+                "image": base64.b64encode(cb.getvalue()).decode(),
+                "mask": base64.b64encode(mb.getvalue()).decode(),
+                "prompt": PROMPT,
+                "num_inference_steps": 30,
+                "guidance": 30,
+                "output_format": "png",
+                "megapixels": "1",
+            },
+            timeout=httpx.Timeout(timeout, connect=20.0),
+        )
+    except httpx.HTTPError as e:
+        return {"error": f"could not reach Segmind: {type(e).__name__}"}
+    if r.status_code != 200:
+        return {"error": f"Segmind {r.status_code}: {' '.join(r.text.split())[:200]}"[:300]}
+    img = Image.open(io.BytesIO(r.content)).convert("RGB")
+    return {"image": img}
+
+
+def smooth_hair(
+    plate_bytes: bytes,
+    region: dict,
+    api_key: str,
+    timeout: float = 300.0,
+    provider: str = "openai",
+) -> dict:
     """Return {"image": bytes} with the hair repainted, or {"error": "..."}.
 
     `region` is the page's face region (traced polygon or box) in PERCENT --
     the same one the renderer uses, so the hair is found relative to the face
     rather than to the page.
+
+    `provider` is "openai" (gpt-image-1 edits, needs OPENAI_API_KEY) or
+    "segmind" (FLUX Fill, needs SEGMIND_API_KEY -- the same key already paying
+    for every page's face swap, so no second provider account is needed).
     """
     import cv2
     import numpy as np
@@ -122,37 +206,11 @@ def smooth_hair(plate_bytes: bytes, region: dict, api_key: str, timeout: float =
     if mask is None:
         return {"error": "no hair found above the face on this page"}
 
-    rgba = np.zeros((1024, 1024, 4), "uint8")
-    rgba[..., 3] = 255 - mask  # transparent = repaint this
-    cb, mb = io.BytesIO(), io.BytesIO()
-    crop.save(cb, format="PNG")
-    Image.fromarray(rgba).save(mb, format="PNG")
-
-    try:
-        r = httpx.post(
-            OPENAI_EDITS_URL,
-            headers={"Authorization": f"Bearer {api_key}"},
-            data={
-                "model": "gpt-image-1",
-                "prompt": PROMPT,
-                "size": "1024x1024",
-                "input_fidelity": "high",
-                "quality": "high",
-            },
-            files={
-                "image": ("plate.png", cb.getvalue(), "image/png"),
-                "mask": ("mask.png", mb.getvalue(), "image/png"),
-            },
-            timeout=httpx.Timeout(timeout, connect=20.0),
-        )
-    except httpx.HTTPError as e:
-        return {"error": f"could not reach OpenAI: {type(e).__name__}"}
-    if r.status_code != 200:
-        return {"error": f"OpenAI {r.status_code}: {' '.join(r.text.split())[:200]}"}
-
-    edited = Image.open(
-        io.BytesIO(base64.b64decode(r.json()["data"][0]["b64_json"]))
-    ).convert("RGB").resize((side, side), Image.LANCZOS)
+    editor = _edit_segmind if provider == "segmind" else _edit_openai
+    out = editor(crop, mask, api_key, timeout)
+    if out.get("error"):
+        return out
+    edited = out["image"].resize((side, side), Image.LANCZOS)
 
     # Paste back through the same mask: everything outside the hair is the
     # plate's own pixels, so the face, the scene and the page size are untouched.

@@ -921,6 +921,10 @@ class SmoothHairIn(BaseModel):
     variant: Literal["boy", "girl"] = "boy"
     pageNumbers: Optional[list[int]] = None  # None = every page with a face region
     restore: bool = False                    # put the saved original back
+    # "segmind" (FLUX Fill) needs no key beyond the one already paying for
+    # every page's face swap. "openai" (gpt-image-1 edits) is the original,
+    # higher-fidelity path, kept for books where it's worth a second key.
+    provider: Literal["segmind", "openai"] = "segmind"
 
 
 @router.post("/stories/{slug}/smooth-hair", dependencies=[Depends(require_admin)])
@@ -937,7 +941,12 @@ async def admin_smooth_hair(slug: str, body: SmoothHairIn):
     cannot be found (a helmet, a hat, a head too small in frame) are reported
     and left exactly as they were.
     """
-    from ..generation_engine import _image_bytes, _save_bytes, current_openai_key
+    from ..generation_engine import (
+        _image_bytes,
+        _save_bytes,
+        current_openai_key,
+        current_segmind_key,
+    )
     from ..hair_smooth import smooth_hair
 
     story = await prisma.story.find_unique(where={"slug": slug})
@@ -949,9 +958,10 @@ async def admin_smooth_hair(slug: str, body: SmoothHairIn):
         order={"pageNumber": "asc"},
     )
 
-    key = current_openai_key()
+    key = current_segmind_key() if body.provider == "segmind" else current_openai_key()
     if not key and not body.restore:
-        raise HTTPException(status_code=400, detail="OPENAI_API_KEY not set")
+        env_var = "SEGMIND_API_KEY" if body.provider == "segmind" else "OPENAI_API_KEY"
+        raise HTTPException(status_code=400, detail=f"{env_var} not set")
 
     results = []
     for page in pages:
@@ -983,7 +993,12 @@ async def admin_smooth_hair(slug: str, body: SmoothHairIn):
 
         try:
             out = await asyncio.to_thread(
-                smooth_hair, _image_bytes(page.baseImageUrl), region, key
+                smooth_hair,
+                _image_bytes(page.baseImageUrl),
+                region,
+                key,
+                300.0,
+                body.provider,
             )
         except Exception as e:  # noqa: BLE001 -- one bad plate must not stop the run
             results.append({"pageNumber": page.pageNumber, "status": "failed", "detail": str(e)[:200]})
