@@ -172,11 +172,21 @@ class Settings(BaseSettings):
     # halo signal against it and re-render from scratch if it reads as bad.
     # Calibrated 2026-10-05 on real renders: a confirmed severe halo scored
     # +7.2, three subtler but still visibly-confirmed halos scored +14.2 to
-    # +29.4, clean renders scored negative. +7.0 catches the severe case
-    # with one point of margin below it; the cost of a false retry is one
-    # extra Segmind call, cheap next to a halo reaching a customer's book.
+    # +29.4, clean renders scored negative.
+    #
+    # Lowered 7.0 -> 5.0 the next night: speed-racer p3 (already fixed at
+    # the template level, confirmed clean base art) still came back with
+    # stray pale strand tips floating on the wall -- traced to the raw
+    # Segmind swap itself (stage_2swap matched stage_4result exactly, so
+    # nothing in our own compositing added or could have removed it) --
+    # and scored +6.0, under the old +7.0 line, so it rendered uncaught. A
+    # provider artifact that slips past isn't theoretical: this was a real
+    # page a real customer would have received. The cost of a false retry
+    # is one extra Segmind call; the cost of missing one is a halo in a
+    # printed book, so the line moves toward catching more given a near-miss
+    # this exact size.
     halo_retry_enabled: bool = True
-    halo_retry_threshold: float = 7.0
+    halo_retry_threshold: float = 5.0
     # How many EXTRA attempts beyond the first, so 1 means "retry once".
     halo_retry_attempts: int = 1
     # Recolour the artwork's ears and neck to the swapped face's skin tone, so a
