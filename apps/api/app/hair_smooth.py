@@ -82,12 +82,11 @@ HAIR_WARM_MIN = 126     # Lab b* above neutral
 # only ever sees a seam with hair-colour on one side and background-colour
 # on the other, which is a much narrower task than "paint a hairstyle" and
 # can run at a high strength without room to invent a new shape.
-RING_OUTER_GROW_PX = 29  # at 1024px wide. 21 left a faint residual pale
-# line; 33 (at strength 0.95) gave a visible green/olive tint and blur.
-# 26+0.88 cleared the TOP edge but left the LEFT side pale plus a new
-# orange artifact blob -- isolating the two knobs: width back up a touch,
-# strength back down to the known-safe 0.85, to see which one owns which
-# failure mode before moving either further.
+RING_OUTER_GROW_PX = 32  # at 1024px wide. Isolating from strength settled
+# strength=0.85 as the safe value (0.95 caused colour-tint/blur artifacts
+# regardless of width). 29+0.85 cleared the top edge fully -- matched the
+# naturally-clean reference pages -- with only a small residual patch left
+# on one side. Nudging width a little further to try to clear that too.
 RING_INNER_SHRINK_PX = 9  # how far in; together these set the ring's width
 
 PROMPT = (
