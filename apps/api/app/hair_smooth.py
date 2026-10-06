@@ -66,24 +66,34 @@ HAIR_WARM_MIN = 126     # Lab b* above neutral
 # pixels in it got classified as hair, and the inpaint prompt's "SAME
 # outline and size" instruction keeps the repaint from visibly enlarging
 # the hair even though the MASK is a little bigger than the hair mass.
-EDGE_GROW_PX = 14  # at 1024px wide -- first attempt used 24 and the extra
-# room let the model reshape the crown (short choppy hair came back as a
-# tall swept-back puff) rather than just reach the fringe. Pulled back; a
-# tighter mask leaves less of the silhouette for the model to reinterpret.
+# Two whole-hair attempts (grow the mass outward by a margin, repaint
+# everything inside it) both failed, in opposite directions: strength 0.9
+# fixed the fringe but let the model redesign the hairstyle (short choppy
+# cut came back as a tall swept-back puff); strength 0.45 kept the shape
+# but barely touched the fringe, since so little of the original pixels
+# were allowed to change. One dial can't satisfy both at once when the
+# model can see -- and so can repaint -- the whole hairstyle.
+#
+# So don't show it the whole hairstyle. The mask is now a THIN RING
+# straddling only the edge itself -- dilate the hair mass out a little,
+# erode it in a little, keep the band between. Everything inside that
+# band's inner edge (the actual hair) and everything outside its outer
+# edge (the background) is locked, identical pixel for pixel; the model
+# only ever sees a seam with hair-colour on one side and background-colour
+# on the other, which is a much narrower task than "paint a hairstyle" and
+# can run at a high strength without room to invent a new shape.
+RING_OUTER_GROW_PX = 21  # at 1024px wide: how far out the ring reaches
+RING_INNER_SHRINK_PX = 9  # how far in; together these set the ring's width
 
 PROMPT = (
-    "Photo-accurate touch-up of this EXACT hairstyle, changing nothing about "
-    "its shape, height, volume, or direction. Keep the same short, choppy, "
-    "slightly messy cut with the same silhouette, pixel for pixel at the "
-    "edges. Only remove the small white speckled dots and smooth the harsh "
-    "spiky black outlines into soft painted strands -- the same technique "
-    "and brush texture as the rest of this children's-book illustration. "
-    "Do not restyle, do not add volume, do not sweep the hair back or up."
+    "Blend this edge seamlessly: dark hair strands fading cleanly into the "
+    "background behind them. No pale highlights, no white flecks or dots, "
+    "no visible boundary line -- just a clean, soft edge where individual "
+    "strands meet open space, in the same painted children's-book style."
 )
 NEGATIVE_PROMPT = (
-    "different hairstyle, pompadour, swept back, quiff, puffy, voluminous, "
-    "slicked, combed up, taller hair, helmet hair, smooth plastic texture, "
-    "glossy, airbrushed, photorealistic, 3d render"
+    "white halo, pale glow, bright outline, speckled dots, sparkle, hard "
+    "edge, cutout, sticker, photorealistic, 3d render, blurry smear"
 )
 
 
@@ -123,14 +133,17 @@ def _hair_mask(crop: Image.Image, brow_y: float, head_x: float):
     sel = ((labels == best).astype("uint8")) * 255
     sel = cv2.morphologyEx(sel, cv2.MORPH_CLOSE, np.ones((35, 35), "uint8"))
 
-    # Grow past the solid mass to reach the pale flyaway strands at its edge
-    # (see EDGE_GROW_PX above), THEN cut the brow line again -- the dilation
-    # can push the mask's lower edge down past it.
-    grow = max(1, EDGE_GROW_PX) | 1
-    sel = cv2.dilate(sel, np.ones((grow, grow), "uint8"))
-    sel[cut:, :] = 0
+    # The ring: dilate out, erode in, keep the band between. Everything
+    # inside the eroded shape (the hair interior) and everything outside
+    # the dilated shape (the background) is cut back to 0 -- locked.
+    outer_k = max(1, RING_OUTER_GROW_PX) | 1
+    inner_k = max(1, RING_INNER_SHRINK_PX) | 1
+    outer = cv2.dilate(sel, np.ones((outer_k, outer_k), "uint8"))
+    inner = cv2.erode(sel, np.ones((inner_k, inner_k), "uint8"))
+    ring = cv2.subtract(outer, inner)
+    ring[cut:, :] = 0  # never below the brow
 
-    return cv2.GaussianBlur(sel, (0, 0), 8)
+    return cv2.GaussianBlur(ring, (0, 0), 4)
 
 
 def _edit_openai(crop: Image.Image, mask, api_key: str, timeout: float) -> dict:
@@ -201,11 +214,12 @@ def _edit_segmind(crop: Image.Image, mask, api_key: str, timeout: float) -> dict
                 "samples": 1,
                 "num_inference_steps": 30,
                 "guidance_scale": 7.5,
-                # 0.9 restyled the hair (short choppy -> tall swept puff).
-                # 0.45 kept the shape but barely touched the fringe -- too
-                # close to the original pixels to actually repaint them.
-                # Splitting the difference.
-                "strength": 0.65,
+                # Whole-hair masks needed a compromise strength because the
+                # model could see (and reshape) the whole hairstyle. The
+                # ring mask only ever exposes a thin seam, so there is no
+                # hairstyle left to reshape -- safe to run high and let it
+                # actually repaint the seam instead of barely touching it.
+                "strength": 0.85,
                 "scheduler": "DPM2 Karras",
                 "base64": False,
             },
