@@ -138,13 +138,19 @@ def _edit_segmind(crop: Image.Image, mask, api_key: str, timeout: float) -> dict
     crop.save(cb, format="PNG")
     Image.fromarray(mask).save(mb, format="PNG")
 
+    # The "uri" format this endpoint validates against accepts a data: URI as
+    # well as an http(s) one -- confirmed by Segmind 400ing on bare base64
+    # ("Does not match format 'uri'") and accepting the prefixed form.
+    image_uri = f"data:image/png;base64,{base64.b64encode(cb.getvalue()).decode()}"
+    mask_uri = f"data:image/png;base64,{base64.b64encode(mb.getvalue()).decode()}"
+
     try:
         r = httpx.post(
             SEGMIND_FILL_URL,
             headers={"x-api-key": api_key},
             json={
-                "image": base64.b64encode(cb.getvalue()).decode(),
-                "mask": base64.b64encode(mb.getvalue()).decode(),
+                "image": image_uri,
+                "mask": mask_uri,
                 "prompt": PROMPT,
                 "num_inference_steps": 30,
                 "guidance": 30,
