@@ -66,13 +66,24 @@ HAIR_WARM_MIN = 126     # Lab b* above neutral
 # pixels in it got classified as hair, and the inpaint prompt's "SAME
 # outline and size" instruction keeps the repaint from visibly enlarging
 # the hair even though the MASK is a little bigger than the hair mass.
-EDGE_GROW_PX = 24  # at 1024px wide; measured fringe reach was ~15-20px
+EDGE_GROW_PX = 14  # at 1024px wide -- first attempt used 24 and the extra
+# room let the model reshape the crown (short choppy hair came back as a
+# tall swept-back puff) rather than just reach the fringe. Pulled back; a
+# tighter mask leaves less of the silhouette for the model to reinterpret.
 
 PROMPT = (
-    "Repaint this hair with the SAME outline and size: soft, smooth, neatly "
-    "combed strands with gentle highlights. Remove the speckled white dots and "
-    "the spiky bristle tips. Do not enlarge the hair or change its shape. Same "
-    "colour, same lighting, same painted children's-book style."
+    "Photo-accurate touch-up of this EXACT hairstyle, changing nothing about "
+    "its shape, height, volume, or direction. Keep the same short, choppy, "
+    "slightly messy cut with the same silhouette, pixel for pixel at the "
+    "edges. Only remove the small white speckled dots and smooth the harsh "
+    "spiky black outlines into soft painted strands -- the same technique "
+    "and brush texture as the rest of this children's-book illustration. "
+    "Do not restyle, do not add volume, do not sweep the hair back or up."
+)
+NEGATIVE_PROMPT = (
+    "different hairstyle, pompadour, swept back, quiff, puffy, voluminous, "
+    "slicked, combed up, taller hair, helmet hair, smooth plastic texture, "
+    "glossy, airbrushed, photorealistic, 3d render"
 )
 
 
@@ -186,11 +197,16 @@ def _edit_segmind(crop: Image.Image, mask, api_key: str, timeout: float) -> dict
                 "image": image_uri,
                 "mask": mask_uri,
                 "prompt": PROMPT,
-                "negative_prompt": "spiky, messy, speckled, dotted, sparkle, glitter",
+                "negative_prompt": NEGATIVE_PROMPT,
                 "samples": 1,
                 "num_inference_steps": 30,
                 "guidance_scale": 7.5,
-                "strength": 0.9,
+                # 0.9 (first attempt) left the model almost free to invent a
+                # new image inside the mask -- a short choppy cut came back
+                # as a tall swept-back puff. Lower strength keeps more of
+                # the ORIGINAL pixels' structure and only lets the model
+                # repaint texture/detail on top of it.
+                "strength": 0.45,
                 "scheduler": "DPM2 Karras",
                 "base64": False,
             },
