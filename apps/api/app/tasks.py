@@ -23,7 +23,9 @@ from prisma import Prisma, Json
 from .config import settings
 from .generation_engine import extract_identity, render_page
 from .pages_layout import (
+    COVER_NUMBERS,
     FRONT_COVER,
+    PRINT_ONLY_NUMBERS,
     SPINE,
     catalog_field,
     is_free,
@@ -247,7 +249,20 @@ async def _render_one(
             except Exception:
                 pass  # keep the provider's frame if anything about the merge fails
 
-        if not settings.halo_retry_enabled or attempt == attempts - 1:
+        # Covers are a different composition entirely -- a title banner, a
+        # gradient sky, a crowd scene filling most of the frame -- where the
+        # ring right around the head is often genuinely brighter than the
+        # rest of the page without anything being wrong. Measured on a real
+        # cover: +64.7, for a sunset sky against a busy stadium crowd, no
+        # halo in sight. The signal was only ever calibrated on square story
+        # pages with a single-colour background; it does not generalise to
+        # covers, so it does not run on them.
+        if (
+            not settings.halo_retry_enabled
+            or attempt == attempts - 1
+            or page_number in COVER_NUMBERS
+            or page_number in PRINT_ONLY_NUMBERS
+        ):
             break
         try:
             from .generation_engine import halo_signal_for_page
