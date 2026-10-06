@@ -82,10 +82,12 @@ HAIR_WARM_MIN = 126     # Lab b* above neutral
 # only ever sees a seam with hair-colour on one side and background-colour
 # on the other, which is a much narrower task than "paint a hairstyle" and
 # can run at a high strength without room to invent a new shape.
-RING_OUTER_GROW_PX = 33  # at 1024px wide -- first attempt (21) still left a
-# faint residual pale line on some pages, confirmed by direct comparison
-# against naturally-clean pages (speed-racer p2/p3, never touched, fully
-# sharp). Widened so the ring reliably reaches past the fringe's full extent.
+RING_OUTER_GROW_PX = 26  # at 1024px wide. 21 left a faint residual pale
+# line on some pages (compared directly against naturally-clean pages,
+# speed-racer p2/p3, never touched, fully sharp). 33 overshot the other
+# way -- reached far enough into the hair interior that blending
+# hair-colour with sky-colour read as a green/olive tint at the edge, and
+# an odd soft blur. Splitting the difference.
 RING_INNER_SHRINK_PX = 9  # how far in; together these set the ring's width
 
 PROMPT = (
@@ -218,11 +220,10 @@ def _edit_segmind(crop: Image.Image, mask, api_key: str, timeout: float) -> dict
                 "num_inference_steps": 30,
                 "guidance_scale": 7.5,
                 # Whole-hair masks needed a compromise strength because the
-                # model could see (and reshape) the whole hairstyle. The
-                # ring mask only ever exposes a thin seam, so there is no
-                # hairstyle left to reshape -- pushed near max so the seam
-                # is fully repainted rather than partially blended.
-                "strength": 0.95,
+                # model could see (and reshape) the whole hairstyle. 0.85
+                # still left a faint residual line; 0.95 (with the wider
+                # ring) overshot into a visible colour tint and blur.
+                "strength": 0.88,
                 "scheduler": "DPM2 Karras",
                 "base64": False,
             },
