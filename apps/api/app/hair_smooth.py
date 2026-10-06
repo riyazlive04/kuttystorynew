@@ -82,12 +82,12 @@ HAIR_WARM_MIN = 126     # Lab b* above neutral
 # only ever sees a seam with hair-colour on one side and background-colour
 # on the other, which is a much narrower task than "paint a hairstyle" and
 # can run at a high strength without room to invent a new shape.
-RING_OUTER_GROW_PX = 26  # at 1024px wide. 21 left a faint residual pale
-# line on some pages (compared directly against naturally-clean pages,
-# speed-racer p2/p3, never touched, fully sharp). 33 overshot the other
-# way -- reached far enough into the hair interior that blending
-# hair-colour with sky-colour read as a green/olive tint at the edge, and
-# an odd soft blur. Splitting the difference.
+RING_OUTER_GROW_PX = 29  # at 1024px wide. 21 left a faint residual pale
+# line; 33 (at strength 0.95) gave a visible green/olive tint and blur.
+# 26+0.88 cleared the TOP edge but left the LEFT side pale plus a new
+# orange artifact blob -- isolating the two knobs: width back up a touch,
+# strength back down to the known-safe 0.85, to see which one owns which
+# failure mode before moving either further.
 RING_INNER_SHRINK_PX = 9  # how far in; together these set the ring's width
 
 PROMPT = (
@@ -220,10 +220,10 @@ def _edit_segmind(crop: Image.Image, mask, api_key: str, timeout: float) -> dict
                 "num_inference_steps": 30,
                 "guidance_scale": 7.5,
                 # Whole-hair masks needed a compromise strength because the
-                # model could see (and reshape) the whole hairstyle. 0.85
-                # still left a faint residual line; 0.95 (with the wider
-                # ring) overshot into a visible colour tint and blur.
-                "strength": 0.88,
+                # model could see (and reshape) the whole hairstyle. Back to
+                # the known-safe 0.85 while the ring width is varied, to
+                # isolate which knob causes which failure.
+                "strength": 0.85,
                 "scheduler": "DPM2 Karras",
                 "base64": False,
             },
