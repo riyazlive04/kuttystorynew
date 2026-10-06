@@ -52,6 +52,22 @@ HEAD_CROP = 2.0
 HAIR_LUMA_PCT = 70      # darker than this percentile within the crop
 HAIR_WARM_MIN = 126     # Lab b* above neutral
 
+# The hair MASS is dark; the illustrator's flyaway-strand highlights at its
+# edge are drawn pale -- the opposite colour, so the dark/warm test above
+# cannot find them, and they sit outside whatever blob it does find. A
+# targeted pale/local-background test found them precisely (confirmed by
+# eye against speed-racer p1: the detected pixels traced the jagged crown
+# fringe exactly) but the mask's own MORPH_CLOSE afterward smoothed thin,
+# scattered strand pixels back out almost to the original blob -- a closing
+# kernel wide enough to bridge real gaps in the hair mass is, by the same
+# token, wide enough to erase a few-pixel-wide addition at the edge.
+# Growing the whole mask outward by a flat margin is cruder but immune to
+# that: it always reaches the fringe band regardless of exactly which
+# pixels in it got classified as hair, and the inpaint prompt's "SAME
+# outline and size" instruction keeps the repaint from visibly enlarging
+# the hair even though the MASK is a little bigger than the hair mass.
+EDGE_GROW_PX = 24  # at 1024px wide; measured fringe reach was ~15-20px
+
 PROMPT = (
     "Repaint this hair with the SAME outline and size: soft, smooth, neatly "
     "combed strands with gentle highlights. Remove the speckled white dots and "
@@ -95,6 +111,14 @@ def _hair_mask(crop: Image.Image, brow_y: float, head_x: float):
 
     sel = ((labels == best).astype("uint8")) * 255
     sel = cv2.morphologyEx(sel, cv2.MORPH_CLOSE, np.ones((35, 35), "uint8"))
+
+    # Grow past the solid mass to reach the pale flyaway strands at its edge
+    # (see EDGE_GROW_PX above), THEN cut the brow line again -- the dilation
+    # can push the mask's lower edge down past it.
+    grow = max(1, EDGE_GROW_PX) | 1
+    sel = cv2.dilate(sel, np.ones((grow, grow), "uint8"))
+    sel[cut:, :] = 0
+
     return cv2.GaussianBlur(sel, (0, 0), 8)
 
 
