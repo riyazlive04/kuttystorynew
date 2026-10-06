@@ -192,7 +192,16 @@ def smooth_hair(
     W, H = plate.size
     fx, fy, fw, fh = bounds
 
-    side = int(min(fw * HEAD_CROP / 100 * W, W, H))
+    # HEIGHT, not width, measures the head: a region traced brow-to-chin (or
+    # hairline-to-chin) tracks head size whatever the pose, but WIDTH swings
+    # with how far the shoulders/arms spread -- on a sitting pose it can run
+    # past half the page, which used to make `side` cover nearly the whole
+    # plate and crop the actual hair down to a few stray pixels. Measured on
+    # speed-racer p1: fw=51.3% (shoulders included) vs fh=34.9% (brow to
+    # chin) -- using fw put brow_y at just 78px into a 1024px crop, leaving
+    # almost nothing above it for `_hair_mask` to find.
+    span_pct = min(fh, fw) if fw < fh * 1.5 else fh
+    side = int(min(span_pct * HEAD_CROP / 100 * W, W, H))
     if side < 64:
         return {"error": "face region too small to repaint around"}
     cx = int((fx + fw / 2) / 100 * W)
@@ -202,7 +211,25 @@ def smooth_hair(
 
     crop = plate.crop((x0, y0, x0 + side, y0 + side)).resize((1024, 1024), Image.LANCZOS)
     scale = 1024.0 / side
-    mask = _hair_mask(crop, (fy / 100 * H - y0) * scale, (cx - x0) * scale)
+
+    # Where the brow sits is the one thing `region` cannot tell us reliably:
+    # a face-only outline starts AT the brow, a hair-inclusive one starts at
+    # the hairline, and treating the second as the first put brow_y a few
+    # dozen pixels into a 1024px crop -- `_hair_mask` then had almost
+    # nothing above it to call hair. Detect it on the crop itself, the same
+    # landmark pass the render path already uses for this exact question;
+    # fall back to the region's own top edge only if that fails.
+    try:
+        from .face_landmarks import brow_line as _brow_line
+
+        cb = io.BytesIO()
+        crop.save(cb, format="JPEG", quality=90)
+        brow = _brow_line(cb.getvalue())
+        brow_y = brow["y"] if brow else (fy / 100 * H - y0) * scale
+    except Exception:
+        brow_y = (fy / 100 * H - y0) * scale
+
+    mask = _hair_mask(crop, brow_y, (cx - x0) * scale)
     if mask is None:
         return {"error": "no hair found above the face on this page"}
 
