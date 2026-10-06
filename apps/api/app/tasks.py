@@ -200,42 +200,70 @@ async def _render_one(
                 except Exception as e:  # noqa: BLE001
                     print(f"[face-detect] landmark fallback skipped: {e}", flush=True)
 
-    image_url = await render_page(
-        scene_prompt=scene,
-        identity_vectors=job.identityVectors,
-        face_image_name=job.photoUrl,
-        base_image=base_image,
-        base_image_url=base_image_url,
-        style_prompt=style_prompt,
-        face_region=face_region,
-        seed=render_seed(page_number) if seed is None else seed,
-        # Free preview pages render a quality tier down on the OpenAI provider.
-        is_preview=is_free(page_number, FREE),
-    )
+    # Segmind occasionally returns a swap frame with a soft glow/vignette
+    # baked in around the face -- confirmed by regenerating the SAME page
+    # with IDENTICAL code and getting a clean result the second time. There
+    # is no mask or blend fix for that: the artifact is in the provider's
+    # own pixels before any of our compositing runs. The only lever is
+    # asking again, so a bad call costs one retry instead of reaching a
+    # customer's book.
+    attempts = 1 + max(0, settings.halo_retry_attempts)
+    image_url = None
+    for attempt in range(attempts):
+        image_url = await render_page(
+            scene_prompt=scene,
+            identity_vectors=job.identityVectors,
+            face_image_name=job.photoUrl,
+            base_image=base_image,
+            base_image_url=base_image_url,
+            style_prompt=style_prompt,
+            face_region=face_region,
+            seed=render_seed(page_number) if seed is None else seed,
+            # Free preview pages render a quality tier down on the OpenAI provider.
+            is_preview=is_free(page_number, FREE),
+        )
 
-    # Re-seat the swapped face into the FULL-RESOLUTION base art before any
-    # text goes on. The provider hands back ~1024px whatever we send it, which
-    # is only ~124 dpi at 210mm; the base art the admin uploaded is usually far
-    # larger, and everything except the face is identical in both.
-    if base_image_url and face_region and image_url:
-        try:
-            from .reintegrate import merge_face
-            from .text_layer import _load_image
+        # Re-seat the swapped face into the FULL-RESOLUTION base art before any
+        # text goes on. The provider hands back ~1024px whatever we send it, which
+        # is only ~124 dpi at 210mm; the base art the admin uploaded is usually far
+        # larger, and everything except the face is identical in both.
+        if base_image_url and face_region and image_url:
+            try:
+                from .reintegrate import merge_face
+                from .text_layer import _load_image
 
-            merged = merge_face(
-                _load_image(base_image_url), _load_image(image_url), face_region
-            )
-            if merged is not None:
-                os.makedirs(settings.storage_dir, exist_ok=True)
-                fname = f"{job.id}_p{page_number}_hi.jpg"
-                merged.save(
-                    os.path.join(settings.storage_dir, fname),
-                    quality=96,
-                    subsampling=0,
+                merged = merge_face(
+                    _load_image(base_image_url), _load_image(image_url), face_region
                 )
-                image_url = f"/uploads/{fname}"
-        except Exception:
-            pass  # keep the provider's frame if anything about the merge fails
+                if merged is not None:
+                    os.makedirs(settings.storage_dir, exist_ok=True)
+                    fname = f"{job.id}_p{page_number}_hi.jpg"
+                    merged.save(
+                        os.path.join(settings.storage_dir, fname),
+                        quality=96,
+                        subsampling=0,
+                    )
+                    image_url = f"/uploads/{fname}"
+            except Exception:
+                pass  # keep the provider's frame if anything about the merge fails
+
+        if not settings.halo_retry_enabled or attempt == attempts - 1:
+            break
+        try:
+            from .generation_engine import halo_signal_for_page
+
+            signal = halo_signal_for_page(image_url, face_region)
+        except Exception as e:  # noqa: BLE001 -- a retry check is never worth a failed page
+            print(f"[halo-retry] check skipped: {e}", flush=True)
+            break
+        if signal is None or signal <= settings.halo_retry_threshold:
+            break
+        print(
+            f"[halo-retry] page {page_number}: signal {signal:+.1f} > "
+            f"{settings.halo_retry_threshold:+.1f}, retrying "
+            f"({attempt + 1}/{attempts - 1})",
+            flush=True,
+        )
 
     # Real raster output -> burn text with PIL and persist a composed JPEG.
     # (http = hosted model output; /uploads = a swapped page saved locally.)

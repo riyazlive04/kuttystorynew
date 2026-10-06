@@ -168,6 +168,17 @@ class Settings(BaseSettings):
     # cheap enough to always run, and the only way to build a real threshold
     # is from real traffic rather than the handful of pages measured by hand.
     log_halo_signal: bool = True
+    # After a page's final full-resolution image is ready, measure the same
+    # halo signal against it and re-render from scratch if it reads as bad.
+    # Calibrated 2026-10-05 on real renders: a confirmed severe halo scored
+    # +7.2, three subtler but still visibly-confirmed halos scored +14.2 to
+    # +29.4, clean renders scored negative. +7.0 catches the severe case
+    # with one point of margin below it; the cost of a false retry is one
+    # extra Segmind call, cheap next to a halo reaching a customer's book.
+    halo_retry_enabled: bool = True
+    halo_retry_threshold: float = 7.0
+    # How many EXTRA attempts beyond the first, so 1 means "retry once".
+    halo_retry_attempts: int = 1
     # Recolour the artwork's ears and neck to the swapped face's skin tone, so a
     # warmer-skinned child doesn't get a tanned face on pale ears. Kill switch.
     match_surrounding_skin: bool = True

@@ -837,32 +837,29 @@ def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
         return mask
 
 
-def _log_halo_signal(img: Image.Image, mask: Image.Image) -> None:
-    """Measure, and log only, whether this page has the glow/vignette halo the
-    swap provider occasionally returns around the face.
+def _halo_signal(img: Image.Image, mask: Image.Image) -> Optional[float]:
+    """Measure whether this page has the glow/vignette halo the swap provider
+    occasionally returns around the face. Returns None when there isn't
+    enough of a ring/background to measure.
 
-    Confirmed on a real page (2026-10-05, speed-racer p3, Segmind): the exact
-    same job/page/photo, regenerated a second time with identical code, came
-    back once with a visible soft bright ring around the head and once
-    without -- same mask, same compositing, two different Segmind calls. The
-    halo is provider output variance, not anything the mask or the blend
-    code controls, so there is nothing here to correct. This only measures
-    and prints a number, so the distribution can be read back from the logs
-    before any threshold is trusted to gate a retry.
+    Confirmed on real pages (2026-10-05, Segmind): the exact same job/page/
+    photo, regenerated with identical code, came back once with a visible
+    soft bright ring around the head and once without -- same mask, same
+    compositing, two different Segmind calls. The halo is provider output
+    variance, not anything the mask or the blend code controls.
 
     The signal: Lab L (lightness) in a ring just outside the traced region,
     compared to the page's far background (well outside any dilation of the
     region). A halo brightens the area immediately around the head relative
     to the rest of the scene; a clean render's ring is at or below the far
     background, because it is dominated by the hair's own shadow/edge.
-    Measured so far: the one confirmed halo scored +7.2 (ring brighter than
-    far background); two mild blue-background pages with only a thin strand
-    fringe scored +4.5 to +4.7; a clean render of the same halo'd page
-    scored -23.4. Four points, which is not enough to set a cutoff -- this
-    logs the number so a real threshold can be read off real traffic later.
+
+    Calibrated on real renders of that evening: a severe halo (the garage
+    scene that started the investigation) scored +7.2; three subtler but
+    still visibly-confirmed halos (checked by eye against the actual pages)
+    scored +14.2, +19.6 and +29.4; mild pages with only a thin strand fringe
+    scored +4.5 to +5.9; clean renders scored negative, down to -60.8.
     """
-    if not settings.log_halo_signal:
-        return
     try:
         import cv2
         import numpy as np
@@ -870,7 +867,7 @@ def _log_halo_signal(img: Image.Image, mask: Image.Image) -> None:
         m = np.asarray(mask, dtype=np.float32) / 255.0
         mask_bin = (m > 0.5).astype("uint8")
         if not mask_bin.any():
-            return
+            return None
         outside = m < 0.02
 
         # A ring 0-30px outside the traced region, and the far background well
@@ -883,14 +880,46 @@ def _log_halo_signal(img: Image.Image, mask: Image.Image) -> None:
         ring = (near_dilate > 0) & (mask_bin == 0) & outside
         far_bg = outside & (far_dilate == 0)
         if ring.sum() < 200 or far_bg.sum() < 200:
-            return  # too little of either band to mean anything
+            return None  # too little of either band to mean anything
 
         lab = cv2.cvtColor(np.asarray(img.convert("RGB")), cv2.COLOR_RGB2LAB)
         L = lab[:, :, 0].astype(np.float32)
-        signal = float(L[ring].mean() - L[far_bg].mean())
-        print(f"[halo-signal] ring-vs-background Lab L delta: {signal:+.1f}", flush=True)
-    except Exception as e:  # noqa: BLE001 -- a logging probe is never worth a failed page
+        return float(L[ring].mean() - L[far_bg].mean())
+    except Exception as e:  # noqa: BLE001 -- a measurement probe is never worth a failed page
         print(f"[halo-signal] skipped: {e}", flush=True)
+        return None
+
+
+def _log_halo_signal(img: Image.Image, mask: Image.Image) -> None:
+    """Log-only call site, used inline during compositing. See `_halo_signal`."""
+    if not settings.log_halo_signal:
+        return
+    signal = _halo_signal(img, mask)
+    if signal is not None:
+        print(f"[halo-signal] ring-vs-background Lab L delta: {signal:+.1f}", flush=True)
+
+
+def halo_signal_for_page(image_url: str, face_region: Optional[dict]) -> Optional[float]:
+    """Public entry point for `tasks.py`: the halo signal for an already-saved
+    page, measured against its own authored face region. Used after
+    `reintegrate.merge_face` has produced the final full-resolution page, so
+    the measurement matches what the customer actually sees -- not the
+    swap-resolution frame measured inline during compositing.
+    """
+    if not face_region:
+        return None
+    try:
+        from .reintegrate import _region_mask
+        from .text_layer import _load_image
+
+        img = _load_image(image_url)
+        mask = _region_mask(img.size, face_region)
+        if mask is None:
+            return None
+        return _halo_signal(img, mask)
+    except Exception as e:  # noqa: BLE001 -- a measurement probe is never worth a failed page
+        print(f"[halo-signal] post-check skipped: {e}", flush=True)
+        return None
 
 
 def _despeckle_hair(img: Image.Image, mask: Image.Image) -> Image.Image:
