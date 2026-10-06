@@ -223,10 +223,18 @@ def _edit_segmind(crop: Image.Image, mask, api_key: str, timeout: float) -> dict
                 "samples": 1,
                 "num_inference_steps": 30,
                 "guidance_scale": 7.5,
-                # Whole-hair masks needed a compromise strength because the
-                # model could see (and reshape) the whole hairstyle. Back to
-                # the known-safe 0.85 while the ring width is varied, to
-                # isolate which knob causes which failure.
+                # Settled on speed-racer (p1, 2026-10-06) across 6+ rounds of
+                # tuning: ring=29px/strength=0.85 matched naturally-clean
+                # reference pages. Tried 0.92 on space-explorer p24 and it
+                # made no visible difference -- confirmed separately that
+                # story's problem isn't strength at all: _hair_mask's
+                # detection merges the hair into the warm-brown BACKGROUND
+                # (same dark+warm luminance test used here) into one giant
+                # blob, so the mask was never on the hair to begin with.
+                # Needs a different detection approach for warm-background
+                # scenes, not a strength change -- see hair_smooth.py commit
+                # history / session notes before changing this value again
+                # for a story other than speed-racer.
                 "strength": 0.85,
                 "scheduler": "DPM2 Karras",
                 "base64": False,
