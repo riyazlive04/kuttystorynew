@@ -82,11 +82,16 @@ HAIR_WARM_MIN = 126     # Lab b* above neutral
 # only ever sees a seam with hair-colour on one side and background-colour
 # on the other, which is a much narrower task than "paint a hairstyle" and
 # can run at a high strength without room to invent a new shape.
-RING_OUTER_GROW_PX = 32  # at 1024px wide. Isolating from strength settled
-# strength=0.85 as the safe value (0.95 caused colour-tint/blur artifacts
-# regardless of width). 29+0.85 cleared the top edge fully -- matched the
-# naturally-clean reference pages -- with only a small residual patch left
-# on one side. Nudging width a little further to try to clear that too.
+# Settled values after isolating the two knobs: strength=0.85 is the safe
+# ceiling (0.95 caused visible colour-tint/blur artifacts at any width).
+# Width swept 21 -> 26 -> 29 -> 32 at that strength: 29 was the best point
+# found -- cleared the top edge fully, matching naturally-clean reference
+# pages, with only a small residual patch on one side; 32 did not clear
+# that patch further and added a new edge darkening of its own. Diminishing
+# returns on this one knob past 29 -- a residual patch that moves rather
+# than shrinks as the ring widens is a sign the limit of this approach, not
+# a number still to be found.
+RING_OUTER_GROW_PX = 29  # at 1024px wide
 RING_INNER_SHRINK_PX = 9  # how far in; together these set the ring's width
 
 PROMPT = (
