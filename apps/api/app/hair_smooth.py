@@ -201,12 +201,11 @@ def _edit_segmind(crop: Image.Image, mask, api_key: str, timeout: float) -> dict
                 "samples": 1,
                 "num_inference_steps": 30,
                 "guidance_scale": 7.5,
-                # 0.9 (first attempt) left the model almost free to invent a
-                # new image inside the mask -- a short choppy cut came back
-                # as a tall swept-back puff. Lower strength keeps more of
-                # the ORIGINAL pixels' structure and only lets the model
-                # repaint texture/detail on top of it.
-                "strength": 0.45,
+                # 0.9 restyled the hair (short choppy -> tall swept puff).
+                # 0.45 kept the shape but barely touched the fringe -- too
+                # close to the original pixels to actually repaint them.
+                # Splitting the difference.
+                "strength": 0.65,
                 "scheduler": "DPM2 Karras",
                 "base64": False,
             },
