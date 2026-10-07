@@ -246,6 +246,18 @@ class Settings(BaseSettings):
     # stored as an ordinary facePath.
     sam3_autotrace_enabled: bool = True
 
+    # Paste the child's OWN hair (segmented from their uploaded photo via SAM3,
+    # warped onto the page via mediapipe eye-corner landmarks) over the
+    # swapper's generated hairstyle. Built because neither faceswap-comic nor
+    # faceswap-v4 preserves a child's real hair length/style regardless of
+    # strength dials -- confirmed on a toddler with short hair coming back
+    # with a generic longer style on both models. A per-page enhancement, not
+    # a requirement: any failure (no landmarks, bad angle, failed segment)
+    # falls back to the AI-generated hair untouched. Off by default until
+    # proven on real renders -- adds one SAM3 call (150-280s, ~0.38 credits)
+    # per page it runs on.
+    real_hair_transplant_enabled: bool = False
+
     # When a page has no traced face outline, detect one from the base art so the
     # hair-keeping composite still has a region to work with. Off = untraced
     # pages keep the old full-head swap.

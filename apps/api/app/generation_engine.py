@@ -400,8 +400,8 @@ def _b64(src: str) -> str:
 SOURCE_FACE_PADDING = 0.45
 
 
-def _b64_face(src: str) -> str:
-    """The child's face from a holiday snap, not the holiday snap.
+def _face_crop_bytes(src: str) -> bytes:
+    """The child's face from a holiday snap, not the holiday snap -- as JPEG bytes.
 
     An uploaded photo is a room with a child in it -- measured on a real
     upload, the face was 12.7% of the frame -- and the swapper was being handed
@@ -413,6 +413,11 @@ def _b64_face(src: str) -> str:
     an order of magnitude more of the only thing it is being asked about. Falls
     back to the whole photo when no face is found, which is the behaviour this
     replaces.
+
+    Factored out of `_b64_face` so `hair_transplant.py` can segment the EXACT
+    same crop Segmind was sent, rather than a second, differently-framed one --
+    the mediapipe anchor and the SAM3 mask it computes only line up with the
+    page if they are measured against that same crop.
     """
     from .color import open_srgb
     from .face_detect import detect_face_region_for
@@ -431,7 +436,11 @@ def _b64_face(src: str) -> str:
         print("[segmind] no face detected in the photo; sending it whole", flush=True)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=95, subsampling=0)
-    return base64.b64encode(buf.getvalue()).decode()
+    return buf.getvalue()
+
+
+def _b64_face(src: str) -> str:
+    return base64.b64encode(_face_crop_bytes(src)).decode()
 
 
 def _save_bytes(data: bytes, prefix: str = "swap") -> str:
@@ -1657,7 +1666,8 @@ async def _segmind_faceswap(
     # cfg default is ~1.6 so we stay low to avoid over-cooking the face.
     url = f"https://api.segmind.com/v1/{settings.segmind_faceswap_model}"
     headers = {"x-api-key": api_key, "Content-Type": "application/json"}
-    source_b64 = _b64_face(face_src)  # the real child's face, cropped out of the photo
+    face_crop_bytes = _face_crop_bytes(face_src)  # the real child's face, cropped out of the photo
+    source_b64 = base64.b64encode(face_crop_bytes).decode()
     target_b64 = _b64(target_src)   # the fixed illustrated page
     last_err: Exception | None = None
     # Segmind queues requests: a single swap measured 99-267s in testing, and the
@@ -1713,6 +1723,16 @@ async def _segmind_faceswap(
                         )
                     except Exception as ce:  # noqa: BLE001
                         print(f"[segmind] face composite skipped: {ce}", flush=True)
+                # Paste the child's OWN hair over whatever the swapper invented,
+                # when enabled. See hair_transplant.py for why: neither model
+                # preserves a real hairstyle, measured on both.
+                if settings.real_hair_transplant_enabled:
+                    try:
+                        from .hair_transplant import paste_real_hair
+
+                        content = await paste_real_hair(content, face_crop_bytes)
+                    except Exception as he:  # noqa: BLE001
+                        print(f"[hair-transplant] step skipped: {he}", flush=True)
                 # Both retouches exist to clean up after the COMIC model: the
                 # specks it paints on skin, and the shadow it carries over from
                 # the photo. faceswap-v4 produces neither, so running them on

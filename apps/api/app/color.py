@@ -22,7 +22,7 @@ import os
 from functools import lru_cache
 from typing import Optional
 
-from PIL import Image, ImageCms
+from PIL import Image, ImageCms, ImageOps
 
 # Your printer's profile takes priority — ask them which one they want.
 ENV_VAR = "CMYK_ICC_PROFILE"
@@ -165,10 +165,24 @@ def to_srgb(img: Image.Image) -> Image.Image:
 
 
 def open_srgb(data) -> Image.Image:
-    """Open bytes / a path / a file object and return it in sRGB."""
+    """Open bytes / a path / a file object and return it in sRGB, upright.
+
+    A phone photo shot in portrait often carries an EXIF "rotate 90" tag
+    rather than actually rotated pixels -- Pillow's raw .open() ignores it,
+    so every downstream pixel operation (face detection, cropping, mediapipe
+    landmarks) was seeing the sensor's landscape frame, sideways. Confirmed on
+    a real upload: the face-crop step handed a face-shaped 1797x1797 square
+    with the child rotated ~90 degrees inside it, to a landmark detector that
+    doesn't look at EXIF either and had no way to know. exif_transpose() bakes
+    the rotation into the pixels once, here, so every caller downstream of
+    open_srgb -- which is nearly all of them -- gets an upright image without
+    having to know this was ever a problem.
+    """
     if isinstance(data, (bytes, bytearray)):
         data = io.BytesIO(data)
-    return to_srgb(Image.open(data))
+    img = Image.open(data)
+    img = ImageOps.exif_transpose(img) or img
+    return to_srgb(img)
 
 
 def to_cmyk(img: Image.Image) -> Image.Image:
