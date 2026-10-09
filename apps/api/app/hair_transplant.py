@@ -457,6 +457,28 @@ async def paste_real_hair(page_bytes: bytes, photo_bytes: bytes) -> bytes:
         out = page_img.copy()
         out.paste(warped.convert("RGB"), (0, 0), alpha)
 
+        # Re-draw the pasted hair in the page's painted style. Without this the
+        # patch is a photograph sitting in an illustration -- the failure its
+        # own author recorded after four rounds of filtering. Done here, after
+        # the composite, so the model sees the hair in position against the
+        # real background rather than floating in photo space.
+        if settings.hair_restyle_enabled:
+            try:
+                from .generation_engine import current_segmind_key
+                from .hair_restyle import blend_restyled, restyle_hair
+
+                res = restyle_hair(out, alpha, current_segmind_key())
+                if res.get("image") is not None:
+                    out = blend_restyled(out, res["image"], alpha)
+                    print("[hair-transplant] hair re-drawn in page style", flush=True)
+                else:
+                    print(
+                        f"[hair-transplant] restyle skipped: {res.get('error')}",
+                        flush=True,
+                    )
+            except Exception as re_:  # noqa: BLE001 -- photographic hair beats none
+                print(f"[hair-transplant] restyle skipped: {re_}", flush=True)
+
         import io
 
         buf = io.BytesIO()

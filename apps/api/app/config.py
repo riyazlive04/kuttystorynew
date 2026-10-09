@@ -174,7 +174,7 @@ class Settings(BaseSettings):
     # a hair-anchored mask once rendered: at luminance 250 it is not dark, so
     # it is not in the hair mass. It cannot touch a face -- it fires only where
     # the PLATE itself is drawn as hair.
-    crown_swap_guard_enabled: bool = True
+    crown_swap_guard_enabled: bool = False
     # Lift the swapper's dark blotches toward the face's own skin tone, 0-1.
     # It cuts nothing out -- it only adds light, only to pixels matching the
     # skin's own hue, and only to the blurred component, so detail is invisible
@@ -321,6 +321,21 @@ class Settings(BaseSettings):
     # proven on real renders -- adds one SAM3 call (150-280s, ~0.38 credits)
     # per page it runs on.
     real_hair_transplant_enabled: bool = False
+    # Re-draw the transplanted hair patch in the page's painted style via
+    # sdxl-inpaint, instead of trying to filter a photograph into looking
+    # painted. That filtering is the one step of hair_transplant.py that does
+    # not work -- its author's own note after four rounds is "STILL an obvious
+    # flat patch, not illustrated hair" -- and it is why the whole feature is
+    # off. Generating opaque hair also sidesteps the measured reason the hair
+    # edge reads as see-through: the artwork's lit strand tips and the wall
+    # behind them are the same colour (luminance 100 vs 101), so there is
+    # nothing for a filter to separate.
+    #
+    # OFF, and only meaningful when real_hair_transplant_enabled is on too.
+    # Costs one extra Segmind call per page that clears the angle, landmark
+    # and segmentation gates. Needs judging on saved renders across several
+    # stories before it goes anywhere near a customer's book.
+    hair_restyle_enabled: bool = False
 
     # Strip the room out of the uploaded photo before it reaches Segmind,
     # leaving just the child on a plain white fill. Built on the theory that
