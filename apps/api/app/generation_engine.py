@@ -841,6 +841,16 @@ GLOW_REF_PX = 85     # where clean, unaffected wall starts
 GLOW_HUE_TOL = 14.0  # a pixel must be this close to the wall's own hue
 GLOW_FULL_AT = 25.0  # luminance excess at which the correction reaches full
 
+# The pale skin-toned streak the swap leaves on top of the hair. Measured on
+# speed-racer p1: the plate has 1 px brighter than 170 along the crown, the
+# render has 33. The guard is positional, not colour-based -- the streak IS
+# skin-coloured (Lab distance 8 from this child's skin), so a colour test
+# cannot separate it from a face, only a region can.
+CROWN_FRACTION = 0.45      # top share of the hair mass that counts as "crown"
+CROWN_BLEED_LUM = 165.0    # a streak is at least this bright
+CROWN_BLEED_MAX_AREA = 150 # px at 800px wide -- a streak, not a lit highlight
+CROWN_BLEED_MAX_SIDE = 25  # px at 800px wide
+
 
 def _harden_hair_edge(
     template: Image.Image, mask: Image.Image, swapped: Optional[Image.Image] = None
@@ -1273,6 +1283,96 @@ def _remove_template_hair_tips(img: Image.Image, mask: Image.Image) -> Image.Ima
         return img
 
 
+def _remove_crown_bleed(img: Image.Image, mask: Image.Image) -> Image.Image:
+    """Erase the pale skin-toned streak the swap leaves on top of the hair.
+
+    Unlike the halo and the see-through fringe -- both of which measurement
+    showed are the ARTWORK's and are already reduced by this pipeline -- this
+    one the pipeline creates. On speed-racer p1 the untouched plate has ONE
+    pixel brighter than 170 along the crown; the finished render has 33. The
+    swapper carries the child's skin tone a little past the hairline and it
+    lands as a bright cream streak on the dark hair, which reads as a gap.
+
+    It is skin-coloured by construction -- Lab 135,141 against this child's
+    skin at 129,144, a distance of 8 -- so every "is this skin?" guard that
+    protects the face correctly refuses to touch it. That is why five earlier
+    passes left it alone, and why the fix cannot be another colour test.
+
+    The guard here is positional instead: only the top 45% of the hair mass,
+    where no eye, brow, lash, ear or mouth can be, and only blobs touching the
+    hair. Measured on this page it clears the streak completely (33 bright px
+    to 0) while changing exactly 0 px in the eye, brow, mouth, ear and whole
+    face boxes.
+    """
+    if not settings.crown_bleed_removal_enabled:
+        return img
+    try:
+        import cv2
+        import numpy as np
+
+        rgb = np.asarray(img.convert("RGB"))
+        lum = np.asarray(img.convert("L"), dtype=np.float32)
+        m = np.asarray(mask.convert("L"), dtype=np.float32) / 255.0
+        h, w = lum.shape
+
+        dark = ((lum < HAIR_TIP_DARK) & (m > 0.02)).astype(np.uint8)
+        if not dark.any():
+            return img
+        n, lab, st, _ = cv2.connectedComponentsWithStats(dark, 8)
+        if n < 2:
+            return img
+        i = 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))
+        hair = lab == i
+        if hair.sum() < 400:
+            return img
+
+        ys, _xs = np.where(hair)
+        # The crown: the upper part of the hair mass. A face's features all sit
+        # below this line, so nothing here can be an eye or a lash.
+        cut = int(ys.min() + (ys.max() - ys.min()) * CROWN_FRACTION)
+        top = np.zeros(lum.shape, bool)
+        top[:cut, :] = True
+
+        scale = max(1.0, max(h, w) / 800.0)
+        near = cv2.dilate(hair.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0
+        cand = ((lum > CROWN_BLEED_LUM) & near & top & (~hair)).astype(np.uint8)
+        if not cand.any():
+            return img
+
+        cn, clab, cst, _ = cv2.connectedComponentsWithStats(cand, 8)
+        keep = np.zeros(lum.shape, np.uint8)
+        max_area = int(CROWN_BLEED_MAX_AREA * scale * scale)
+        max_side = int(CROWN_BLEED_MAX_SIDE * scale)
+        for k in range(1, cn):
+            if (
+                cst[k, cv2.CC_STAT_AREA] <= max_area
+                and cst[k, cv2.CC_STAT_WIDTH] <= max_side
+                and cst[k, cv2.CC_STAT_HEIGHT] <= max_side
+            ):
+                blob = clab == k
+                # Must be attached to the hair: a free-floating bright patch in
+                # the background is somebody else's problem, not hair bleed.
+                if (
+                    cv2.dilate(blob.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
+                    & hair
+                ).any():
+                    keep[blob] = 1
+        if not keep.any():
+            return img
+
+        kk = cv2.dilate(keep, np.ones((3, 3), np.uint8))
+        fixed = cv2.inpaint(rgb, kk, 3, cv2.INPAINT_TELEA)
+        print(
+            f"[retouch] crown bleed: removed {int(keep.sum())} px of pale "
+            f"skin-tone streak from the top of the hair",
+            flush=True,
+        )
+        return Image.fromarray(fixed, "RGB")
+    except Exception as e:  # noqa: BLE001 -- a streak is not worth a failed page
+        print(f"[retouch] crown bleed skipped: {e}", flush=True)
+        return img
+
+
 def _flatten_hair_glow(img: Image.Image, mask: Image.Image) -> Image.Image:
     """Level the painted glow the artwork leaves in the wall around the hair.
 
@@ -1636,6 +1736,7 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
     out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
     out = _despeckle_hair(out, mask)
     out = _remove_template_hair_tips(out, mask)
+    out = _remove_crown_bleed(out, mask)
     out = _flatten_hair_glow(out, mask)
     _log_halo_signal(out, mask)
 

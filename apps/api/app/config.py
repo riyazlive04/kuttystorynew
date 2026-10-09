@@ -136,6 +136,13 @@ class Settings(BaseSettings):
     # The halo is in the ARTWORK (52.9% of the ring on the untouched plate vs
     # 49.5% on the render), so the fix belongs in Illustrator, not here.
     hair_glow_flatten_enabled: bool = False
+    # Erase the pale skin-toned streak the SWAP leaves on top of the hair.
+    # Unlike the halo above, this one the pipeline creates rather than the
+    # artwork: the plate has 1 bright crown pixel where the render has 33.
+    # Guarded by position -- the top 45% of the hair mass, where no eye, brow,
+    # lash, ear or mouth exists -- because the streak is skin-coloured and no
+    # colour test can separate it from a face.
+    crown_bleed_removal_enabled: bool = True
     # Lift the swapper's dark blotches toward the face's own skin tone, 0-1.
     # It cuts nothing out -- it only adds light, only to pixels matching the
     # skin's own hue, and only to the blurred component, so detail is invisible
