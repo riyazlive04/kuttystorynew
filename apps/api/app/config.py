@@ -138,6 +138,14 @@ class Settings(BaseSettings):
     # and 1.3 left a trace of the largest mark, 1.6 covered it, and clean faces
     # were indistinguishable at every setting. 0 disables it.
     forehead_patch: float = 1.6
+    # Erase an invented forehead mark (bindi/tilak) by INPAINTING from the
+    # real skin around it, instead of pasting the template's own forehead
+    # over it. Built because forehead_patch, now correctly gated to never
+    # paste template skin onto bare forehead (see _keep_template_forehead's
+    # docstring), leaves the mark uncovered on bare-forehead poses -- most of
+    # them. This is the other half: on, by default, since it only ever
+    # touches pixels it finds colour-distant from the surrounding real skin.
+    forehead_mark_removal_enabled: bool = True
     # Keep the artwork's hair out of the face composite rather than crossfading
     # it with the swapper's. Two hair renderings averaged together is what makes
     # strands run in conflicting directions along the hairline, and a traced

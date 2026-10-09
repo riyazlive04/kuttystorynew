@@ -497,6 +497,7 @@ def _keep_template_hair(mask, swapped: bytes, swapped_size, template: bytes, reg
     Below it nothing changes and the child keeps their own brows.
     """
     try:
+        import cv2
         import numpy as np
 
         from .app_settings import keep_template_above_brows
@@ -548,10 +549,108 @@ def _keep_template_hair(mask, swapped: bytes, swapped_size, template: bytes, reg
         ramp = max(4.0, brow["span"] * 0.08)
         above = np.clip((brow["y"] - ys_all) / ramp, 0.0, 1.0)
 
-        # Above the brows the plate wins outright, whatever it looks like
-        # there. Asking whether the PLATE has hair at a spot answers the wrong
-        # question: the fringe is the CHILD's, and it falls where their hair
-        # falls, most often on a forehead the artist drew bare.
+        # Above the brows, take the plate back ONLY where the plate itself
+        # looks like hair -- not the whole strip. "A forehead carries no
+        # identity" is true of the child's IDENTITY, but a bare forehead
+        # still carries the plate's own invented marks (a bindi faceswap-comic
+        # adds reliably -- see _keep_template_forehead) if the whole strip is
+        # taken back unconditionally. Measured on a real render: this put a
+        # violet bindi from the template onto a child whose real photo has
+        # none, because the strip above the brow is not all hair -- it is
+        # mostly bare forehead on most poses, and ungated this function cannot
+        # tell the difference.
+        #
+        # Same classifier as `_keep_artwork_hair`'s band guard, with the same
+        # correction made to `_harden_hair_edge` earlier: the skin REFERENCE
+        # has to come from the real swapped face (the mask core, read off
+        # `swapped`), not from the template's own generic character. The
+        # template is only asked whether ITS pixel looks like hair relative
+        # to that real skin tone -- using the template's own tone as the
+        # reference always calls the template's forehead "skin" by
+        # definition, which is a tautology, not a test.
+        core = m > 0.99
+        if core.any():
+            tmpl_img = Image.open(io.BytesIO(template)).convert("RGB").resize(mask.size)
+            tmpl_lum = np.asarray(tmpl_img.convert("L"), dtype=np.float32)
+
+            # Colour/luminance cannot tell the plate's fringe from its
+            # forehead on this art style -- measured directly on a real
+            # render: the luminance+Lab test called the hair ITSELF
+            # "skin" (it is a lighter brown than the swapped face's own
+            # shadow regions -- eye sockets, nostril, mouth -- which score
+            # as "not skin" by the same test and so register as "hair"
+            # instead). That is backwards, and multiplying it into `above`
+            # (a pure function of row y) left `above` essentially untouched
+            # -- a dead-straight horizontal cut instead of the fringe's own
+            # silhouette. The colour test was tried, then combined with
+            # texture, then measured again; both times the mask came back
+            # a straight line because the colour signal dominates when it
+            # is this uniform. Dropped entirely above the brow.
+            #
+            # Texture is what actually separates them: drawn hair is fine,
+            # high-frequency directional strokes; drawn skin is smooth
+            # shading with no such detail -- confirmed visually on the same
+            # render, where a Laplacian response lit up the strands and
+            # left the forehead/cheeks dark regardless of their colour.
+            lap = cv2.Laplacian(tmpl_lum, cv2.CV_32F, ksize=3)
+            texture = cv2.GaussianBlur(np.abs(lap), (0, 0), 2.5)
+            # Normalised against the core's own texture range (the swapped
+            # face, which is smooth -- shading, not strokes) rather than a
+            # fixed constant, so it adapts to how fine or bold a given
+            # plate's line art is instead of a threshold tuned to one plate.
+            t_lo = float(np.percentile(texture[core], 50))
+            t_hi = float(np.percentile(texture[core], 97))
+            is_hair = np.clip((texture - t_lo) / max(1e-3, t_hi - t_lo), 0.0, 1.0)
+            is_hair = cv2.GaussianBlur(is_hair.astype(np.float32), (0, 0), 1.5)
+
+            # Shape filter: keep only texture that forms a sizeable mass,
+            # not an isolated fleck sitting mid-forehead. Measured on a real
+            # plate: a smooth painted highlight running down the glabella
+            # (between the brows -- a common illustration trick, not a
+            # stroke) had enough edge contrast to register as "textured" by
+            # the Laplacian test, and the mask duly cut a thin dark notch
+            # out of BARE FOREHEAD skin at that one isolated spot -- a stray
+            # vertical mark with no hair strand attached to it, nothing like
+            # the real fringe above it.
+            #
+            # Real hair is a mass of strands close enough together that
+            # closing (dilate then erode) merges them into one solid blob
+            # covering a real fraction of the search area; a lone highlight
+            # streak closes into a small, thin blob on its own, with no
+            # neighbours to merge with. Filtering on that closed blob's own
+            # SIZE -- not on whether it touches a seed region, which turned
+            # out to fragment the real fringe into hundreds of islands that
+            # mostly don't touch anything, wiping out 99.99% of genuine hair
+            # texture along with the one false positive -- keeps real hair
+            # (a big blob) and drops an isolated mark (a small one),
+            # regardless of exactly where either sits.
+            hair_u8 = (is_hair > 0.5).astype(np.uint8)
+            closed = cv2.morphologyEx(hair_u8, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
+            n, labels, stats, _ = cv2.connectedComponentsWithStats(closed, 8)
+            min_blob_px = max(60.0, float(mask.size[0]) * float(mask.size[1]) * 0.0001)
+            keep_labels = {
+                k for k in range(1, n) if stats[k, cv2.CC_STAT_AREA] >= min_blob_px
+            }
+            big_enough = np.isin(labels, list(keep_labels)).astype(np.float32)
+            # Dilate the kept blobs back out a little before applying to
+            # `is_hair`, so filtering doesn't bite into the real edge of a
+            # genuine strand that the closing step rounded off.
+            big_enough = cv2.dilate(big_enough, np.ones((5, 5), np.uint8))
+            is_hair = is_hair * big_enough
+        else:
+            # No swapped face to measure skin from -- fall back to the old,
+            # ungated behaviour rather than guess at a threshold with nothing
+            # to anchor it to.
+            is_hair = np.ones_like(m)
+
+        above = above * is_hair
+
+        # Above the brows the plate wins where it looks like hair, whatever
+        # it looks like there. Asking whether the PLATE has hair at a spot
+        # answers the wrong question for the FRINGE specifically -- the
+        # fringe is the CHILD's, and it falls where their hair falls -- but
+        # it is the right question for everything else up there, which is
+        # either hair or a bare forehead that must stay the child's own.
         out = m * (1.0 - above)
         # Say what it did. Whether the fringe on a finished page is the plate's
         # or the child's is the one thing that cannot be read back off the
@@ -729,7 +828,9 @@ HAIR_TIP_DARKER_THAN_BG = 40.0   # a stray tip is this much darker than its surr
 HAIR_TIP_BLOB_MAX_AREA = 600     # px at 800px wide -- a tip, not a drawn object
 
 
-def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
+def _harden_hair_edge(
+    template: Image.Image, mask: Image.Image, swapped: Optional[Image.Image] = None
+) -> Image.Image:
     """Stop the blend band crossfading the child's hair with the artwork's.
 
     The mirror of `_keep_artwork_hair`, for the case where the CHILD's hair is
@@ -744,18 +845,41 @@ def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
     two hair drawings is what reads as a translucent patch beside the temple;
     hair has to come from one source or the other, and here it is the child's.
     Skin is left alone -- two versions of a cheek average into a cheek.
+
+    `swapped` -- the actual swap, not just the generic template -- is what the
+    skin/hair reference colours are measured from when given, so `is_skin`
+    follows the real child's tone instead of the generic plate character's.
+    Confirmed correct but NOT sufficient on its own: measured pixel-by-pixel
+    on a real seam (DEBUG_RENDER_STAGES), `is_skin` was 0.000 at the exact row
+    where the mask's own Gaussian-blurred edge transitions from 0.02 to 0.98
+    -- it only rises to a usable value ~50px further down, below the
+    hairline the plate draws. The mask's edge and `is_skin`'s rise are two
+    independently-positioned boundaries that do not line up on this
+    character, so EDGE_CONTRAST (10.0, meant only for a background wall)
+    applies at the one place meant for EDGE_CONTRAST_SKIN (1.6) instead --
+    a hard seam exactly where the mask itself transitions, confirmed to
+    reproduce even after the skin-tone reference above was fixed. DILATE_UP
+    below closes that gap directly, growing `is_skin` upward into the band
+    rather than relying on it already being high there. Falls back to
+    `template` when no swap is given, which keeps existing behaviour
+    unchanged rather than risk a worse failure.
     """
     try:
         import cv2
         import numpy as np
 
+        ref = swapped if swapped is not None else template
         m = np.asarray(mask, dtype=np.float32) / 255.0
         core = m > 0.99
         band = (m > 0.02) & (m < 0.99)
         if not core.any() or not band.any():
             return mask
+        # is_hair asks "does the PLATE have hair/background here", so its
+        # luminance comes from the plate regardless of `ref` -- only the skin
+        # reference the threshold is relative to needs the real child's tone.
         lum = np.asarray(template.convert("L"), dtype=np.float32)
-        skin = float(np.median(lum[core]))
+        ref_lum = np.asarray(ref.convert("L"), dtype=np.float32)
+        skin = float(np.median(ref_lum[core]))
         lo, hi = skin * 0.45, skin * 0.70
         is_hair = 1.0 - np.clip((lum - lo) / max(1e-3, hi - lo), 0.0, 1.0)
 
@@ -787,11 +911,23 @@ def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
         # wall and a lit forehead sit at the same brightness, which is why the
         # earlier pass hardened both -- so ask Lab: skin holds a warm a*/b*, the
         # pastel walls in these plates do not.
+        #
+        # The PLATE's pixels are what is being classified (its forehead vs. its
+        # wall, outside the mask) -- but the reference point "what does skin
+        # look like" has to be the REAL child's skin (sampled from `ref`
+        # inside the mask's core), not the generic plate character's. The two
+        # are different tones; measuring the plate's own forehead against
+        # itself always finds "skin" there by definition, and measuring a
+        # real child's forehead against the plate character's tone routinely
+        # did not -- which silently selected the harsh EDGE_CONTRAST (10.0)
+        # instead of EDGE_CONTRAST_SKIN (1.6) right at the front hairline on a
+        # real render, producing a hard straight seam across the forehead.
         lab = cv2.cvtColor(np.asarray(template.convert("RGB")), cv2.COLOR_RGB2LAB)
+        ref_lab = cv2.cvtColor(np.asarray(ref.convert("RGB")), cv2.COLOR_RGB2LAB)
         a_ch = lab[:, :, 1].astype(np.float32)
         b_ch = lab[:, :, 2].astype(np.float32)
-        sA = float(np.median(a_ch[core]))
-        sB = float(np.median(b_ch[core]))
+        sA = float(np.median(ref_lab[:, :, 1][core]))
+        sB = float(np.median(ref_lab[:, :, 2][core]))
         # Distance from the face's OWN skin colour, so it follows the plate's
         # palette rather than a fixed notion of what skin looks like.
         dist = np.hypot(a_ch - sA, b_ch - sB)
@@ -808,6 +944,23 @@ def _harden_hair_edge(template: Image.Image, mask: Image.Image) -> Image.Image:
         # pixel is a strand, and a per-pixel test would alternate hard and soft
         # along the very edge it is meant to keep smooth.
         is_skin = cv2.GaussianBlur(is_skin.astype(np.float32), (0, 0), 7)
+
+        # Grow "is skin" UPWARD into the band, toward the hair -- not just
+        # softened in place. Measured on a real seam: is_skin was still 0.000
+        # at the row where the mask's own blur reaches halfway, and only
+        # climbed to a useful value ~50px lower, below the hairline the plate
+        # draws. A same-row blur cannot close a gap between two rows; a
+        # directional dilation can, by carrying the gated skin signal
+        # upward to meet the mask's own transition instead of leaving it to
+        # arrive late. Sized to the band's own height so it scales with the
+        # face rather than a fixed pixel count -- a kernel taller than the
+        # whole band would pull skin logic into the hair itself.
+        ys_band, _ = np.where(band)
+        band_h = float(ys_band.max() - ys_band.min()) if ys_band.size else 0.0
+        reach = max(1, int(min(band_h * 0.6, 120)))
+        kernel = np.zeros((reach * 2 + 1, 1), dtype=np.uint8)
+        kernel[: reach + 1, 0] = 1  # upper half + centre: grows upward only
+        is_skin = cv2.dilate(is_skin.astype(np.float32), kernel)
 
         # ONLY the partial band. `1 - m` is 1 across the whole page outside the
         # face, so weighting by it pulled the entire plate into the mask wherever
@@ -1123,10 +1276,28 @@ def _keep_template_forehead(mask, swapped: bytes, swapped_size, template: bytes,
     them scored clean faces as high as marked ones. Two faces of different
     children differ everywhere; a small red dot does not stand out from that.
 
-    So the patch is unconditional, which is safe because of what it is: the same
-    artwork, under the same light, at a spot that carries no identity at all --
-    a face is recognised by eyes, nose, mouth and jaw. On a page with no
-    invented mark it changes nothing a reader can see.
+    Used to be unconditional on the theory that the spot "carries no identity
+    at all" -- true of the child's identity, but not of what pixel ends up on
+    the page: unconditional, the patch pastes the TEMPLATE's bare forehead
+    skin there, tone and all, over the real child's. Measured on a real
+    render: with keep_artwork_hair on, that showed up as a visible foreign
+    skin patch (and when the template itself carried a mark, that mark)
+    sitting on an otherwise correct face. The swapper's own invented mark is
+    real and still needs covering -- confirmed again on a second render,
+    where fixing the hair-mask leak made the purple dot vanish and a blue
+    one appear in the same spot on the next swap -- but covering it with
+    template SKIN is the wrong tool, for the same reason `_keep_template_hair`
+    was wrong to take the whole above-brow strip: it fixes the mark by
+    breaking the skin tone instead.
+
+    So the patch is now gated exactly like that fix: only where the
+    TEMPLATE's own pixel at the mark's location actually looks like hair
+    (by luminance and Lab colour, relative to the swapped face's real skin)
+    does the template win there. Most poses have the mark sitting on bare
+    forehead, where this gate now does nothing -- the swapper's invented mark
+    stays, uncovered, which is the honest state of this limitation: there is
+    no safe way left to hide it without either the hair-colour template trick
+    (when a fringe happens to cover the spot) or accepting the mark.
 
     The location comes from a landmark mesh (face_landmarks), which found the
     face on all 29 illustrated plates tested. Two earlier versions got the place
@@ -1135,6 +1306,8 @@ def _keep_template_forehead(mask, swapped: bytes, swapped_size, template: bytes,
     landmark alone, which sits at the top of the nose bridge -- about a third of
     an eye span BELOW where the mark actually lands.
     """
+    import numpy as np
+
     from .face_landmarks import forehead_spot
 
     # Where the mark is. The swap first -- that is where it was drawn -- then the
@@ -1147,6 +1320,35 @@ def _keep_template_forehead(mask, swapped: bytes, swapped_size, template: bytes,
         point = _forehead_from_region(region, mask.size)
     if not point:
         print("[retouch] forehead patch: no face found by any method", flush=True)
+        return mask
+
+    core = np.asarray(mask, dtype=np.float32) > 0.99 * 255
+    if not core.any():
+        return _subtract_spots(mask, [point], settings.forehead_patch)
+
+    tmpl_img = Image.open(io.BytesIO(template)).convert("RGB").resize(mask.size)
+    swp_img = Image.open(io.BytesIO(swapped)).convert("RGB").resize(mask.size)
+    x0 = max(0, int(point["x"] - point["rx"] * 1.5))
+    x1 = min(mask.size[0], int(point["x"] + point["rx"] * 1.5))
+    y0 = max(0, int(point["y"] - point["ry"] * 1.5))
+    y1 = min(mask.size[1], int(point["y"] + point["ry"] * 1.5))
+    if x1 <= x0 or y1 <= y0:
+        return mask
+    tmpl_crop = np.asarray(tmpl_img, dtype=np.float32)[y0:y1, x0:x1]
+    swp_lum = np.asarray(swp_img.convert("L"), dtype=np.float32)
+    skin_lum = float(np.median(swp_lum[core]))
+    tmpl_lum_crop = np.asarray(tmpl_img.convert("L"), dtype=np.float32)[y0:y1, x0:x1]
+    looks_skin = np.clip(
+        (tmpl_lum_crop - skin_lum * 0.45) / max(1e-3, skin_lum * 0.25), 0.0, 1.0
+    )
+    # The ellipse is small and the spot is a single patch of skin or hair, not
+    # a mix worth per-pixel nuance -- the median over the crop decides whether
+    # the WHOLE spot patches in or not, rather than letting a partial overlap
+    # (half hair, half forehead) draw a visible internal edge of its own.
+    spot_is_hair = float(np.median(looks_skin)) < 0.5
+    if not spot_is_hair:
+        print("[retouch] forehead patch: spot is bare skin, leaving the swap's mark",
+              flush=True)
         return mask
     return _subtract_spots(mask, [point], settings.forehead_patch)
 
@@ -1322,7 +1524,7 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
         # it still averages their hair with the plate's, which is the translucent
         # patch beside the temple. Same detection, opposite direction -- take the
         # child's hair whole instead of half.
-        mask = _harden_hair_edge(tmpl, mask)
+        mask = _harden_hair_edge(tmpl, mask, swp)
     out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
     out = _despeckle_hair(out, mask)
     out = _remove_template_hair_tips(out, mask)
@@ -1548,6 +1750,278 @@ def _remove_skin_specks(data: bytes, region: dict) -> bytes:
         return data
 
 
+# Cap on how much of the search ellipse may be "mark" before the result is
+# distrusted and left alone -- but only for LOW-fill (sparse/diffuse)
+# detections. Measured across 8 fresh seeds: real invented marks ranged from
+# a small 12% dot to a bold 44% paisley/comma shape, both compact (fill
+# ratio 0.68-0.74 of their own bounding box); a lighting false positive is
+# sparse across a box spanning nearly the whole ellipse. So a COMPACT blob
+# (high fill ratio) is trusted even past this cap; only a sparse one that
+# covers this much of the ellipse is refused, same as inpainting half a
+# forehead on a guess.
+FOREHEAD_MARK_MAX_AREA_PCT = 0.35
+FOREHEAD_MARK_MAX_AREA_PCT_COMPACT = 0.70
+FOREHEAD_MARK_COMPACT_FILL = 0.55
+
+# Minimum blob size, in pixels, to act on -- below this a "mark" is more
+# likely a one-pixel compression artifact than anything visible.
+FOREHEAD_MARK_MIN_AREA_PX = 6
+
+
+def _remove_forehead_mark(data: bytes, region: dict) -> bytes:
+    """Erase whatever faceswap-comic invented at the forehead-mark spot, by
+    inpainting from the REAL skin immediately around it.
+
+    `_keep_template_forehead` used to cover this spot with the TEMPLATE's own
+    forehead -- the generic character's skin tone, not the real child's,
+    which on a real render showed up as a visibly foreign patch (and, when
+    the template itself happened to carry a mark, the wrong mark). That
+    function is now gated to do nothing on bare skin (see its own docstring),
+    which is correct but leaves the swapper's invented mark uncovered.
+
+    This is the other half: find the mark by colour/saturation, inside the
+    same landmark-derived spot `_keep_template_forehead` already locates, and
+    inpaint it from the real skin bordering it -- the same `cv2.inpaint`
+    technique `_remove_skin_specks` and `_remove_template_hair_tips` already
+    use elsewhere in this file, pointed at a small search ellipse instead of
+    the whole face or the whole plate.
+
+    Segmind investigation (2026-10-07): no API parameter, prompt, seed or
+    strength combination suppresses the invented mark at generation time --
+    `prompt` is not a negative-prompt channel on this endpoint (tested:
+    adding "no bindi, no tilak, no mark" to it made the mark LARGER and
+    MORE saturated across two different wordings, same seed). This
+    post-processing step is therefore the only lever that exists.
+
+    Detection, rebuilt to be colour-shape-agnostic rather than tuned to one
+    observed mark:
+      - Lab a*/b* chroma distance from a PER-ROW local skin reference (the
+        forehead has a lighting gradient top-to-bottom; one global median
+        under- or over-shoots whichever end of the ellipse is brighter).
+      - HSV saturation delta from the same local reference -- a bindi/tilak
+        is usually far more saturated than skin even when its hue is close,
+        which the Lab test alone can miss.
+      - A pixel must clear EITHER signal by its full-confidence threshold,
+        or both by a softer one -- OR-of-two-cues catches marks that are
+        mostly a hue shift (tilak) or mostly a saturation spike (sindoor-like
+        dot) without needing one metric tuned to do both jobs.
+      - Connected-component filter: keep only blobs that are reasonably
+        compact (not a thin strip spanning the ellipse) and not vanishingly
+        small -- rejects stray eyebrow/hair pixels and shading gradients
+        that pass the colour test but don't look like a mark's shape.
+    """
+    if not region or not settings.forehead_mark_removal_enabled:
+        return data
+    try:
+        import cv2
+        import numpy as np
+
+        from .color import open_srgb
+        from .face_landmarks import forehead_spot
+
+        img = open_srgb(data)
+        W, H = img.size
+        point = forehead_spot(data)
+        if not point:
+            return data
+
+        # forehead_spot's own rx/ry (span * 0.12) are sized for a modest
+        # bindi-sized dot. Measured on a real invented mark (a bold blue
+        # paisley/comma shape), it was roughly DOUBLE that HEIGHT, with its
+        # own small satellite dot sat further up still -- both survived
+        # untouched inside the un-widened box. Widened y upward by 1.9x to
+        # cover marks that tall.
+        #
+        # x was widened too on a first attempt (1.6x everywhere), on the
+        # theory that a bigger mark is bigger in both directions -- measured
+        # on a THIRD real render, that reached far enough sideways, AT THE
+        # BOTTOM of the box (near the brow line), to clip the inner tip of
+        # an eyebrow that sits close to the landmark box on some faces, and
+        # the detector inpainted a notch out of it.
+        #
+        # The fix is an upward-FLARED search area, not a uniformly wider
+        # box: wide near the hairline (top), narrowing back down to
+        # forehead_spot's own tight width at the bottom (the brow line,
+        # where an eyebrow can be this close). A mark big enough to need
+        # the extra width sits toward the hairline, same as the extra
+        # height; nothing needs to be wide right down at brow level.
+        #
+        # The extra margin goes UPWARD only, never downward: a symmetric
+        # pad (tried first, before this) pushed the bottom edge down into
+        # the eyebrows/eyes on a face where the glabella landmark sits
+        # close to them -- measured on a second real mark, that turned
+        # "clean the forehead" into "clean the eye". The bottom keeps
+        # forehead_spot's own boundary exactly.
+        rx = max(4.0, point["rx"])
+        rx_wide = rx * 1.6
+        ry = max(4.0, point["ry"])
+        ry_top = ry * 1.9
+        x0 = max(0, int(point["x"] - rx_wide))
+        x1 = min(W, int(point["x"] + rx_wide))
+        y0 = max(0, int(point["y"] - ry_top))
+        y1 = min(H, int(point["y"] + ry))
+        if x1 - x0 < 4 or y1 - y0 < 4:
+            return data
+
+        rgb = np.array(img.convert("RGB"))  # a copy: the patch is written back
+        spot = rgb[y0:y1, x0:x1]
+        spot_h, spot_w = spot.shape[:2]
+        cy, cx = spot_h / 2.0, spot_w / 2.0
+        yy, xx = np.ogrid[:spot_h, :spot_w]
+        # Per-row half-width: rx_wide at the very top, tapering linearly
+        # down to the original narrow rx at the bottom (brow line) and
+        # below. frac=0 at the vertical centre of the ORIGINAL narrow
+        # ellipse (roughly mid-box), frac=1 at the top edge.
+        orig_cy = (ry_top / (ry_top + ry)) * spot_h  # row where the narrow ellipse would centre
+        row_frac = np.clip((orig_cy - yy) / max(1.0, orig_cy), 0.0, 1.0)  # (spot_h, 1)
+        row_half_w = (rx + (rx_wide - rx) * row_frac) / max(1.0, cx)
+        in_ellipse = (
+            ((xx - cx) / np.maximum(1.0, row_half_w * cx)) ** 2
+            + ((yy - cy) / max(1.0, cy)) ** 2
+        ) <= 1.0
+        if not in_ellipse.any():
+            return data
+
+        # Reference ring, wide enough to supply a local sample per row below.
+        ring_x0 = max(0, x0 - int(rx * 0.5))
+        ring_x1 = min(W, x1 + int(rx * 0.5))
+        ring_y0 = max(0, y0 - int(ry * 0.5))
+        ring_y1 = min(H, y1 + int(ry * 0.5))
+        ring_full = rgb[ring_y0:ring_y1, ring_x0:ring_x1]
+        ring_lab = cv2.cvtColor(ring_full, cv2.COLOR_RGB2LAB)
+        ring_hsv = cv2.cvtColor(ring_full, cv2.COLOR_RGB2HSV)
+        off_y, off_x = y0 - ring_y0, x0 - ring_x0
+        ring_mask = np.ones(ring_full.shape[:2], dtype=bool)
+        ring_mask[off_y : off_y + spot_h, off_x : off_x + spot_w] = False
+        if ring_mask.sum() < 20:
+            return data
+
+        # Global fallback reference (used if a row has too few ring pixels).
+        gA = float(np.median(ring_lab[:, :, 1][ring_mask]))
+        gB = float(np.median(ring_lab[:, :, 2][ring_mask]))
+        gS = float(np.median(ring_hsv[:, :, 1][ring_mask]))
+
+        spot_lab = cv2.cvtColor(spot, cv2.COLOR_RGB2LAB).astype(np.float32)
+        spot_hsv = cv2.cvtColor(spot, cv2.COLOR_RGB2HSV).astype(np.float32)
+
+        # Per-row local skin reference: for each row of the search ellipse,
+        # sample the ring pixels in a band around that same row. Falls back
+        # to the global median when a row's local band is too thin (near the
+        # very top/bottom of the ring crop).
+        rowA = np.full(spot_h, gA, dtype=np.float32)
+        rowB = np.full(spot_h, gB, dtype=np.float32)
+        rowS = np.full(spot_h, gS, dtype=np.float32)
+        band = max(3, spot_h // 6)
+        for row in range(spot_h):
+            ry0 = max(0, off_y + row - band)
+            ry1 = min(ring_full.shape[0], off_y + row + band + 1)
+            band_mask = ring_mask[ry0:ry1, :]
+            if band_mask.sum() < 10:
+                continue
+            rowA[row] = float(np.median(ring_lab[ry0:ry1, :, 1][band_mask]))
+            rowB[row] = float(np.median(ring_lab[ry0:ry1, :, 2][band_mask]))
+            rowS[row] = float(np.median(ring_hsv[ry0:ry1, :, 1][band_mask]))
+
+        refA = rowA[:, None]
+        refB = rowB[:, None]
+        refS = rowS[:, None]
+
+        chroma_dist = np.hypot(spot_lab[:, :, 1] - refA, spot_lab[:, :, 2] - refB)
+        sat_delta = spot_hsv[:, :, 1] - refS  # a mark is usually MORE saturated
+
+        # Two independent cues, either one strong enough alone, or both
+        # moderately raised together -- catches a hue-shifted tilak that
+        # barely changes saturation, and a saturation-spiking dot that sits
+        # close in hue, without one threshold having to serve both.
+        strong_chroma = chroma_dist > 11.0
+        strong_sat = sat_delta > 28.0
+        soft_both = (chroma_dist > 6.0) & (sat_delta > 14.0)
+        mark = (strong_chroma | strong_sat | soft_both) & in_ellipse
+
+        if not mark.any():
+            return data
+
+        # Close small gaps before shape filtering: a bright highlight or
+        # brush-stroke running through the middle of a single mark can dip
+        # the chroma/saturation signal below threshold for a few pixels,
+        # splitting one mark into two touching blobs (measured: a diamond
+        # mark broken into a top half and a bottom tip by exactly this).
+        # Closing re-joins anything within a few pixels of itself while
+        # leaving genuinely separate specks apart.
+        mark_u8 = cv2.morphologyEx(
+            mark.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((9, 17), np.uint8)
+        )
+
+        # Shape filter: keep only compact blobs, not a strip across the
+        # whole ellipse (lighting gradients) or a handful of scattered
+        # single pixels (compression noise / true freckles).
+        #
+        # A real mark (dot/diamond/teardrop) is tall-ish or wide-ish but
+        # FILLS most of its own bounding box; a lighting gradient or shading
+        # edge is sparse within a box that spans almost the whole ellipse.
+        # Filtering on fill ratio (not raw span) is what lets a narrow mark
+        # that happens to run most of the ellipse's height still be kept.
+        n, labels, stats, _ = cv2.connectedComponentsWithStats(mark_u8, 8)
+        keep = np.zeros_like(mark_u8)
+        kept_area = 0
+        kept_fill_weighted = 0.0
+        for k in range(1, n):
+            area = stats[k, cv2.CC_STAT_AREA]
+            w = stats[k, cv2.CC_STAT_WIDTH]
+            h = stats[k, cv2.CC_STAT_HEIGHT]
+            if area < FOREHEAD_MARK_MIN_AREA_PX:
+                continue
+            fill_ratio = area / float(w * h)
+            spans_both_axes = w > 0.8 * spot_w and h > 0.8 * spot_h
+            if spans_both_axes and fill_ratio < 0.5:
+                continue  # a sparse blob covering nearly the whole ellipse
+            keep[labels == k] = 1
+            kept_area += area
+            kept_fill_weighted += area * fill_ratio
+        if not keep.any():
+            return data
+
+        area_pct = float(keep.sum()) / float(in_ellipse.sum())
+        avg_fill = kept_fill_weighted / max(1, kept_area)
+        # A compact detection (high fill ratio = a real dot/diamond/paisley
+        # shape, not a diffuse lighting patch) is trusted past the default
+        # cap -- measured across fresh seeds, a bold invented mark can
+        # legitimately cover 40%+ of the search ellipse while staying a
+        # single solid shape.
+        cap = (
+            FOREHEAD_MARK_MAX_AREA_PCT_COMPACT
+            if avg_fill >= FOREHEAD_MARK_COMPACT_FILL
+            else FOREHEAD_MARK_MAX_AREA_PCT
+        )
+        if area_pct > cap:
+            return data
+
+        # Dilate to take the soft, partially-coloured rim along with the
+        # core (a mark's edge fades gradually into skin), then inpaint from
+        # the real surrounding skin and feather the patch edge back into the
+        # untouched pixels so the repair doesn't read as a sharper/softer
+        # island against the rest of the forehead.
+        mark_wide = cv2.dilate(keep, np.ones((5, 5), np.uint8), iterations=2)
+        healed = cv2.inpaint(spot, mark_wide, 5, cv2.INPAINT_TELEA)
+
+        feather = cv2.GaussianBlur(mark_wide.astype(np.float32), (9, 9), 0)
+        feather = np.clip(feather, 0.0, 1.0)[:, :, None]
+        blended = (healed.astype(np.float32) * feather + spot.astype(np.float32) * (1.0 - feather))
+        rgb[y0:y1, x0:x1] = blended.astype(np.uint8)
+        print(
+            f"[retouch] forehead mark: removed {int(keep.sum())}px "
+            f"({area_pct * 100:.1f}% of the search spot)",
+            flush=True,
+        )
+
+        buf = io.BytesIO()
+        Image.fromarray(rgb).save(buf, format="JPEG", quality=95, subsampling=0)
+        return buf.getvalue()
+    except Exception as e:  # noqa: BLE001 -- a visible mark beats a failed page
+        print(f"[retouch] forehead mark removal skipped: {e}", flush=True)
+        return data
+
+
 # Under-eye retouch, on the finished page.
 #
 # A child photographed from above in a room lit from above has their eye sockets
@@ -1747,6 +2221,7 @@ async def _segmind_faceswap(
                     content = _soften_undereye(
                         content, face_region, settings.undereye_softening
                     )
+                    content = _remove_forehead_mark(content, face_region)
                 return _save_bytes(content, prefix="page")
             except Exception as e:  # noqa: BLE001 — redo the swap on any failure
                 last_err = e
