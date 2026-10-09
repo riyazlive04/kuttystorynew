@@ -120,10 +120,22 @@ class Settings(BaseSettings):
     # could not, and selected both eyes on the first attempt.
     hair_tip_cleanup_enabled: bool = True
     # Level the artwork's painted rim-light halo in the wall around the hair --
-    # the "side transparency". Keyed on the background's own colour, not on a
-    # ring around the hair: three earlier geometric attempts all reached the
-    # face, and only a colour key makes that structurally impossible.
-    hair_glow_flatten_enabled: bool = True
+    # the "side transparency". The colour key works as designed: it never
+    # touches the face, unlike the three geometric attempts before it.
+    #
+    # OFF anyway, because it trades one artifact for a worse one. Scaling a
+    # pixel's luminance toward the wall's median is far too violent where the
+    # background is not flat: measured on speed-racer p1 the curtain highlights
+    # beside the head read 249 and were pulled to 117, a 132-point drop, which
+    # paints a dark band along the hairline -- more visible than the pale halo
+    # it removes. Capping the drop (8-12 points) kills the band but also the
+    # benefit: halo reduction falls from 8.7 to 1.8 points, which nobody can
+    # see. There is no setting between "no effect" and "dark band", because the
+    # halo and the painted background detail occupy the same luminance range.
+    #
+    # The halo is in the ARTWORK (52.9% of the ring on the untouched plate vs
+    # 49.5% on the render), so the fix belongs in Illustrator, not here.
+    hair_glow_flatten_enabled: bool = False
     # Lift the swapper's dark blotches toward the face's own skin tone, 0-1.
     # It cuts nothing out -- it only adds light, only to pixels matching the
     # skin's own hue, and only to the blurred component, so detail is invisible
