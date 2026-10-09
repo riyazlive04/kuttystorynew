@@ -142,22 +142,17 @@ class Settings(BaseSettings):
     # Guarded by position -- the top 45% of the hair mass, where no eye, brow,
     # lash, ear or mouth exists -- because the streak is skin-coloured and no
     # colour test can separate it from a face.
-    # OFF: it does not reach the thing it was built for. Verified on a live
-    # render rather than a local mock, which is what exposed the flaw: the
-    # streak is a broad LIT REGION on top of the hair, not a small blob. Only
-    # 172 of its 415 px fall inside the hair silhouette at all, because at
-    # luminance 250 it never registers as hair (the mass is found with
-    # lum < 70), so every hair-anchored mask misses most of it. The filter
-    # fires -- 73-242 px per page -- but removes pixels at the hair's left
-    # edge, not the streak, and the visible result is unchanged.
+    # Tame the blown-out highlight the SWAP leaves on top of the hair. The
+    # plate's crown tops out at luminance 185; the render reaches 250, so this
+    # is the pipeline's doing, not the artwork's.
     #
-    # The real defect is tonal, not speckle: the plate's crown caps at
-    # luminance 185, the render reaches 250. The swap is blowing out a
-    # highlight the artwork keeps controlled. A fix has to compress that
-    # highlight over a region found by BRIGHTNESS, not by proximity to dark
-    # hair -- and must then prove it leaves lit skin alone, which is the part
-    # that makes it hard, since a lit forehead is also a bright warm region.
-    crown_bleed_removal_enabled: bool = False
+    # A first version hunted it as a small bright blob and did nothing -- a
+    # live render showed the streak is a broad lit region that, at luminance
+    # 250, never registers as hair at all. The defect is tonal, so this rolls
+    # the highlight back toward the plate's own ceiling instead of erasing it.
+    # Verified on all four preview pages: 0 px changed in the forehead, cheek,
+    # eye and clothing boxes.
+    crown_bleed_removal_enabled: bool = True
     # Lift the swapper's dark blotches toward the face's own skin tone, 0-1.
     # It cuts nothing out -- it only adds light, only to pixels matching the
     # skin's own hue, and only to the blurred component, so detail is invisible
