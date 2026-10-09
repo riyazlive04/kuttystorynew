@@ -143,16 +143,26 @@ class Settings(BaseSettings):
     # lash, ear or mouth exists -- because the streak is skin-coloured and no
     # colour test can separate it from a face.
     # Tame the blown-out highlight the SWAP leaves on top of the hair. The
-    # plate's crown tops out at luminance 185; the render reaches 250, so this
-    # is the pipeline's doing, not the artwork's.
+    # plate's crown tops out at luminance 185; the render reaches 250, so the
+    # defect is real and is the pipeline's, not the artwork's.
     #
-    # A first version hunted it as a small bright blob and did nothing -- a
-    # live render showed the streak is a broad lit region that, at luminance
-    # 250, never registers as hair at all. The defect is tonal, so this rolls
-    # the highlight back toward the plate's own ceiling instead of erasing it.
-    # Verified on all four preview pages: 0 px changed in the forehead, cheek,
-    # eye and clothing boxes.
-    crown_bleed_removal_enabled: bool = True
+    # OFF: two versions were built and both failed on LIVE renders after
+    # passing a local test, which is the lesson worth keeping here.
+    #   1. Blob removal. The streak is a broad lit region, and at luminance
+    #      250 it never registers as hair (the mass is found with
+    #      lum < HAIR_TIP_DARK), so only 172 of its 415 px fell inside any
+    #      hair-anchored mask. It erased pixels at the hair's left edge.
+    #   2. Tone compression, below. Measured across four live pages it moved
+    #      the crown's bright-pixel count on ONE of them (362 -> 264) and left
+    #      the other three unchanged, because the pixels it tones are not the
+    #      ones that read as the streak.
+    #
+    # Both are safe -- 0 px changed on forehead, cheek, eyes and clothing in
+    # every test, including the cover under a fully permissive mask -- they
+    # simply do not reach the defect. What is still missing is a way to select
+    # the lit crown REGION itself; every mask tried so far is anchored to dark
+    # hair, and the blown highlight is by definition not dark.
+    crown_bleed_removal_enabled: bool = False
     # Lift the swapper's dark blotches toward the face's own skin tone, 0-1.
     # It cuts nothing out -- it only adds light, only to pixels matching the
     # skin's own hue, and only to the blurred component, so detail is invisible
