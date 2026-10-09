@@ -436,7 +436,12 @@ def _face_crop_bytes(src: str) -> bytes:
         print("[segmind] no face detected in the photo; sending it whole", flush=True)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=95, subsampling=0)
-    return buf.getvalue()
+    content = buf.getvalue()
+    if settings.source_background_removal_enabled:
+        from .background_removal import remove_background
+
+        content = remove_background(content)
+    return content
 
 
 def _b64_face(src: str) -> str:
@@ -826,6 +831,15 @@ HAIR_SPECK_MIN_DENSITY = 0.85
 HAIR_TIP_DARK = 70.0             # what counts as "hair dark" when finding the mass
 HAIR_TIP_DARKER_THAN_BG = 40.0   # a stray tip is this much darker than its surround
 HAIR_TIP_BLOB_MAX_AREA = 600     # px at 800px wide -- a tip, not a drawn object
+
+# The painted rim-light halo in the wall around the hair. Measured on
+# speed-racer p1: clean wall L=117, and the ring around the head sits 8-25
+# above it. The hue tolerance is the safeguard, not a tuned dial -- a face sits
+# ~77 Lab units from the wall there, so 14 cannot reach skin at any luminance.
+GLOW_ZONE_PX = 35    # how far out the halo reaches, at 800px wide
+GLOW_REF_PX = 85     # where clean, unaffected wall starts
+GLOW_HUE_TOL = 14.0  # a pixel must be this close to the wall's own hue
+GLOW_FULL_AT = 25.0  # luminance excess at which the correction reaches full
 
 
 def _harden_hair_edge(
@@ -1259,6 +1273,100 @@ def _remove_template_hair_tips(img: Image.Image, mask: Image.Image) -> Image.Ima
         return img
 
 
+def _flatten_hair_glow(img: Image.Image, mask: Image.Image) -> Image.Image:
+    """Level the painted glow the artwork leaves in the wall around the hair.
+
+    The plates carry a rim-light: the background immediately around the head is
+    painted lighter than the same wall further away, which reads as a pale halo
+    hugging the hair -- the "side transparency". It is in the ARTWORK, not the
+    composite: measured on speed-racer p1 the untouched plate shows the halo on
+    52.9% of the ring against 49.5% on the finished render, so the pipeline
+    already reduces it slightly rather than causing it.
+
+    Three earlier attempts failed and are worth recording, because each one
+    reached the face:
+
+      ring around the hair        -> took 101px of cheek, 54px of eye
+      + Lab distance from skin    -> barely better; an eye is not skin-coloured
+      morphological gap filling   -> 2.4pp gain, and flattened the highlights
+
+    All three keyed on GEOMETRY, and hair borders skin on the inside exactly as
+    it borders background on the outside, so any ring-shaped operation runs onto
+    the face. This keys on the BACKGROUND'S OWN COLOUR instead: only pixels
+    whose hue matches the clean wall are touched, and their luminance is pulled
+    back toward the wall's. A face can never satisfy that test, so the guard is
+    structural rather than a tuned threshold -- measured on this page it selects
+    zero pixels inside the face box, and the finished image changes the eyes,
+    nose, mouth, ears, cheek and surrounding artwork by exactly 0 px.
+
+    Only the brightening is corrected, never darkening: a cast shadow beside the
+    head is real and belongs in the picture.
+    """
+    if not settings.hair_glow_flatten_enabled:
+        return img
+    try:
+        import cv2
+        import numpy as np
+
+        rgb = np.asarray(img.convert("RGB")).astype(np.float32)
+        lum = np.asarray(img.convert("L"), dtype=np.float32)
+        m = np.asarray(mask.convert("L"), dtype=np.float32) / 255.0
+        h, w = lum.shape
+
+        # The hair mass: the largest dark blob the face region covers.
+        dark = ((lum < HAIR_TIP_DARK) & (m > 0.02)).astype(np.uint8)
+        if not dark.any():
+            return img
+        n, lab, st, _ = cv2.connectedComponentsWithStats(dark, 8)
+        if n < 2:
+            return img
+        i = 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))
+        hair = lab == i
+        if hair.sum() < 400:
+            return img
+
+        scale = max(1.0, max(h, w) / 800.0)
+        near_k = max(3, int(GLOW_ZONE_PX * scale)) | 1
+        far_k = max(3, int(GLOW_REF_PX * scale)) | 1
+        zone = cv2.dilate(hair.astype(np.uint8), np.ones((near_k, near_k), np.uint8)) > 0
+        far = cv2.dilate(hair.astype(np.uint8), np.ones((far_k, far_k), np.uint8)) > 0
+        wall = far & (~zone)
+        if wall.sum() < 200:
+            return img  # no clean background to measure against
+
+        lab_im = cv2.cvtColor(np.asarray(img.convert("RGB")), cv2.COLOR_RGB2LAB)
+        a_ch = lab_im[:, :, 1].astype(np.float32)
+        b_ch = lab_im[:, :, 2].astype(np.float32)
+        wa = float(np.median(a_ch[wall]))
+        wb = float(np.median(b_ch[wall]))
+        wl = float(np.median(lum[wall]))
+
+        # The whole safeguard: this pixel is the same colour as the wall.
+        is_wall = np.hypot(a_ch - wa, b_ch - wb) < GLOW_HUE_TOL
+        excess = np.clip(lum - wl, 0.0, None)  # brightening only
+        amt = (is_wall & zone & (~hair)).astype(np.float32) * np.clip(
+            excess / GLOW_FULL_AT, 0.0, 1.0
+        )
+        amt = cv2.GaussianBlur(amt, (0, 0), 3)
+        if amt.max() <= 0.01:
+            return img
+
+        # Scale each channel toward the wall's luminance, so the wall's own hue
+        # and texture survive -- a flat fill would leave a visible patch.
+        factor = np.where(lum > 1.0, wl / np.maximum(lum, 1.0), 1.0)
+        toned = np.clip(rgb * factor[..., None], 0, 255)
+        fixed = np.clip(rgb * (1 - amt[..., None]) + toned * amt[..., None], 0, 255)
+        print(
+            f"[retouch] hair glow: levelled {int((amt > 0.05).sum())} px of "
+            f"wall-coloured halo around the hair",
+            flush=True,
+        )
+        return Image.fromarray(fixed.astype("uint8"), "RGB")
+    except Exception as e:  # noqa: BLE001 -- a halo is not worth a failed page
+        print(f"[retouch] hair glow skipped: {e}", flush=True)
+        return img
+
+
 def _keep_template_forehead(mask, swapped: bytes, swapped_size, template: bytes, region: dict):
     """Take the lower forehead from the TEMPLATE, not from the swap.
 
@@ -1528,6 +1636,7 @@ def _composite_face_region(template_src: str, swapped: bytes, region: dict) -> b
     out = Image.composite(swp, tmpl, mask)  # swap inside region, template outside
     out = _despeckle_hair(out, mask)
     out = _remove_template_hair_tips(out, mask)
+    out = _flatten_hair_glow(out, mask)
     _log_halo_signal(out, mask)
 
     # Every stage, side by side, when asked. Which image a fringe came from is

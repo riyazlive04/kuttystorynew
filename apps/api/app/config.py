@@ -119,6 +119,11 @@ class Settings(BaseSettings):
     # the hair, which is what separates a stray tip from an eye -- a colour test
     # could not, and selected both eyes on the first attempt.
     hair_tip_cleanup_enabled: bool = True
+    # Level the artwork's painted rim-light halo in the wall around the hair --
+    # the "side transparency". Keyed on the background's own colour, not on a
+    # ring around the hair: three earlier geometric attempts all reached the
+    # face, and only a colour key makes that structurally impossible.
+    hair_glow_flatten_enabled: bool = True
     # Lift the swapper's dark blotches toward the face's own skin tone, 0-1.
     # It cuts nothing out -- it only adds light, only to pixels matching the
     # skin's own hue, and only to the blurred component, so detail is invisible
@@ -265,6 +270,16 @@ class Settings(BaseSettings):
     # proven on real renders -- adds one SAM3 call (150-280s, ~0.38 credits)
     # per page it runs on.
     real_hair_transplant_enabled: bool = False
+
+    # Strip the room out of the uploaded photo before it reaches Segmind,
+    # leaving just the child on a plain white fill. Built on the theory that
+    # a cluttered background (a bed, a wardrobe, a window) gives the swapper
+    # something to misread as hair or skin at the crop's edge, the same
+    # class of problem SOURCE_FACE_PADDING exists to reduce. Off by default
+    # until measured on a real render, same as real_hair_transplant_enabled
+    # above -- this changes what Segmind is given to work from, and that has
+    # broken likeness before when it looked safe on paper.
+    source_background_removal_enabled: bool = False
 
     # When a page has no traced face outline, detect one from the base art so the
     # hair-keeping composite still has a region to work with. Off = untraced
