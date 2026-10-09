@@ -852,6 +852,13 @@ CROWN_BLEED_MAX_BG = 170.0   # neighbourhood must be this dark: hair, not a lit 
 CROWN_CEILING = 150.0        # roll the highlight back toward this
 CROWN_KEEP = 0.2             # fraction of the excess kept, so it stays a highlight
 
+# The crown-swap guard: where the plate draws hair but the swap put something
+# bright, give the pixel back to the plate. Thresholds are relative to the
+# face's own skin luminance so they follow each plate's lighting.
+CROWN_GUARD_PLATE_DARK = 0.45    # plate below this * skin = drawn as hair
+CROWN_GUARD_SWAP_BRIGHT = 0.95   # swap above this * skin = too bright for hair
+CROWN_GUARD_TOP = 0.35           # only this top share of the mask: above any eye
+
 
 def _harden_hair_edge(
     template: Image.Image, mask: Image.Image, swapped: Optional[Image.Image] = None
@@ -1010,6 +1017,50 @@ def _harden_hair_edge(
         contrast = EDGE_CONTRAST + (EDGE_CONTRAST_SKIN - EDGE_CONTRAST) * is_skin
         out = np.clip((out - 0.5) * contrast + 0.5, 0.0, 1.0)
         out = np.where(band, out, m)  # outside the band nothing moves
+
+        # The blown crown: where the PLATE draws solid dark hair but the SWAP
+        # put something bright there, the swap has painted over the hairstyle.
+        # Measured on speed-racer p2 at y=85 the plate reads 18 14 17 25 19 14
+        # 13 3 -- unbroken hair -- while the render reads 3 5 2 4 3 7 27 132 28
+        # 198 171. Those 132/198/171 are swap pixels inside the hair, and they
+        # are what reads as a pale washed streak across the crown.
+        #
+        # Four post-process attempts failed to remove them because they all
+        # looked for the streak in the OUTPUT, where it is just bright pixels
+        # that no hair-anchored mask reaches -- at luminance 250 the streak is
+        # not dark, so it is not in the hair mass. Here the question is
+        # answerable: the plate and the swap are both in hand, so "the plate
+        # says hair, the swap says bright" is a direct comparison, not an
+        # inference. Giving those pixels back to the plate is what the mask is
+        # for.
+        #
+        # Unlike everything else in this function this acts on the CORE as
+        # well as the band, because that is where the streak lands. It cannot
+        # touch a face: it fires only where the plate itself is drawn as hair.
+        if swapped is not None and settings.crown_swap_guard_enabled:
+            plate_hair = lum < skin * CROWN_GUARD_PLATE_DARK
+            swap_bright = ref_lum > skin * CROWN_GUARD_SWAP_BRIGHT
+            # An eye matches that test too -- dark in the plate, bright in the
+            # swap, because a catchlight IS a bright dot inside a dark iris.
+            # Measured: 71 px of eye against 825 px of crown. So restrict to
+            # the top of the mask, above anything a face can occupy. The crown
+            # is where the streak is; an eye never is.
+            ys_m, _xs_m = np.where(m > 0.02)
+            if ys_m.size:
+                lim = int(ys_m.min() + (ys_m.max() - ys_m.min()) * CROWN_GUARD_TOP)
+                above = np.zeros(m.shape, bool)
+                above[:lim, :] = True
+            else:
+                above = np.ones(m.shape, bool)
+            bleed = plate_hair & swap_bright & (m > 0.02) & above
+            if bleed.any():
+                soften = cv2.GaussianBlur(bleed.astype(np.float32), (0, 0), 1.5)
+                out = np.clip(out * (1.0 - soften), 0.0, 1.0)
+                print(
+                    f"[retouch] crown guard: gave {int(bleed.sum())} px back to "
+                    f"the plate where the swap painted over its hair",
+                    flush=True,
+                )
 
         hardened = float(np.abs(out - m).sum()) / max(1.0, float(band.sum())) * 100.0
         soft = float((is_skin[band] > 0.5).mean()) * 100.0 if band.any() else 0.0

@@ -163,6 +163,18 @@ class Settings(BaseSettings):
     # the lit crown REGION itself; every mask tried so far is anchored to dark
     # hair, and the blown highlight is by definition not dark.
     crown_bleed_removal_enabled: bool = False
+    # Give a pixel back to the plate where the plate draws HAIR but the swap
+    # put something bright there -- the swap painting over the hairstyle, which
+    # reads as a pale washed streak across the crown. Measured on speed-racer
+    # p2: the plate's crown is 13-25 where the render is 132-198.
+    #
+    # This works at mask level, where both images are in hand, so the test is a
+    # direct comparison rather than an inference about the finished pixel. Four
+    # post-process attempts failed precisely because the streak is invisible to
+    # a hair-anchored mask once rendered: at luminance 250 it is not dark, so
+    # it is not in the hair mass. It cannot touch a face -- it fires only where
+    # the PLATE itself is drawn as hair.
+    crown_swap_guard_enabled: bool = True
     # Lift the swapper's dark blotches toward the face's own skin tone, 0-1.
     # It cuts nothing out -- it only adds light, only to pixels matching the
     # skin's own hue, and only to the blurred component, so detail is invisible
