@@ -14,3 +14,4 @@ opencv-python-headless==4.10.0.84
 mediapipe==0.10.14
 pypdf==5.1.0
 cryptography==44.0.0
+rembg==2.0.59

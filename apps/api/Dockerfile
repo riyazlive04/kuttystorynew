@@ -35,6 +35,13 @@ RUN pip uninstall -y opencv-contrib-python opencv-python-headless \
     && pip install --no-deps opencv-python-headless==4.10.0.84 \
     && python -c "import cv2, mediapipe"
 
+# rembg fetches its ONNX model (u2net, ~176MB) from GitHub on first use if
+# it isn't already in ~/.u2net -- fetched here, at build time, so a
+# customer's first background-removal call isn't the one waiting on a
+# ~176MB download. Baked into the image layer; survives container restarts
+# without needing a persistent volume for it.
+RUN python -c "from rembg import new_session; new_session('u2net')"
+
 COPY . .
 
 # Fetch the Prisma query engine + generate the Python client at build time.
