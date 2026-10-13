@@ -415,7 +415,8 @@ export default function AdminSettingsPage() {
               <p className="mt-1 text-sm text-slate-mutedText">
                 The swapper returns the child&apos;s own hair. When ON, a
                 finished page keeps the <b>illustrated character&apos;s</b> hair
-                instead, everywhere above the brow line. When OFF, the
+                and forehead instead, everywhere above the brow line — so none
+                of the child&apos;s fringe can fall onto it. When OFF, the
                 child&apos;s hair is kept exactly as the swapper drew it,
                 fringe and all.
               </p>

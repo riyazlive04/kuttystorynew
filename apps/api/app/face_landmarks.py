@@ -104,6 +104,44 @@ def ear_spots(image_bytes: bytes) -> Optional[list]:
         return None
 
 
+# Mesh outlines of the features a hair test must never take: both brows and
+# both eyes (lids and lashes included), as closed loops of mesh indices.
+_BROW_LOOPS = (
+    (70, 63, 105, 66, 107, 55, 65, 52, 53, 46),
+    (300, 293, 334, 296, 336, 285, 295, 282, 283, 276),
+)
+_EYE_LOOPS = (
+    (33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246),
+    (263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385, 386, 387, 388, 466),
+)
+
+
+def brow_and_eye_outlines(image_bytes: bytes) -> Optional[dict]:
+    """`{brows, eyes, span}` in PIXELS, or None.
+
+    `brows` and `eyes` are two polygons each, `[(x, y), ...]`. Dark pixels
+    inside them are the child's own features; dark pixels around them, on a
+    swapped face, are usually the child's hair.
+    """
+    try:
+        found = _landmarks(image_bytes)
+        if not found:
+            return None
+        lm, W, H, span = found
+
+        def loop(ix):
+            return [(lm[i].x * W, lm[i].y * H) for i in ix]
+
+        return {
+            "brows": [loop(ix) for ix in _BROW_LOOPS],
+            "eyes": [loop(ix) for ix in _EYE_LOOPS],
+            "span": span,
+        }
+    except Exception as e:  # noqa: BLE001
+        print(f"[landmarks] feature outlines skipped: {e}", flush=True)
+        return None
+
+
 def face_box(image_bytes: bytes) -> Optional[dict]:
     """A brow-to-chin, cheek-to-cheek region in PERCENT, or None.
 

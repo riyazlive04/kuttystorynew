@@ -554,109 +554,27 @@ def _keep_template_hair(mask, swapped: bytes, swapped_size, template: bytes, reg
         ramp = max(4.0, brow["span"] * 0.08)
         above = np.clip((brow["y"] - ys_all) / ramp, 0.0, 1.0)
 
-        # Above the brows, take the plate back ONLY where the plate itself
-        # looks like hair -- not the whole strip. "A forehead carries no
-        # identity" is true of the child's IDENTITY, but a bare forehead
-        # still carries the plate's own invented marks (a bindi faceswap-comic
-        # adds reliably -- see _keep_template_forehead) if the whole strip is
-        # taken back unconditionally. Measured on a real render: this put a
-        # violet bindi from the template onto a child whose real photo has
-        # none, because the strip above the brow is not all hair -- it is
-        # mostly bare forehead on most poses, and ungated this function cannot
-        # tell the difference.
+        # The whole strip above the brows goes back to the plate -- hair AND
+        # bare forehead. It used to be taken back only where the PLATE looked
+        # like hair (a texture test), which answers the wrong question for the
+        # child's fringe: a traced outline runs up to the hairline, so the
+        # forehead inside it came from the swap, and the swap carries the
+        # child's own fringe. Wherever the plate's forehead was bare -- below
+        # its drawn fringe, which is most of a forehead -- the child's strands
+        # stayed, hanging under the plate's hairstyle. Both hairstyles at once.
         #
-        # Same classifier as `_keep_artwork_hair`'s band guard, with the same
-        # correction made to `_harden_hair_edge` earlier: the skin REFERENCE
-        # has to come from the real swapped face (the mask core, read off
-        # `swapped`), not from the template's own generic character. The
-        # template is only asked whether ITS pixel looks like hair relative
-        # to that real skin tone -- using the template's own tone as the
-        # reference always calls the template's forehead "skin" by
-        # definition, which is a tautology, not a test.
-        core = m > 0.99
-        if core.any():
-            tmpl_img = Image.open(io.BytesIO(template)).convert("RGB").resize(mask.size)
-            tmpl_lum = np.asarray(tmpl_img.convert("L"), dtype=np.float32)
-
-            # Colour/luminance cannot tell the plate's fringe from its
-            # forehead on this art style -- measured directly on a real
-            # render: the luminance+Lab test called the hair ITSELF
-            # "skin" (it is a lighter brown than the swapped face's own
-            # shadow regions -- eye sockets, nostril, mouth -- which score
-            # as "not skin" by the same test and so register as "hair"
-            # instead). That is backwards, and multiplying it into `above`
-            # (a pure function of row y) left `above` essentially untouched
-            # -- a dead-straight horizontal cut instead of the fringe's own
-            # silhouette. The colour test was tried, then combined with
-            # texture, then measured again; both times the mask came back
-            # a straight line because the colour signal dominates when it
-            # is this uniform. Dropped entirely above the brow.
-            #
-            # Texture is what actually separates them: drawn hair is fine,
-            # high-frequency directional strokes; drawn skin is smooth
-            # shading with no such detail -- confirmed visually on the same
-            # render, where a Laplacian response lit up the strands and
-            # left the forehead/cheeks dark regardless of their colour.
-            lap = cv2.Laplacian(tmpl_lum, cv2.CV_32F, ksize=3)
-            texture = cv2.GaussianBlur(np.abs(lap), (0, 0), 2.5)
-            # Normalised against the core's own texture range (the swapped
-            # face, which is smooth -- shading, not strokes) rather than a
-            # fixed constant, so it adapts to how fine or bold a given
-            # plate's line art is instead of a threshold tuned to one plate.
-            t_lo = float(np.percentile(texture[core], 50))
-            t_hi = float(np.percentile(texture[core], 97))
-            is_hair = np.clip((texture - t_lo) / max(1e-3, t_hi - t_lo), 0.0, 1.0)
-            is_hair = cv2.GaussianBlur(is_hair.astype(np.float32), (0, 0), 1.5)
-
-            # Shape filter: keep only texture that forms a sizeable mass,
-            # not an isolated fleck sitting mid-forehead. Measured on a real
-            # plate: a smooth painted highlight running down the glabella
-            # (between the brows -- a common illustration trick, not a
-            # stroke) had enough edge contrast to register as "textured" by
-            # the Laplacian test, and the mask duly cut a thin dark notch
-            # out of BARE FOREHEAD skin at that one isolated spot -- a stray
-            # vertical mark with no hair strand attached to it, nothing like
-            # the real fringe above it.
-            #
-            # Real hair is a mass of strands close enough together that
-            # closing (dilate then erode) merges them into one solid blob
-            # covering a real fraction of the search area; a lone highlight
-            # streak closes into a small, thin blob on its own, with no
-            # neighbours to merge with. Filtering on that closed blob's own
-            # SIZE -- not on whether it touches a seed region, which turned
-            # out to fragment the real fringe into hundreds of islands that
-            # mostly don't touch anything, wiping out 99.99% of genuine hair
-            # texture along with the one false positive -- keeps real hair
-            # (a big blob) and drops an isolated mark (a small one),
-            # regardless of exactly where either sits.
-            hair_u8 = (is_hair > 0.5).astype(np.uint8)
-            closed = cv2.morphologyEx(hair_u8, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
-            n, labels, stats, _ = cv2.connectedComponentsWithStats(closed, 8)
-            min_blob_px = max(60.0, float(mask.size[0]) * float(mask.size[1]) * 0.0001)
-            keep_labels = {
-                k for k in range(1, n) if stats[k, cv2.CC_STAT_AREA] >= min_blob_px
-            }
-            big_enough = np.isin(labels, list(keep_labels)).astype(np.float32)
-            # Dilate the kept blobs back out a little before applying to
-            # `is_hair`, so filtering doesn't bite into the real edge of a
-            # genuine strand that the closing step rounded off.
-            big_enough = cv2.dilate(big_enough, np.ones((5, 5), np.uint8))
-            is_hair = is_hair * big_enough
-        else:
-            # No swapped face to measure skin from -- fall back to the old,
-            # ungated behaviour rather than guess at a threshold with nothing
-            # to anchor it to.
-            is_hair = np.ones_like(m)
-
-        above = above * is_hair
-
-        # Above the brows the plate wins where it looks like hair, whatever
-        # it looks like there. Asking whether the PLATE has hair at a spot
-        # answers the wrong question for the FRINGE specifically -- the
-        # fringe is the CHILD's, and it falls where their hair falls -- but
-        # it is the right question for everything else up there, which is
-        # either hair or a bare forehead that must stay the child's own.
+        # The gate existed because a bare plate forehead is the CHARACTER's
+        # skin, and an earlier version pasted it on untoned. It no longer goes
+        # on untoned: match_surrounding_skin moves every artwork skin pixel
+        # around the face to the swapped face's tone, and this strip is exactly
+        # such a pixel once it is outside the mask. A mark on the plate's own
+        # forehead is left to the forehead-mark removal, which runs on the
+        # finished page whichever image the mark came from.
         out = m * (1.0 - above)
+        # A long fringe does not stop at the brow line: it reaches the brows
+        # and hangs past them at the temples, beside the eyes. Those locks are
+        # below the cut, so they need finding rather than a line.
+        out = _drop_hanging_fringe(out, swapped, swapped_size, brow)
         # Say what it did. Whether the fringe on a finished page is the plate's
         # or the child's is the one thing that cannot be read back off the
         # image afterwards, and a guard that silently does nothing looks
@@ -672,6 +590,95 @@ def _keep_template_hair(mask, swapped: bytes, swapped_size, template: bytes, reg
     except Exception as e:  # noqa: BLE001 -- a fringe is not worth a failed page
         print(f"[retouch] template hair guard skipped: {e}", flush=True)
         return mask
+
+
+# Darker than this fraction of the swapped face's own skin counts as hair for
+# the hanging-fringe test. Black or brown hair sits far below it; shaded skin,
+# under-eye circles included, stays above it.
+HANG_DARK = 0.5
+
+
+def _drop_hanging_fringe(m, swapped: bytes, swapped_size, brow: dict):
+    """Give the plate back the child's hair that hangs BELOW the brow line.
+
+    `m` is the mask as a float array (1 = swap), already cut above the brows;
+    `brow` is in mask pixels. A photo with a long fringe swaps into strands that
+    reach the brows and locks that fall beside the eyes, all below that cut.
+
+    The test is shape, not colour alone: hair hangs, so a dark region in the
+    swap that is CONNECTED to the hair above the brow line is hair, wherever it
+    ends up. The child's brows and eyes are dark too, so their landmark outlines
+    are cut out first -- which is also what keeps a fringe that touches the
+    brows from dragging the brows along with it. Nothing below the eyes is
+    looked at: nostrils, the mouth and the jaw's shadow stay the child's.
+    """
+    try:
+        import cv2
+        import numpy as np
+
+        from .face_landmarks import brow_and_eye_outlines
+
+        feats = brow_and_eye_outlines(swapped)
+        if not feats or not swapped_size or not swapped_size[0]:
+            return m
+        H, W = m.shape
+        sx, sy = W / swapped_size[0], H / swapped_size[1]
+        span = feats["span"] * sx
+
+        lum = np.asarray(
+            Image.open(io.BytesIO(swapped)).convert("L").resize((W, H)), np.float32
+        )
+        rows = np.arange(H)[:, None]
+        eye_bottom = max(y for poly in feats["eyes"] for _, y in poly) * sy
+        brow_row = int(brow["y"])
+        top = int(max(0, brow_row - span * 0.6))
+        bottom = int(min(H, eye_bottom + span * 0.08))
+
+        # The child's skin, measured on the cheeks: fully swapped, below the eyes.
+        cheeks = (m > 0.99) & (rows > eye_bottom)
+        if cheeks.sum() < 200:
+            return m
+        skin = float(np.percentile(lum[cheeks], 60))
+
+        features = np.zeros((H, W), np.uint8)
+        for poly in feats["brows"] + feats["eyes"]:
+            pts = np.array([(x * sx, y * sy) for x, y in poly], np.int32)
+            cv2.fillPoly(features, [cv2.convexHull(pts)], 1)
+        pad = max(3, int(span * 0.04))
+        guard = cv2.dilate(
+            features, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * pad + 1,) * 2)
+        )
+
+        cand = ((lum < skin * HANG_DARK) & (guard == 0)).astype(np.uint8)
+        cand[:top] = 0
+        cand[bottom:] = 0
+        n, labels = cv2.connectedComponents(cand, connectivity=8)
+        seeds = set(np.unique(labels[top:max(top + 1, brow_row)]).tolist()) - {0}
+        if not seeds:
+            return m
+        # From the top of the search, not the brow row: the cut above the
+        # brows fades in over a few rows, and hair inside that fade would
+        # otherwise survive as a faint line.
+        hang = np.isin(labels, list(seeds)) & (m > 0.01)
+        if not hang.any():
+            return m
+
+        # Hair edges are anti-aliased into the skin; reach a little past the
+        # dark core, soften, and never into a brow or an eye.
+        hang = cv2.dilate(hang.astype(np.uint8), np.ones((pad, pad), np.uint8))
+        hang = cv2.GaussianBlur(hang.astype(np.float32), (0, 0), max(1.5, span * 0.01))
+        hang *= 1.0 - features.astype(np.float32)
+        out = m * (1.0 - np.clip(hang, 0.0, 1.0))
+        print(
+            f"[retouch] hanging fringe: took back "
+            f"{float((m - out).sum()) / max(1.0, float(m.sum())) * 100.0:.1f}% "
+            f"of the mask (locks reaching the brows and temples)",
+            flush=True,
+        )
+        return out
+    except Exception as e:  # noqa: BLE001 -- a stray lock is not worth a failed page
+        print(f"[retouch] hanging fringe skipped: {e}", flush=True)
+        return m
 
 
 # How hard to steepen the feathered band's edge when the ARTWORK's hair is
