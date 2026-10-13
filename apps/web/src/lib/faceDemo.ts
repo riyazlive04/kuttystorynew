@@ -24,6 +24,8 @@ export type FaceDemoFrame = {
 };
 
 export type FaceDemo = {
+  /** The admin cover URL these frames were swapped onto. */
+  cover: string;
   /** The untouched illustration -- the "before" the loop returns to. */
   base: string;
   frames: FaceDemoFrame[];
@@ -32,6 +34,7 @@ export type FaceDemo = {
 const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
   "abc-adventure": {
     boy: {
+      cover: "/uploads/plate_8dba0fd8ecc2.jpg",
       base: "/samples/faceswap/abc-adventure-boy-base.jpg",
       frames: [
         {
@@ -47,6 +50,7 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
       ],
     },
     girl: {
+      cover: "https://kuttystory.co.in/api/uploads/edbd8206ba32436fa6d363f4859c96af.jpg",
       base: "/samples/faceswap/abc-adventure-girl-base.jpg",
       frames: [
         {
@@ -67,50 +71,9 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
       ],
     },
   },
-  "baking-story": {
-    girl: {
-      base: "/samples/faceswap/baking-story-girl-base.jpg",
-      frames: [
-        {
-          src: "/samples/faceswap/baking-story-girl-a.jpg",
-          photo: "/samples/faceswap/faces/girl-a.jpg",
-          child: "Anaya",
-        },
-        {
-          src: "/samples/faceswap/baking-story-girl-b.jpg",
-          photo: "/samples/faceswap/faces/girl-b.jpg",
-          child: "Diya",
-        },
-        {
-          src: "/samples/faceswap/baking-story-girl-c.jpg",
-          photo: "/samples/faceswap/faces/girl-c.jpg",
-          child: "Meera",
-        },
-      ],
-    },
-  },
   "beach-story": {
-    boy: {
-      base: "/samples/faceswap/beach-story-boy-base.jpg",
-      frames: [
-        {
-          src: "/samples/faceswap/beach-story-boy-a.jpg",
-          photo: "/samples/faceswap/faces/boy-a.jpg",
-          child: "Aarav",
-        },
-        {
-          src: "/samples/faceswap/beach-story-boy-b.jpg",
-          photo: "/samples/faceswap/faces/boy-b.jpg",
-          child: "Vihaan",
-        },
-        {
-          src: "/samples/faceswap/beach-story-boy-c.jpg",
-          photo: "/samples/faceswap/faces/boy-c.jpg",
-          child: "Kabir",
-        },
-      ],
-    },
     girl: {
+      cover: "https://kuttystory.co.in/api/uploads/76b93a86869e4b3c940cbcc13069f8c2.jpg",
       base: "/samples/faceswap/beach-story-girl-base.jpg",
       frames: [
         {
@@ -131,52 +94,9 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
       ],
     },
   },
-  "space-explorer": {
-    boy: {
-      base: "/samples/faceswap/space-explorer-boy-base.jpg",
-      frames: [
-        {
-          src: "/samples/faceswap/space-explorer-boy-a.jpg",
-          photo: "/samples/faceswap/faces/boy-a.jpg",
-          child: "Aarav",
-        },
-        {
-          src: "/samples/faceswap/space-explorer-boy-b.jpg",
-          photo: "/samples/faceswap/faces/boy-b.jpg",
-          child: "Vihaan",
-        },
-        {
-          src: "/samples/faceswap/space-explorer-boy-c.jpg",
-          photo: "/samples/faceswap/faces/boy-c.jpg",
-          child: "Kabir",
-        },
-      ],
-    },
-  },
-  "speed-racer": {
-    boy: {
-      base: "/samples/faceswap/speed-racer-boy-base.jpg",
-      frames: [
-        {
-          src: "/samples/faceswap/speed-racer-boy-a.jpg",
-          photo: "/samples/faceswap/faces/boy-a.jpg",
-          child: "Aarav",
-        },
-        {
-          src: "/samples/faceswap/speed-racer-boy-b.jpg",
-          photo: "/samples/faceswap/faces/boy-b.jpg",
-          child: "Vihaan",
-        },
-        {
-          src: "/samples/faceswap/speed-racer-boy-c.jpg",
-          photo: "/samples/faceswap/faces/boy-c.jpg",
-          child: "Kabir",
-        },
-      ],
-    },
-  },
   "the-girl-and-the-magical-unicorn": {
     girl: {
+      cover: "https://kuttystory.co.in/api/uploads/8931a1ad994547f5a4a8c8ea8be65bae.jpg",
       base: "/samples/faceswap/the-girl-and-the-magical-unicorn-girl-base.jpg",
       frames: [
         {
@@ -197,48 +117,6 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
       ],
     },
   },
-  "the-little-book-of-good-choices": {
-    boy: {
-      base: "/samples/faceswap/the-little-book-of-good-choices-boy-base.jpg",
-      frames: [
-        {
-          src: "/samples/faceswap/the-little-book-of-good-choices-boy-a.jpg",
-          photo: "/samples/faceswap/faces/boy-a.jpg",
-          child: "Aarav",
-        },
-        {
-          src: "/samples/faceswap/the-little-book-of-good-choices-boy-b.jpg",
-          photo: "/samples/faceswap/faces/boy-b.jpg",
-          child: "Vihaan",
-        },
-        {
-          src: "/samples/faceswap/the-little-book-of-good-choices-boy-d.jpg",
-          photo: "/samples/faceswap/faces/boy-d.jpg",
-          child: "Rehan",
-        },
-      ],
-    },
-    girl: {
-      base: "/samples/faceswap/the-little-book-of-good-choices-girl-base.jpg",
-      frames: [
-        {
-          src: "/samples/faceswap/the-little-book-of-good-choices-girl-a.jpg",
-          photo: "/samples/faceswap/faces/girl-a.jpg",
-          child: "Anaya",
-        },
-        {
-          src: "/samples/faceswap/the-little-book-of-good-choices-girl-b.jpg",
-          photo: "/samples/faceswap/faces/girl-b.jpg",
-          child: "Diya",
-        },
-        {
-          src: "/samples/faceswap/the-little-book-of-good-choices-girl-c.jpg",
-          photo: "/samples/faceswap/faces/girl-c.jpg",
-          child: "Meera",
-        },
-      ],
-    },
-  },
 };
 
 /**
@@ -248,10 +126,23 @@ const DEMOS: Record<string, Partial<Record<Gender, FaceDemo>>> = {
  * for the variant that does not exist returns nothing rather than the other
  * one, because answering a visitor's Girl with a boy's cover is worse than
  * showing them the plain art.
+ *
+ * `cover` is the live cover art the page would otherwise show. The frames are
+ * a snapshot of the cover on the day they were rendered, so once the admin
+ * replaces the cover the demo is out of date and the admin's art wins.
  */
 export function faceDemoFor(
   slug: string,
-  gender: Gender = "boy",
+  gender: Gender,
+  cover: string | null | undefined,
 ): FaceDemo | undefined {
-  return DEMOS[slug]?.[gender];
+  const demo = DEMOS[slug]?.[gender];
+  if (!demo || !cover || uploadKey(demo.cover) !== uploadKey(cover)) return undefined;
+  return demo;
+}
+
+/** The same upload is stored both API-relative and absolute; compare the file. */
+function uploadKey(url: string): string {
+  const at = url.indexOf("/uploads/");
+  return (at >= 0 ? url.slice(at) : url).split("?")[0];
 }

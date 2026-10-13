@@ -60,8 +60,13 @@ export function StoryCard({
   const onPersonalize = () => router.push(`/stories/${story.slug}`);
   // The card shows the book's primary illustrated variant -- the same one
   // `coverImage` is -- so a gender-locked book gets its own art and everything
-  // else gets the boy plate the catalogue leads with.
-  const demo = faceDemoFor(story.slug, story.genderLock ?? "boy");
+  // else gets the boy plate the catalogue leads with. A demo rendered from an
+  // older cover is ignored, so the admin's current cover always shows.
+  const demo = faceDemoFor(
+    story.slug,
+    story.genderLock ?? "boy",
+    story.coverImage,
+  );
 
   return (
     // w-full matters: without it the card shrink-wraps its content, so a long

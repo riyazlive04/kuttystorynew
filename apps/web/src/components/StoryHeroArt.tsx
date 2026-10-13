@@ -3,6 +3,7 @@
 import { StoryCover, useStoryGender } from "@/components/StoryGender";
 import { FaceSwapDemo } from "@/components/FaceSwapDemo";
 import { faceDemoFor } from "@/lib/faceDemo";
+import { coverFor } from "@/lib/covers";
 import type { Story } from "@/lib/types";
 
 /**
@@ -16,7 +17,7 @@ import type { Story } from "@/lib/types";
  */
 export function StoryHeroArt({ story }: { story: Story }) {
   const { gender } = useStoryGender();
-  const demo = faceDemoFor(story.slug, gender);
+  const demo = faceDemoFor(story.slug, gender, coverFor(story, gender));
 
   if (demo) return <FaceSwapDemo demo={demo} title={story.title} />;
   return <StoryCover story={story} />;

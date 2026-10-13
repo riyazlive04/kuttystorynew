@@ -84,7 +84,8 @@
           "key": "d",
           "child": "Saanvi"
         }
-      ]
+      ],
+      "cover": "https://kuttystory.co.in/api/uploads/76b93a86869e4b3c940cbcc13069f8c2.jpg"
     }
   },
   "the-girl-and-the-magical-unicorn": {
@@ -102,7 +103,8 @@
           "key": "c",
           "child": "Meera"
         }
-      ]
+      ],
+      "cover": "https://kuttystory.co.in/api/uploads/8931a1ad994547f5a4a8c8ea8be65bae.jpg"
     }
   },
   "abc-adventure": {
@@ -116,7 +118,8 @@
           "key": "b",
           "child": "Vihaan"
         }
-      ]
+      ],
+      "cover": "/uploads/plate_8dba0fd8ecc2.jpg"
     },
     "girl": {
       "frames": [
@@ -132,7 +135,8 @@
           "key": "d",
           "child": "Saanvi"
         }
-      ]
+      ],
+      "cover": "https://kuttystory.co.in/api/uploads/edbd8206ba32436fa6d363f4859c96af.jpg"
     }
   },
   "the-little-book-of-good-choices": {

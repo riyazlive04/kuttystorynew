@@ -13,7 +13,8 @@ animation is output from the machine that makes the book.
 Needs SEGMIND_API_KEY in apps/api/.env. Writes:
 
     apps/web/public/samples/faceswap/<slug>-<gender>-{base,a,b,c}.jpg
-    tools/face-demos.json      (which children appear on which cover)
+    tools/face-demos.json      (which children appear on which cover, and
+                                the cover URL each demo was swapped onto)
     apps/web/src/lib/faceDemo.ts   (generated; do not hand-edit)
 
 The demo used to point at the face -- a ring around it, then an arrow into it
@@ -40,7 +41,8 @@ ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "apps/web/public/samples/faceswap"
 DATA = ROOT / "tools/face-demos.json"
 TS_OUT = ROOT / "apps/web/src/lib/faceDemo.ts"
-CATALOGUE = "https://kuttystory.co.in/api/stories"
+API = "https://kuttystory.co.in/api"
+CATALOGUE = f"{API}/stories"
 
 # Cards show these at 384px and the hero at 600px, so 900 covers a 2x card and
 # is honest for the hero. These are marketing art, not the print plates (2482px):
@@ -66,6 +68,9 @@ def segmind_key() -> str:
 
 
 def load(src, edge: int | None = None) -> Image.Image:
+    # The catalogue serves some covers as API-relative paths ("/uploads/...").
+    if str(src).startswith("/uploads/"):
+        src = API + str(src)
     if str(src).startswith("http"):
         with urllib.request.urlopen(str(src), timeout=120) as r:
             img = Image.open(io.BytesIO(r.read()))
@@ -169,7 +174,7 @@ def render(only: list[str]) -> None:
             if not frames:
                 print(f"  !! nothing usable for {slug}/{gender}", flush=True)
                 continue
-            data.setdefault(slug, {})[gender] = {"frames": frames}
+            data.setdefault(slug, {})[gender] = {"cover": cover_url, "frames": frames}
 
     DATA.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -200,6 +205,8 @@ export type FaceDemoFrame = {
 };
 
 export type FaceDemo = {
+  /** The admin cover URL these frames were swapped onto. */
+  cover: string;
   /** The untouched illustration -- the "before" the loop returns to. */
   base: string;
   frames: FaceDemoFrame[];
@@ -217,26 +224,40 @@ FOOTER = '''};
  * for the variant that does not exist returns nothing rather than the other
  * one, because answering a visitor's Girl with a boy's cover is worse than
  * showing them the plain art.
+ *
+ * `cover` is the live cover art the page would otherwise show. The frames are
+ * a snapshot of the cover on the day they were rendered, so once the admin
+ * replaces the cover the demo is out of date and the admin's art wins.
  */
 export function faceDemoFor(
   slug: string,
-  gender: Gender = "boy",
+  gender: Gender,
+  cover: string | null | undefined,
 ): FaceDemo | undefined {
-  return DEMOS[slug]?.[gender];
+  const demo = DEMOS[slug]?.[gender];
+  if (!demo || !cover || uploadKey(demo.cover) !== uploadKey(cover)) return undefined;
+  return demo;
+}
+
+/** The same upload is stored both API-relative and absolute; compare the file. */
+function uploadKey(url: string): string {
+  const at = url.indexOf("/uploads/");
+  return (at >= 0 ? url.slice(at) : url).split("?")[0];
 }
 '''
 
 
 def emit() -> None:
-    """Write faceDemo.ts from what is ON DISK: a variant whose files are missing
-    simply does not appear, and that title falls back to its static cover."""
+    """Write faceDemo.ts from what is ON DISK: a variant whose files are missing,
+    or with no record of the cover it was swapped onto, simply does not appear,
+    and that title falls back to its static cover."""
     data = json.loads(DATA.read_text(encoding="utf-8"))
     blocks = []
     for slug in sorted(data):
         body = []
         for gender in ("boy", "girl"):
             v = data[slug].get(gender)
-            if not v or not (ASSETS / f"{slug}-{gender}-base.jpg").exists():
+            if not v or not v.get("cover") or not (ASSETS / f"{slug}-{gender}-base.jpg").exists():
                 continue
             rows = []
             for f in v["frames"]:
@@ -254,6 +275,7 @@ def emit() -> None:
                 continue
             body.append(
                 f"    {gender}: {{\n"
+                f'      cover: {json.dumps(v["cover"])},\n'
                 f'      base: "/samples/faceswap/{slug}-{gender}-base.jpg",\n'
                 "      frames: [\n" + "\n".join(rows) + "\n      ],\n"
                 "    },"
