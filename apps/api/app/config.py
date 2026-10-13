@@ -391,13 +391,16 @@ class Settings(BaseSettings):
 
     # Data retention: non-purchased previews purged this long after expiry;
     # purchased/approved books preserved this many days (Diffrun: 48h / 30 days).
-    # How long a render may go without recording any progress before it is
-    # declared dead. Every finished page writes to the job row, so this is the
-    # gap between pages, not the length of the render: comfortably longer than
-    # the slowest single page (a 360s provider call plus its one retry) and
-    # comfortably shorter than Celery's 60-minute hard kill, which is what used
-    # to leave a customer on a spinner overnight with nothing watching.
-    render_stall_minutes: int = 25
+    # How long a render may go without touching its job row before it is
+    # declared dead. A running render heartbeats the row every minute (see
+    # tasks._start_heartbeat), so silence this long means the worker process is
+    # gone -- not that Segmind is slow. It used to be the gap between finished
+    # pages, which one page's own retries could outlast, killing live renders.
+    render_stall_minutes: int = 10
+    # A job still waiting in the queue has no task to heartbeat for it, and may
+    # legitimately sit behind other renders; allow it longer than one render's
+    # hard limit before calling it lost.
+    render_queue_stall_minutes: int = 75
     data_retention_hours: int = 48
     preserved_retention_days: int = 30
     storage_dir: str = "/app/storage"

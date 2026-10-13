@@ -56,6 +56,35 @@ async def _disconnect(db: Prisma) -> None:
         await db.disconnect(timeout=_DISCONNECT_TIMEOUT)
 
 
+# The reaper reads `updatedAt` as proof the task is alive, but a page only
+# writes to the row when it FINISHES -- and one Segmind page can spend half an
+# hour in its own retries (five 360s attempts plus backoff) before it does. A
+# live render was being declared dead mid-page. The heartbeat touches the row
+# while the task is running, so silence means the process is gone, not slow.
+_HEARTBEAT_SECONDS = 60
+
+
+def _start_heartbeat(db: Prisma, job_id: str) -> asyncio.Task:
+    async def beat() -> None:
+        while True:
+            await asyncio.sleep(_HEARTBEAT_SECONDS)
+            with contextlib.suppress(Exception):
+                await db.job.update(
+                    where={"id": job_id},
+                    data={"updatedAt": datetime.now(timezone.utc)},
+                )
+
+    return asyncio.create_task(beat())
+
+
+async def _stop_heartbeat(beat: asyncio.Task | None) -> None:
+    if beat is None:
+        return
+    beat.cancel()
+    with contextlib.suppress(BaseException):
+        await beat
+
+
 _DEFAULT_CAPTIONS = [
     "Once upon a time there was a wonderful child named {{name}}.",
     "{{name}} woke up ready for an amazing adventure.",
@@ -345,6 +374,7 @@ async def _render_one(
 async def _run_preview(job_id: str) -> None:
     db = Prisma()
     await db.connect()
+    beat = _start_heartbeat(db, job_id)
     try:
         job = await db.job.find_unique(where={"id": job_id})
         if not job:
@@ -473,6 +503,7 @@ async def _run_preview(job_id: str) -> None:
         )
         raise
     finally:
+        await _stop_heartbeat(beat)
         await _disconnect(db)
 
 
@@ -565,6 +596,7 @@ async def _run_full(job_id: str) -> None:
     """
     db = Prisma()
     await db.connect()
+    beat = _start_heartbeat(db, job_id)
     try:
         job = await db.job.find_unique(where={"id": job_id})
         if not job:
@@ -634,6 +666,7 @@ async def _run_full(job_id: str) -> None:
         await db.job.update(where={"id": job_id}, data={"status": "failed"})
         raise
     finally:
+        await _stop_heartbeat(beat)
         await _disconnect(db)
 
 
@@ -664,6 +697,12 @@ async def _regenerate_page(job_id: str, page_number: int) -> None:
 
     db = Prisma()
     await db.connect()
+    beat = _start_heartbeat(db, job_id)
+    # The endpoint flips a finished book to "rendering" while one page is
+    # re-rolled. Nothing used to flip it back, so every re-roll left the job
+    # spinning at 100% until the reaper declared it dead. Whatever happens to
+    # the page, the book it belongs to is still the finished book it was.
+    error = None
     try:
         job = await db.job.find_unique(where={"id": job_id})
         if not job:
@@ -688,16 +727,26 @@ async def _regenerate_page(job_id: str, page_number: int) -> None:
         page["locked"] = not is_free(page_number, FREE) and not job.isPurchased
         pages[index] = {**page, "index": index}
         await db.job.update(where={"id": job_id}, data={"pages": Json(pages)})
+    except Exception as e:  # noqa: BLE001
+        # The previous version of the page is still there; say what happened.
+        error = f"Re-roll of page {page_number} failed: {str(e) or type(e).__name__}"
+        print(f"[regenerate] {job_id}: {error}", flush=True)
     finally:
+        await _stop_heartbeat(beat)
+        with contextlib.suppress(Exception):
+            await db.job.update(
+                where={"id": job_id},
+                data={"status": "completed", **({"error": error[:1000]} if error else {})},
+            )
         await _disconnect(db)
 
 
-@celery_app.task(name="app.tasks.regenerate_page", bind=True, max_retries=2)
+@celery_app.task(name="app.tasks.regenerate_page", bind=True)
 def regenerate_page(self, job_id: str, page_number: int) -> str:
-    try:
-        asyncio.run(_regenerate_page(job_id, page_number))
-    except Exception as exc:  # pragma: no cover
-        raise self.retry(exc=exc, countdown=5)
+    # No Celery retry: the swapper already redoes a failed page five times, and
+    # a retry queued after the status is restored could start a second paid
+    # render alongside a re-roll the customer asks for next.
+    asyncio.run(_regenerate_page(job_id, page_number))
     return job_id
 
 
@@ -927,13 +976,18 @@ async def _reap_stalled() -> int:
     db = Prisma()
     await db.connect()
     try:
-        cutoff = datetime.now(timezone.utc) - timedelta(
-            minutes=settings.render_stall_minutes
-        )
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(minutes=settings.render_stall_minutes)
+        queue_cutoff = now - timedelta(minutes=settings.render_queue_stall_minutes)
         stalled = await db.job.find_many(
             where={
-                "status": {"in": ["queued", "processing", "rendering"]},
-                "updatedAt": {"lt": cutoff},
+                "OR": [
+                    {
+                        "status": {"in": ["processing", "rendering"]},
+                        "updatedAt": {"lt": cutoff},
+                    },
+                    {"status": "queued", "updatedAt": {"lt": queue_cutoff}},
+                ]
             }
         )
         for job in stalled:
@@ -944,10 +998,14 @@ async def _reap_stalled() -> int:
                     # Written for whoever reads it in the admin list, which is
                     # the only place this surfaces.
                     "error": (
-                        "The render stopped responding and was declared dead "
-                        f"after {settings.render_stall_minutes} minutes without "
-                        "progress. Try again resumes from the pages that "
-                        "finished."
+                        f"The render never started after "
+                        f"{settings.render_queue_stall_minutes} minutes in the "
+                        "queue. Try again to queue it afresh."
+                        if job.status == "queued"
+                        else "The render's worker stopped responding (no "
+                        f"heartbeat for {settings.render_stall_minutes} minutes) "
+                        "and it was declared dead. Try again resumes from the "
+                        "pages that finished."
                     ),
                 },
             )

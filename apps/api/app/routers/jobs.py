@@ -251,6 +251,12 @@ async def regenerate_page(job_id: str, page_number: int):
             status_code=403,
             detail=f"Purchase to refine {label_of(page_number).lower()}",
         )
+    # Only a finished book can be refined: the task restores "completed" when
+    # it is done, which would otherwise mark a render still in flight as done.
+    if job.status != "completed":
+        raise HTTPException(
+            status_code=409, detail="Wait for the book to finish rendering"
+        )
     await prisma.job.update(
         where={"id": job_id}, data={"status": "rendering"}
     )
