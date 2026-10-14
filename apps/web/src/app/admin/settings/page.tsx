@@ -8,6 +8,7 @@ import {
   KeyRound,
   Loader2,
   MessageCircle,
+  ImageIcon,
   ScanFace,
   Sparkles,
 } from "lucide-react";
@@ -144,6 +145,7 @@ export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [savingToggle, setSavingToggle] = useState(false);
   const [savingHair, setSavingHair] = useState(false);
+  const [savingRaw, setSavingRaw] = useState(false);
 
   // WhatsApp number behind the site's chat button
   const [waInput, setWaInput] = useState("");
@@ -193,6 +195,22 @@ export default function AdminSettingsPage() {
       alert("Failed to update setting");
     } finally {
       setSavingHair(false);
+    }
+  }
+
+  async function toggleRawOutput() {
+    if (!s) return;
+    setSavingRaw(true);
+    try {
+      setS(
+        await adminApi.updateSettings({
+          segmindRawOutput: !s.segmindRawOutput,
+        }),
+      );
+    } catch {
+      alert("Failed to update setting");
+    } finally {
+      setSavingRaw(false);
     }
   }
 
@@ -453,6 +471,56 @@ export default function AdminSettingsPage() {
             : "OFF — the child's own hair"}
           . Takes effect on the next render, so re-render a job to see the
           difference.
+        </p>
+      </div>
+
+      {/* Segmind as-is */}
+      <div className="card mb-6 p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-lilac text-brand-primary">
+              <ImageIcon className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="font-bold text-slate-deep">
+                Use Segmind&apos;s output as-is
+              </h2>
+              <p className="mt-1 text-sm text-slate-mutedText">
+                When ON, each page is <b>exactly the image Segmind returns</b>{" "}
+                — the child&apos;s whole head, hair included, as the swapper
+                drew it. Face outline, hair-above-the-brows and every skin
+                retouch are skipped. The story text is still set on the page.
+              </p>
+              <p className="mt-2 text-xs text-slate-400">
+                Applies when the image provider is Segmind. Pages come out at
+                Segmind&apos;s own resolution instead of being re-seated into
+                the full-size artwork, so check a printed proof before using it
+                for hardcover orders.
+              </p>
+            </div>
+          </div>
+          <button
+            role="switch"
+            aria-checked={s.segmindRawOutput}
+            onClick={toggleRawOutput}
+            disabled={savingRaw}
+            className={`relative mt-1 h-7 w-12 shrink-0 rounded-full transition ${
+              s.segmindRawOutput ? "bg-brand-primary" : "bg-slate-300"
+            } disabled:opacity-60`}
+          >
+            <span
+              className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                s.segmindRawOutput ? "left-6" : "left-1"
+              }`}
+            />
+          </button>
+        </div>
+        <p className="mt-3 text-xs font-semibold text-slate-mutedText">
+          Currently:{" "}
+          {s.segmindRawOutput
+            ? "ON — Segmind's image, untouched"
+            : "OFF — post-processed (outline, hair and retouch settings apply)"}
+          . Takes effect on the next render.
         </p>
       </div>
 

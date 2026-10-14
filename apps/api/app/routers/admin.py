@@ -224,6 +224,8 @@ class SettingsPatch(BaseModel):
     faceOutlineEnabled: Optional[bool] = None
     # Whether a finished page keeps the plate's hair above the brow line.
     keepTemplateAboveBrows: Optional[bool] = None
+    # Use Segmind's swap exactly as returned, with no post-processing.
+    segmindRawOutput: Optional[bool] = None
     whatsappNumber: Optional[str] = None
     # "segmind" | "openai" — which service personalizes the child's face.
     imageProvider: Optional[str] = None
@@ -281,6 +283,8 @@ async def admin_update_settings(body: SettingsPatch):
         update_settings(
             {"keepTemplateAboveBrows": data["keepTemplateAboveBrows"]}
         )
+    if data.get("segmindRawOutput") is not None:
+        update_settings({"segmindRawOutput": data["segmindRawOutput"]})
     if data.get("whatsappNumber") is not None:
         from ..app_settings import normalize_whatsapp
 

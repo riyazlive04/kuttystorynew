@@ -197,10 +197,14 @@ async def _render_one(
     # Freeform polygon mask takes priority over the box; either constrains the
     # swap to the face so the template's hair is kept. Skipped entirely when the
     # admin has turned the face-outline feature OFF in Settings (full-head swap).
-    from .app_settings import face_outline_enabled
+    from .app_settings import face_outline_enabled, image_provider, segmind_raw_output
+
+    # Raw Segmind output: the page is the swapper's image as it came back, so
+    # there is no region to composite, re-seat or measure a halo in.
+    raw = image_provider() == "segmind" and segmind_raw_output()
 
     face_region = None
-    if face_outline_enabled():
+    if face_outline_enabled() and not raw:
         face_path = getattr(template, "facePath", None) if template else None
         if face_path and len(face_path) >= 3:
             face_region = {"points": face_path}
@@ -288,6 +292,7 @@ async def _render_one(
         # covers, so it does not run on them.
         if (
             not settings.halo_retry_enabled
+            or raw
             or attempt == attempts - 1
             or page_number in COVER_NUMBERS
             or page_number in PRINT_ONLY_NUMBERS

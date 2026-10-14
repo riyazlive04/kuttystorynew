@@ -100,6 +100,8 @@ export interface AdminSettings {
   faceOutlineEnabled: boolean;
   /** Whose hair a finished page shows above the brow line. */
   keepTemplateAboveBrows: boolean;
+  /** Use Segmind's swap exactly as returned, with no post-processing. */
+  segmindRawOutput: boolean;
   whatsappNumber: string;
   imageProvider: ImageProvider;
   segmind: ProviderKeyStatus;
@@ -325,6 +327,7 @@ export const adminApi = {
   updateSettings: (patch: {
     faceOutlineEnabled?: boolean;
     keepTemplateAboveBrows?: boolean;
+    segmindRawOutput?: boolean;
     imageProvider?: ImageProvider;
     segmindApiKey?: string;
     openaiApiKey?: string;

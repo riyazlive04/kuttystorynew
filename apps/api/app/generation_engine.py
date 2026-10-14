@@ -2452,6 +2452,13 @@ async def _segmind_faceswap(
                 r = await client.post(url, headers=headers, json=payload)
                 r.raise_for_status()
                 content = r.content
+                # Admin switch: the page is Segmind's image, untouched. Nothing
+                # below runs -- no composite, no hair guard, no retouch.
+                from .app_settings import segmind_raw_output
+
+                if segmind_raw_output():
+                    print("[segmind] raw output: no post-processing", flush=True)
+                    return _save_bytes(content, prefix="page")
                 # Keep the template's hair: paste only the AUTHORED face oval from
                 # the full swap back onto the original template. No authored
                 # region -> the full-head swap is used as it comes back, which is

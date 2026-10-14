@@ -16,6 +16,10 @@ Currently holds:
   art — "segmind" (FaceSwap-Comic) or "openai" (gpt-image-1 face-crop edit). Lives
   here rather than in env so an admin can A/B the two without a redeploy, and so
   the API and the Celery worker always agree on the active provider mid-job.
+- segmindRawOutput: show Segmind's swap exactly as it comes back. Skips every
+  step after the call -- the face-oval composite, the hair guards, the skin
+  retouches and the re-seat into the full-resolution plate. The story text is
+  still set on top. Off by default: the post-processing is the current pipeline.
 """
 from __future__ import annotations
 
@@ -38,6 +42,7 @@ DEFAULTS: dict = {
     # is closer to the real child and, on this artwork, looks it.
     # Env sets the starting position; the admin toggle overrides it at runtime.
     "keepTemplateAboveBrows": settings.keep_template_above_brows,
+    "segmindRawOutput": False,
 }
 
 IMAGE_PROVIDERS = ("segmind", "openai")
@@ -76,6 +81,10 @@ def face_outline_enabled() -> bool:
 
 def keep_template_above_brows() -> bool:
     return bool(get_settings().get("keepTemplateAboveBrows", True))
+
+
+def segmind_raw_output() -> bool:
+    return bool(get_settings().get("segmindRawOutput", False))
 
 
 def image_provider() -> str:
