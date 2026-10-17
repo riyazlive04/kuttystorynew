@@ -2433,6 +2433,23 @@ def _segmind_face_mask(target_src: str, face_region: dict):
     hair = (lum < float(np.percentile(cheek, 60)) * 0.6).astype(np.uint8)
     hair = cv2.morphologyEx(hair, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
     m = (np.asarray(mask) * (1 - hair)).astype(np.uint8)
+
+    # Never past the face itself. Everything inside the mask is canvas Segmind
+    # paints into, and a trace that bulges over an ear or the background gets a
+    # ghost ear and smeared scenery there -- worst when the child's photo
+    # barely shows their ears. Clipped to the plate's own face silhouette
+    # (landmarks), with a small margin so the jaw and temples still blend; the
+    # ears and the background stay the illustration's, however the page was
+    # traced.
+    from .face_landmarks import face_oval
+
+    oval = face_oval(_image_bytes(target_src))
+    if oval:
+        sil = Image.new("L", (W, H), 0)
+        ImageDraw.Draw(sil).polygon(oval["points"], fill=255)
+        grow = max(3, int(oval["span"] * 0.04)) | 1
+        sil = cv2.dilate(np.asarray(sil), np.ones((grow, grow), np.uint8))
+        m = np.minimum(m, sil).astype(np.uint8)
     if not m.any():
         return None
     out = Image.fromarray(m, "L")

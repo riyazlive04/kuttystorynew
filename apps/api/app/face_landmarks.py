@@ -142,6 +142,28 @@ def brow_and_eye_outlines(image_bytes: bytes) -> Optional[dict]:
         return None
 
 
+# The mesh's silhouette of the face itself: forehead, temples, cheeks and jaw.
+# Ears are outside it.
+_FACE_OVAL = (
+    10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379,
+    378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127,
+    162, 21, 54, 103, 67, 109,
+)
+
+
+def face_oval(image_bytes: bytes) -> Optional[dict]:
+    """`{points, span}` -- the face's own outline in PIXELS -- or None."""
+    try:
+        found = _landmarks(image_bytes)
+        if not found:
+            return None
+        lm, W, H, span = found
+        return {"points": [(lm[i].x * W, lm[i].y * H) for i in _FACE_OVAL], "span": span}
+    except Exception as e:  # noqa: BLE001
+        print(f"[landmarks] face oval skipped: {e}", flush=True)
+        return None
+
+
 def face_box(image_bytes: bytes) -> Optional[dict]:
     """A brow-to-chin, cheek-to-cheek region in PERCENT, or None.
 
