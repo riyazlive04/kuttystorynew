@@ -63,6 +63,10 @@ model Story {
   // Restrict who this book can be personalized for: "boy", "girl", or null for
   // both. Set when the authored base art only works for one gender.
   genderLock    String?
+  // Whose hair this book's pages show: "child" -- Segmind's own swap, the
+  // child's hair painted in style -- or "illustration" -- the masked swap, the
+  // artwork's hair kept as drawn. Null follows the global Settings switches.
+  hairMode      String?
   // The Spine page's artwork, mirrored here so the storefront can show it on
   // the book's edge without joining page templates on every listing request.
   spineImage    String?

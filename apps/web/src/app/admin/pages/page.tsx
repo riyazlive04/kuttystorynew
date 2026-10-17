@@ -22,6 +22,7 @@ import {
   type TextBlock,
   type TextBox,
   type Variant,
+  type HairMode,
 } from "@/lib/admin";
 
 // The canvas width the stored fontSize/letterSpacing are authored against — the
@@ -525,6 +526,7 @@ Each page takes 2-5 minutes and costs ${cost}. Pages that already have an outlin
 
   const story = stories.find((x) => x.slug === slug);
   const lock = story?.genderLock ?? null;
+  const hairMode = story?.hairMode ?? null;
 
   // Two checkboxes, one underlying value: ticking one unticks the other, and
   // neither ticked means the book is offered for any child.
@@ -555,6 +557,21 @@ Each page takes 2-5 minutes and costs ${cost}. Pages that already have an outlin
       alert(err instanceof Error ? err.message : "Could not save the age range");
     } finally {
       setAgeBusy(false);
+    }
+  }
+
+  async function setHair(next: HairMode | null) {
+    if (!slug) return;
+    setStories((prev) =>
+      prev.map((x) => (x.slug === slug ? { ...x, hairMode: next } : x)),
+    );
+    try {
+      await adminApi.setHairMode(slug, next);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not save that");
+      setStories((prev) =>
+        prev.map((x) => (x.slug === slug ? { ...x, hairMode } : x)),
+      );
     }
   }
 
@@ -832,6 +849,28 @@ Each page takes 2-5 minutes and costs ${cost}. Pages that already have an outlin
             ))}
           </select>
         </div>
+      </div>
+
+      {/* Whose hair this book shows */}
+      <div className="card mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 p-4">
+        <span className="text-sm font-bold text-slate-deep">Hair</span>
+        <select
+          value={hairMode ?? ""}
+          onChange={(e) => setHair((e.target.value || null) as HairMode | null)}
+          className="rounded-lg border-2 border-brand-borderAccent bg-white px-2 py-1 text-sm font-semibold outline-none focus:border-brand-primary"
+        >
+          <option value="">Follow global Settings</option>
+          <option value="child">Child&apos;s own hair (Segmind as-is)</option>
+          <option value="illustration">Illustration&apos;s hair (masked swap)</option>
+        </select>
+        <span className="text-xs text-slate-mutedText">
+          {hairMode === "child"
+            ? "Best when the illustrated child has short or close-cut hair; long template hair can show as a ghost."
+            : hairMode === "illustration"
+              ? "Keeps the artwork's hairstyle; only the face is swapped. Best for long or styled template hair."
+              : "Uses the Segmind switches on the Settings page."}{" "}
+          Applies from the next render.
+        </span>
       </div>
 
       {/* Who this book is offered to */}

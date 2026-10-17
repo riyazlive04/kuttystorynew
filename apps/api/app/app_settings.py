@@ -29,6 +29,7 @@ Currently holds:
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 
@@ -93,6 +94,33 @@ def keep_template_above_brows() -> bool:
 
 def segmind_raw_output() -> bool:
     return bool(get_settings().get("segmindRawOutput", False))
+
+
+# A book's own hair choice, set by the render task for the book it is rendering
+# (each Celery task runs in its own asyncio.run, so this never leaks between
+# books). None = follow the global switches.
+HAIR_MODES = ("child", "illustration")
+_book_hair_mode: contextvars.ContextVar = contextvars.ContextVar("book_hair_mode", default=None)
+
+
+def set_book_hair_mode(mode) -> None:
+    _book_hair_mode.set(mode if mode in HAIR_MODES else None)
+
+
+def segmind_mode() -> str:
+    """How the Segmind swap is used for the page being rendered:
+    "raw" (as returned), "mask" (face-only masked swap) or "default".
+    The book's own choice wins over the global Settings switches."""
+    book = _book_hair_mode.get()
+    if book == "child":
+        return "raw"
+    if book == "illustration":
+        return "mask"
+    if segmind_raw_output():
+        return "raw"
+    if segmind_hair_mask():
+        return "mask"
+    return "default"
 
 
 def segmind_hair_mask() -> bool:

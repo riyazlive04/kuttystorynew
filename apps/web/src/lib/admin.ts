@@ -67,6 +67,8 @@ export interface AdminStory {
   supportsTamil: boolean;
   active: boolean;
   genderLock?: Variant | null; // null = offered for any child
+  /** Whose hair the pages show; null follows the global Settings. */
+  hairMode?: HairMode | null;
   minAge?: number;
   maxAge?: number;
 }
@@ -89,6 +91,9 @@ export interface StoryCreate {
 }
 
 export type ImageProvider = "segmind" | "openai";
+
+/** "child" = Segmind's own swap (the child's hair); "illustration" = masked swap. */
+export type HairMode = "child" | "illustration";
 
 export interface ProviderKeyStatus {
   set: boolean;
@@ -433,6 +438,11 @@ export const adminApi = {
     req(`/admin/stories/${slug}/ages`, {
       method: "PATCH",
       body: JSON.stringify({ minAge, maxAge }),
+    }),
+  setHairMode: (slug: string, hairMode: HairMode | null): Promise<AdminStory> =>
+    req(`/admin/stories/${slug}/hair-mode`, {
+      method: "PATCH",
+      body: JSON.stringify({ hairMode }),
     }),
   setGenderLock: (slug: string, genderLock: Variant | null): Promise<AdminStory> =>
     req(`/admin/stories/${slug}/gender-lock`, {

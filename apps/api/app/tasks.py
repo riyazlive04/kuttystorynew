@@ -37,6 +37,7 @@ from .pages_layout import (
     render_seed,
 )
 from .text_layer import personalize
+from .app_settings import set_book_hair_mode
 from .worker import celery_app
 
 FREE = settings.free_preview_pages
@@ -197,11 +198,11 @@ async def _render_one(
     # Freeform polygon mask takes priority over the box; either constrains the
     # swap to the face so the template's hair is kept. Skipped entirely when the
     # admin has turned the face-outline feature OFF in Settings (full-head swap).
-    from .app_settings import face_outline_enabled, image_provider, segmind_raw_output
+    from .app_settings import face_outline_enabled, image_provider, segmind_mode
 
     # Raw Segmind output: the page is the swapper's image as it came back, so
     # there is no region to composite, re-seat or measure a halo in.
-    raw = image_provider() == "segmind" and segmind_raw_output()
+    raw = image_provider() == "segmind" and segmind_mode() == "raw"
 
     face_region = None
     if face_outline_enabled() and not raw:
@@ -385,6 +386,7 @@ async def _run_preview(job_id: str) -> None:
         if not job:
             return
         story = await db.story.find_unique(where={"slug": job.storySlug})
+        set_book_hair_mode(getattr(story, "hairMode", None) if story else None)
         gallery = (story.gallery if story else []) or []
         templates = await _templates(db, story.id, job.gender) if story else {}
 
@@ -525,6 +527,7 @@ async def _run_remaining(job_id: str) -> None:
         if not job:
             return
         story = await db.story.find_unique(where={"slug": job.storySlug})
+        set_book_hair_mode(getattr(story, "hairMode", None) if story else None)
         gallery = (story.gallery if story else []) or []
         templates = await _templates(db, story.id, job.gender) if story else {}
 
@@ -607,6 +610,7 @@ async def _run_full(job_id: str) -> None:
         if not job:
             return
         story = await db.story.find_unique(where={"slug": job.storySlug})
+        set_book_hair_mode(getattr(story, "hairMode", None) if story else None)
         gallery = (story.gallery if story else []) or []
         templates = await _templates(db, story.id, job.gender) if story else {}
 
@@ -713,6 +717,7 @@ async def _regenerate_page(job_id: str, page_number: int) -> None:
         if not job:
             return
         story = await db.story.find_unique(where={"slug": job.storySlug})
+        set_book_hair_mode(getattr(story, "hairMode", None) if story else None)
         templates = await _templates(db, story.id, job.gender) if story else {}
         gallery = (story.gallery if story else []) or []
         base = _base_art(gallery, page_number)

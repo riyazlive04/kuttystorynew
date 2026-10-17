@@ -578,6 +578,23 @@ async def admin_set_ages(slug: str, body: AgesPatch):
     return {**story_dict(story), "active": story.active}
 
 
+class HairModePatch(BaseModel):
+    # null = follow the global Settings; "child" = Segmind's own swap (the
+    # child's hair); "illustration" = the masked swap (the artwork's hair).
+    hairMode: Optional[Literal["child", "illustration"]] = None
+
+
+@router.patch("/stories/{slug}/hair-mode", dependencies=[Depends(require_admin)])
+async def admin_set_hair_mode(slug: str, body: HairModePatch):
+    """Choose whose hair this book's pages show. Applies from the next render."""
+    story = await prisma.story.update(
+        where={"slug": slug}, data={"hairMode": body.hairMode}
+    )
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    return {**story_dict(story), "active": story.active}
+
+
 class GenderLockPatch(BaseModel):
     # null = the book is offered for any child; "boy"/"girl" restricts it.
     genderLock: Optional[Literal["boy", "girl"]] = None

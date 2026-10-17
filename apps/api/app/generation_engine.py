@@ -2508,10 +2508,10 @@ async def _segmind_faceswap(
     comic = "comic" in settings.segmind_faceswap_model
     # Admin switch: confine the swap to the face so the illustration's hair is
     # never redrawn. Comic model only -- it is the one that takes a mask.
-    from .app_settings import segmind_hair_mask, segmind_raw_output
+    from .app_settings import segmind_mode
 
     face_mask = None
-    if comic and face_region and segmind_hair_mask() and not segmind_raw_output():
+    if comic and face_region and segmind_mode() == "mask":
         try:
             face_mask = _segmind_face_mask(target_src, face_region)
         except Exception as me:  # noqa: BLE001 -- fall back to the unmasked swap
@@ -2546,9 +2546,9 @@ async def _segmind_faceswap(
                 content = r.content
                 # Admin switch: the page is Segmind's image, untouched. Nothing
                 # below runs -- no composite, no hair guard, no retouch.
-                from .app_settings import segmind_raw_output
+                from .app_settings import segmind_mode
 
-                if segmind_raw_output():
+                if segmind_mode() == "raw":
                     # One exception: the bindi faceswap-comic invents on
                     # children who wear none. It is not part of what Segmind
                     # was asked for, and the removal only repaints a small spot
