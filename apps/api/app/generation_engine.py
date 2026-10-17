@@ -2267,10 +2267,22 @@ def _remove_forehead_mark(data: bytes, region: dict) -> bytes:
         # the real surrounding skin and feather the patch edge back into the
         # untouched pixels so the repair doesn't read as a sharper/softer
         # island against the rest of the forehead.
-        mark_wide = cv2.dilate(keep, np.ones((5, 5), np.uint8), iterations=2)
-        healed = cv2.inpaint(spot, mark_wide, 5, cv2.INPAINT_TELEA)
+        # Sized for a ~1024px swap; a full-size 2482px page has the same mark
+        # at 2.4x the pixels, and the fixed kernel left its rim and satellite
+        # dots behind. Scales up only -- a 1024px page is treated as before.
+        scale = max(1.0, max(W, H) / 1024.0)
+        k = int(round(5 * scale)) | 1
+        mark_wide = cv2.dilate(keep, np.ones((k, k), np.uint8), iterations=2)
+        healed = cv2.inpaint(spot, mark_wide, int(round(5 * scale)), cv2.INPAINT_TELEA)
 
-        feather = cv2.GaussianBlur(mark_wide.astype(np.float32), (9, 9), 0)
+        fk = int(round(9 * scale)) | 1
+        feather = cv2.GaussianBlur(mark_wide.astype(np.float32), (fk, fk), 0)
+        # The repair is confined to this crop. Where the grown mask reaches the
+        # crop's edge, a feather that is still at full strength there ends in
+        # a straight line across the forehead -- fade it out before the edge.
+        ys, xs = np.ogrid[:spot_h, :spot_w]
+        edge = np.minimum(np.minimum(ys, spot_h - 1 - ys), np.minimum(xs, spot_w - 1 - xs))
+        feather = feather * np.clip(edge / float(fk), 0.0, 1.0)
         feather = np.clip(feather, 0.0, 1.0)[:, :, None]
         blended = (healed.astype(np.float32) * feather + spot.astype(np.float32) * (1.0 - feather))
         rgb[y0:y1, x0:x1] = blended.astype(np.uint8)
@@ -2457,7 +2469,17 @@ async def _segmind_faceswap(
                 from .app_settings import segmind_raw_output
 
                 if segmind_raw_output():
-                    print("[segmind] raw output: no post-processing", flush=True)
+                    # One exception: the bindi faceswap-comic invents on
+                    # children who wear none. It is not part of what Segmind
+                    # was asked for, and the removal only repaints a small spot
+                    # whose colour stands out from the skin around it. Raw mode
+                    # has no face region, but the step finds the forehead from
+                    # landmarks on the swap itself -- the region is only its
+                    # on-switch, so any truthy one will do.
+                    if comic:
+                        content = _remove_forehead_mark(content, {"raw": True})
+                    print("[segmind] raw output: no post-processing "
+                          f"({'bindi check only' if comic else 'none'})", flush=True)
                     return _save_bytes(content, prefix="page")
                 # Keep the template's hair: paste only the AUTHORED face oval from
                 # the full swap back onto the original template. No authored

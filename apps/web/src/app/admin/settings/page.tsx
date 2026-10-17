@@ -488,8 +488,10 @@ export default function AdminSettingsPage() {
               <p className="mt-1 text-sm text-slate-mutedText">
                 When ON, each page is <b>exactly the image Segmind returns</b>{" "}
                 — the child&apos;s whole head, hair included, as the swapper
-                drew it. Face outline, hair-above-the-brows and every skin
-                retouch are skipped. The story text is still set on the page.
+                drew it. Face outline, hair-above-the-brows and the skin
+                retouches are skipped. Two things still happen: the story text
+                is set on the page, and the bindi Segmind sometimes invents
+                between the brows is removed.
               </p>
               <p className="mt-2 text-xs text-slate-400">
                 Applies when the image provider is Segmind. Pages come out at
