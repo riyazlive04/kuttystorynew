@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from "next/cache";
 import { STORIES, getStory } from "./data";
 import type { Story } from "./types";
 
@@ -48,6 +49,23 @@ export async function getStories(): Promise<Story[]> {
     }
   }
   return STORIES;
+}
+
+/**
+ * The catalogue for a page that SHOWS it -- home, shop, gift guide.
+ *
+ * Same as getStories(), with one difference that matters on a deploy: an
+ * empty shelf is never cached. A deploy rebuilds the web image while the API
+ * restarts, so the build-time render got no titles, and with no earlier page
+ * to fall back on Next served "0 titles" until the next background refresh --
+ * the whole shop looked empty after every deploy. Opting this render out of
+ * the cache makes the page render live instead (showing the books as soon as
+ * the API answers), and a failed background refresh keeps the last good page.
+ */
+export async function getShelf(): Promise<Story[]> {
+  const stories = await getStories();
+  if (API && !stories.length) noStore();
+  return stories;
 }
 
 export async function getStoryBySlug(slug: string): Promise<Story | undefined> {

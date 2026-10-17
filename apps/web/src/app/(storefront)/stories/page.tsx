@@ -5,7 +5,7 @@ import { StoryLibrary } from "@/components/StoryLibrary";
 import { Faq } from "@/components/Faq";
 import { JsonLd } from "@/components/JsonLd";
 import { KeyFacts, Prose, ProseH2, RelatedLinks } from "@/components/Prose";
-import { getStories, STORY_REVALIDATE } from "@/lib/stories.server";
+import { getShelf, STORY_REVALIDATE } from "@/lib/stories.server";
 import { FAQS } from "@/lib/faqs";
 import { inr } from "@/lib/format";
 import {
@@ -36,7 +36,7 @@ export const metadata: Metadata = pageMeta({
 
 export default async function StoriesPage() {
   // Server-fetched: the catalogue ships in the HTML instead of behind a spinner.
-  const stories = await getStories();
+  const stories = await getShelf();
 
   const fromPdf = stories.length
     ? PRICES.pdf

@@ -7,7 +7,7 @@ import { Faq } from "@/components/Faq";
 import { JsonLd } from "@/components/JsonLd";
 import { KeyFacts, Prose, ProseH2, ProseH3, RelatedLinks } from "@/components/Prose";
 import { GIFT_FAQS } from "@/lib/faqs";
-import { getStories, STORY_REVALIDATE } from "@/lib/stories.server";
+import { getShelf, STORY_REVALIDATE } from "@/lib/stories.server";
 import { inr } from "@/lib/format";
 import {
   FACTS,
@@ -40,7 +40,7 @@ export const metadata: Metadata = pageMeta({
 });
 
 export default async function ReturnGiftsPage() {
-  const stories = await getStories();
+  const stories = await getShelf();
   const picks = stories.slice(0, 3);
   const fromPdf = stories.length
     ? PRICES.pdf

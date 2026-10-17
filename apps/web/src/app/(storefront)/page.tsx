@@ -11,7 +11,7 @@ import { HomeSeoContent } from "@/components/HomeSeoContent";
 import { RelatedLinks } from "@/components/Prose";
 import { JsonLd } from "@/components/JsonLd";
 import { FAQS } from "@/lib/faqs";
-import { getStories, STORY_REVALIDATE } from "@/lib/stories.server";
+import { getShelf, STORY_REVALIDATE } from "@/lib/stories.server";
 import {
   DEFAULT_DESCRIPTION,
   DEFAULT_TITLE,
@@ -41,7 +41,7 @@ export default async function HomePage() {
   // crawler receives, not painted in afterwards by an effect. Only published
   // books come back, and the hero art is built from the same list — so a book
   // taken down stops appearing anywhere on this page.
-  const stories = await getStories();
+  const stories = await getShelf();
 
   // Prices quoted in the body copy and the schema come from the live catalogue
   // rather than a hardcoded number, so a repriced title can never leave a stale
