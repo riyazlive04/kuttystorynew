@@ -2508,8 +2508,28 @@ def _segmind_face_mask(target_src: str, face_region: dict):
                 int((x + w * 0.25) * W):int((x + w * 0.75) * W)]
     if cheek.size < 50:
         return None
-    hair = (lum < float(np.percentile(cheek, 60)) * 0.6).astype(np.uint8)
-    hair = cv2.morphologyEx(hair, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+    skin = float(np.percentile(cheek, 60))
+    core = (lum < skin * 0.6).astype(np.uint8)
+    core = cv2.morphologyEx(core, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+    # The fringe's thin tips and the shading drawn under it are lighter than
+    # the hair's body. Left inside the mask, Segmind repainted them as skin but
+    # kept a ghost of them -- faint strands and a shadow line across the
+    # forehead. Anything moderately dark CLOSE to the hair's edge is the
+    # illustration's hair too, and stays exactly as drawn. Close, not merely
+    # connected: on a plate whose forehead is shaded, "connected" swallowed the
+    # whole forehead and ended the mask in a straight line. Only above the
+    # plate's brows, so its brows and eyes are never caught.
+    from .face_landmarks import brow_and_eye_outlines
+
+    feats = brow_and_eye_outlines(_image_bytes(target_src))
+    span = feats["span"] if feats else max(8.0, w * W * 0.5)
+    reach = max(3, int(span * 0.12)) | 1
+    near = cv2.dilate(core, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (reach, reach)))
+    tips = ((lum < skin * 0.82) & (near > 0)).astype(np.uint8)
+    if feats:
+        brow_top = min(yy for poly in feats["brows"] for _, yy in poly)
+        tips[int(max(0, brow_top - span * 0.04)):] = 0
+    hair = np.maximum(core, tips)
     m = (np.asarray(mask) * (1 - hair)).astype(np.uint8)
 
     # Never past the face itself. Everything inside the mask is canvas Segmind
@@ -2614,7 +2634,9 @@ async def _segmind_faceswap(
                 }
                 if face_mask:
                     payload["mask_image"] = base64.b64encode(face_mask[0]).decode()
-                    payload["grow_mask"] = 4
+                    # Small: growing the mask pushes it into the hairline,
+                    # where Segmind half-repaints the strand tips.
+                    payload["grow_mask"] = 2
             else:
                 payload = {
                     "source_image": source_b64,
