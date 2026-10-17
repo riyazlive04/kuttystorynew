@@ -2391,6 +2391,80 @@ def current_segmind_key() -> str:
     return get_secret("segmind_api_key") or settings.segmind_api_key or ""
 
 
+def _lift_fringe_shadow(swapped: bytes, template: bytes) -> bytes:
+    """Lighten the shading the illustration drew under its fringe.
+
+    The masked swap keeps the illustration's hair exactly as drawn, and with it
+    the shadow painted on the forehead under the fringe -- painted for the
+    illustrated child's forehead. Next to the swapped child's brighter skin it
+    reads as a dark smudge. Only the low-frequency shading in the band under
+    the hair is lifted, toward the child's own skin brightness, and only ever
+    lightened: strand tips and every edge are high-frequency and come through.
+    """
+    try:
+        import cv2
+        import numpy as np
+
+        from .face_landmarks import brow_and_eye_outlines, face_oval
+
+        out = cv2.cvtColor(cv2.imdecode(np.frombuffer(swapped, np.uint8), cv2.IMREAD_COLOR),
+                           cv2.COLOR_BGR2RGB)
+        plate = cv2.cvtColor(cv2.imdecode(np.frombuffer(template, np.uint8), cv2.IMREAD_COLOR),
+                             cv2.COLOR_BGR2RGB)
+        H, W = out.shape[:2]
+        if plate.shape[:2] != (H, W):
+            plate = cv2.resize(plate, (W, H), interpolation=cv2.INTER_AREA)
+        feats = brow_and_eye_outlines(swapped)
+        oval = face_oval(swapped)
+        if not feats or not oval:
+            return swapped
+        span = feats["span"]
+        brow_top = min(y for poly in feats["brows"] for _, y in poly)
+        eye_bottom = max(y for poly in feats["eyes"] for _, y in poly)
+
+        lab = cv2.cvtColor(out, cv2.COLOR_RGB2LAB).astype(np.float32)
+        L = lab[..., 0]
+        p_l = cv2.cvtColor(plate, cv2.COLOR_RGB2LAB)[..., 0].astype(np.float32)
+
+        face = np.zeros((H, W), np.uint8)
+        cv2.fillPoly(face, [np.array(oval["points"], np.int32)], 1)
+        xs = [x for x, _ in oval["points"]]
+        cx0, cx1 = int(min(xs) + (max(xs) - min(xs)) * 0.25), int(max(xs) - (max(xs) - min(xs)) * 0.25)
+        cheeks = L[int(eye_bottom + span * 0.1):int(eye_bottom + span * 0.45), cx0:cx1]
+        if cheeks.size < 50:
+            return swapped
+        skin = float(np.percentile(cheeks, 60))
+        p_cheeks = p_l[int(eye_bottom + span * 0.1):int(eye_bottom + span * 0.45), cx0:cx1]
+        p_skin = float(np.percentile(p_cheeks, 60)) if p_cheeks.size >= 50 else skin
+
+        # The band: the forehead between the illustration's hair and the brows.
+        hair = (p_l < p_skin * 0.6).astype(np.uint8)
+        band = (face > 0) & (hair == 0)
+        band[int(max(0, brow_top - span * 0.03)):] = False
+        if band.sum() < 50:
+            return swapped
+        sigma = max(2.0, span * 0.05)
+        weight = cv2.GaussianBlur(band.astype(np.float32), (0, 0), sigma * 0.6)
+        weight *= (1 - cv2.GaussianBlur(hair.astype(np.float32), (0, 0), 1.5))
+        low = cv2.GaussianBlur(L, (0, 0), sigma)
+        target = skin * 0.98   # a forehead sits a touch under the cheek's light
+        lift = np.clip(target - low, 0.0, 60.0) * np.clip(weight, 0.0, 1.0)
+        if float(lift.max()) < 2.0:
+            return swapped
+        lab[..., 0] = np.clip(L + lift, 0, 255)
+        res = cv2.cvtColor(lab.astype(np.uint8), cv2.COLOR_LAB2RGB)
+        ok, buf = cv2.imencode(".jpg", cv2.cvtColor(res, cv2.COLOR_RGB2BGR),
+                               [cv2.IMWRITE_JPEG_QUALITY, 95])
+        if not ok:
+            return swapped
+        print(f"[segmind] fringe shadow lifted: up to {float(lift.max()):.0f} L "
+              f"over {int((lift > 1).sum())}px of forehead", flush=True)
+        return buf.tobytes()
+    except Exception as e:  # noqa: BLE001 -- a shadow is not worth a failed page
+        print(f"[segmind] fringe shadow lift skipped: {e}", flush=True)
+        return swapped
+
+
 def _clear_source_fringe(photo: bytes) -> bytes:
     """The child's photo with the fringe painted out of the forehead.
 
@@ -2672,6 +2746,9 @@ async def _segmind_faceswap(
                     # tone, and the bindi the comic model invents.
                     from .color import open_srgb
 
+                    # The illustration's fringe shading was drawn for its own
+                    # child's forehead; lift it to this child's skin.
+                    content = _lift_fringe_shadow(content, _image_bytes(target_src))
                     out_img = open_srgb(content)
                     if settings.match_surrounding_skin:
                         from .skin_tone import match_surrounding_skin
