@@ -2391,6 +2391,84 @@ def current_segmind_key() -> str:
     return get_secret("segmind_api_key") or settings.segmind_api_key or ""
 
 
+def _clear_source_fringe(photo: bytes) -> bytes:
+    """The child's photo with the fringe painted out of the forehead.
+
+    For the masked swap only. Segmind repaints the face from the photo, and a
+    fringe that falls to the brows in the photo comes back as locks painted on
+    the forehead -- cut off where the mask ends, under the illustration's own
+    hairline. With the forehead cleared there is nothing to copy, and it
+    paints a clean one. Eyes and brows are protected by their landmark
+    outlines; nothing below the brows is touched. Returns the photo unchanged
+    if the face cannot be measured.
+    """
+    try:
+        import cv2
+        import numpy as np
+
+        from .face_landmarks import brow_and_eye_outlines, face_oval
+
+        feats = brow_and_eye_outlines(photo)
+        oval = face_oval(photo)
+        if not feats or not oval:
+            return photo
+        rgb = cv2.cvtColor(cv2.imdecode(np.frombuffer(photo, np.uint8), cv2.IMREAD_COLOR),
+                           cv2.COLOR_BGR2RGB)
+        H, W = rgb.shape[:2]
+        span = feats["span"]
+        brow_top = min(y for poly in feats["brows"] for _, y in poly)
+        eye_bottom = max(y for poly in feats["eyes"] for _, y in poly)
+        xs = [x for x, _ in oval["points"]]
+        left, right = int(max(0, min(xs))), int(min(W, max(xs)))
+
+        lum = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)[..., 0].astype(np.float32)
+        cheek = lum[int(eye_bottom + span * 0.1):int(eye_bottom + span * 0.45),
+                    int(left + (right - left) * 0.25):int(right - (right - left) * 0.25)]
+        if cheek.size < 50:
+            return photo
+        skin = float(np.percentile(cheek, 60))
+
+        # The brows' own outline, not a margin around it: a fringe resting on
+        # the brows sits in any margin, and left there it reads to Segmind as
+        # heavy brows -- it painted a near-monobrow from exactly that.
+        guard = np.zeros((H, W), np.uint8)
+        for poly in feats["brows"] + feats["eyes"]:
+            cv2.fillPoly(guard, [cv2.convexHull(np.array(poly, np.int32))], 1)
+        pad = max(3, int(span * 0.04))
+
+        # The forehead: the face's own outline above the brows, so the cleared
+        # area ends in a hairline with the child's hair above it, not a block.
+        face = np.zeros((H, W), np.uint8)
+        cv2.fillPoly(face, [np.array(oval["points"], np.int32)], 1)
+        zone = (face > 0)
+        zone[int(max(0, brow_top)):] = False
+        hair = (lum < skin * 0.75) & zone & (guard == 0)
+        if hair.sum() < 50:
+            return photo
+        hole = cv2.dilate(hair.astype(np.uint8), np.ones((pad, pad), np.uint8))
+        hole[guard > 0] = 0
+        # A flat fill of the child's own cheek colour, softly edged. Inpainting
+        # a hole this size drew the hair's colour in from its border and left a
+        # brown wedge; Segmind only reads the photo for who the child is, and a
+        # plain forehead is exactly what it should read here.
+        cheek_rgb = rgb[int(eye_bottom + span * 0.1):int(eye_bottom + span * 0.45),
+                        int(left + (right - left) * 0.25):int(right - (right - left) * 0.25)]
+        fill = np.median(cheek_rgb.reshape(-1, 3), axis=0).astype(np.float32)
+        a = cv2.GaussianBlur(hole.astype(np.float32), (0, 0), max(2.0, pad * 0.8))
+        a = np.clip(a * (1 - (guard > 0)), 0.0, 1.0)[..., None]
+        cleared = (rgb.astype(np.float32) * (1 - a) + fill * a).astype(np.uint8)
+        ok, buf = cv2.imencode(".jpg", cv2.cvtColor(cleared, cv2.COLOR_RGB2BGR),
+                               [cv2.IMWRITE_JPEG_QUALITY, 95])
+        if not ok:
+            return photo
+        print(f"[segmind] source fringe cleared: {int(hair.sum())}px above the brows",
+              flush=True)
+        return buf.tobytes()
+    except Exception as e:  # noqa: BLE001 -- the photo as uploaded beats a failed page
+        print(f"[segmind] source fringe clearing skipped: {e}", flush=True)
+        return photo
+
+
 def _segmind_face_mask(target_src: str, face_region: dict):
     """The face for Segmind to repaint, as (RGB PNG bytes, L mask), or None.
 
@@ -2516,6 +2594,10 @@ async def _segmind_faceswap(
             face_mask = _segmind_face_mask(target_src, face_region)
         except Exception as me:  # noqa: BLE001 -- fall back to the unmasked swap
             print(f"[segmind] face mask skipped: {me}", flush=True)
+    if face_mask:
+        # The illustration's hair is kept, so the child's fringe has nowhere to
+        # go but onto the forehead as cut-off locks. Send a photo without it.
+        source_b64 = base64.b64encode(_clear_source_fringe(face_crop_bytes)).decode()
     async with httpx.AsyncClient(timeout=timeout) as client:
         for attempt in range(attempts):
             if comic:
