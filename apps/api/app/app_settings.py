@@ -20,6 +20,9 @@ Currently holds:
   step after the call -- the face-oval composite, the hair guards, the skin
   retouches and the re-seat into the full-resolution plate. The story text is
   still set on top. Off by default: the post-processing is the current pipeline.
+- segmindHairMask: send Segmind a mask of the face -- the traced outline minus
+  the illustration's own hair -- so the swap repaints only the face and the
+  illustration's hair is never touched. No hair is pasted back afterwards.
 - openaiChildHair: with the OpenAI provider, repaint the child's whole head --
   their own hairstyle included -- instead of only the face inside the traced
   outline. Off keeps the illustration's hair, as before.
@@ -47,6 +50,7 @@ DEFAULTS: dict = {
     "keepTemplateAboveBrows": settings.keep_template_above_brows,
     "segmindRawOutput": False,
     "openaiChildHair": False,
+    "segmindHairMask": False,
 }
 
 IMAGE_PROVIDERS = ("segmind", "openai")
@@ -89,6 +93,10 @@ def keep_template_above_brows() -> bool:
 
 def segmind_raw_output() -> bool:
     return bool(get_settings().get("segmindRawOutput", False))
+
+
+def segmind_hair_mask() -> bool:
+    return bool(get_settings().get("segmindHairMask", False))
 
 
 def openai_child_hair() -> bool:

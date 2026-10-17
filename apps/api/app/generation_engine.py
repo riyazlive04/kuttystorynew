@@ -2391,6 +2391,56 @@ def current_segmind_key() -> str:
     return get_secret("segmind_api_key") or settings.segmind_api_key or ""
 
 
+def _segmind_face_mask(target_src: str, face_region: dict):
+    """The face for Segmind to repaint, as (RGB PNG bytes, L mask), or None.
+
+    White is repainted, black comes back untouched (verified against the live
+    API). The traced outline, minus the illustration's own hair -- anything in
+    it clearly darker than the plate's cheek skin -- so a fringe that dips into
+    the outline stays the illustration's, drawn as it was.
+
+    Tried once before as a plain oval and reverted for costing the likeness;
+    measured again on two plates with the traced shape, the likeness held and
+    the hair came back exactly as drawn.
+    """
+    import cv2
+    import numpy as np
+
+    from .color import open_srgb
+
+    plate = open_srgb(_image_bytes(target_src))
+    W, H = plate.size
+    mask = Image.new("L", (W, H), 0)
+    draw = ImageDraw.Draw(mask)
+    points = face_region.get("points")
+    if points and len(points) >= 3:
+        draw.polygon([(float(p[0]) / 100 * W, float(p[1]) / 100 * H) for p in points], fill=255)
+    else:
+        b = _region_bounds_pct(face_region)
+        if not b:
+            return None
+        x, y, w, h = b
+        draw.ellipse([x / 100 * W, y / 100 * H, (x + w) / 100 * W, (y + h) / 100 * H], fill=255)
+    b = _region_bounds_pct(face_region)
+    if not b:
+        return None
+    x, y, w, h = (v / 100 for v in b)
+    lum = cv2.cvtColor(np.asarray(plate), cv2.COLOR_RGB2LAB)[..., 0].astype(np.float32)
+    cheek = lum[int((y + h * 0.6) * H):int((y + h * 0.75) * H),
+                int((x + w * 0.25) * W):int((x + w * 0.75) * W)]
+    if cheek.size < 50:
+        return None
+    hair = (lum < float(np.percentile(cheek, 60)) * 0.6).astype(np.uint8)
+    hair = cv2.morphologyEx(hair, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+    m = (np.asarray(mask) * (1 - hair)).astype(np.uint8)
+    if not m.any():
+        return None
+    out = Image.fromarray(m, "L")
+    buf = io.BytesIO()
+    out.convert("RGB").save(buf, format="PNG")
+    return buf.getvalue(), out
+
+
 async def _segmind_faceswap(
     *,
     target_src: str,
@@ -2439,6 +2489,16 @@ async def _segmind_faceswap(
     # the live API, which answers "Both source_image and target_image are
     # required" to anything else -- so only those are sent.
     comic = "comic" in settings.segmind_faceswap_model
+    # Admin switch: confine the swap to the face so the illustration's hair is
+    # never redrawn. Comic model only -- it is the one that takes a mask.
+    from .app_settings import segmind_hair_mask, segmind_raw_output
+
+    face_mask = None
+    if comic and face_region and segmind_hair_mask() and not segmind_raw_output():
+        try:
+            face_mask = _segmind_face_mask(target_src, face_region)
+        except Exception as me:  # noqa: BLE001 -- fall back to the unmasked swap
+            print(f"[segmind] face mask skipped: {me}", flush=True)
     async with httpx.AsyncClient(timeout=timeout) as client:
         for attempt in range(attempts):
             if comic:
@@ -2453,6 +2513,9 @@ async def _segmind_faceswap(
                     "base64": False,
                     "output_format": "jpeg",
                 }
+                if face_mask:
+                    payload["mask_image"] = base64.b64encode(face_mask[0]).decode()
+                    payload["grow_mask"] = 4
             else:
                 payload = {
                     "source_image": source_b64,
@@ -2480,6 +2543,26 @@ async def _segmind_faceswap(
                         content = _remove_forehead_mark(content, {"raw": True})
                     print("[segmind] raw output: no post-processing "
                           f"({'bindi check only' if comic else 'none'})", flush=True)
+                    return _save_bytes(content, prefix="page")
+                if face_mask:
+                    # The illustration's hair was never touched, so nothing is
+                    # pasted back. What is left is the plate's skin just outside
+                    # the face (cheek edge, ears, neck), moved to the new face's
+                    # tone, and the bindi the comic model invents.
+                    from .color import open_srgb
+
+                    out_img = open_srgb(content)
+                    if settings.match_surrounding_skin:
+                        from .skin_tone import match_surrounding_skin
+
+                        tmpl_img = open_srgb(_image_bytes(target_src))
+                        soft = face_mask[1].filter(ImageFilter.GaussianBlur(4))
+                        if tmpl_img.size == out_img.size:
+                            out_img = match_surrounding_skin(tmpl_img, out_img, soft)
+                    buf = io.BytesIO()
+                    out_img.save(buf, format="JPEG", quality=95)
+                    content = _remove_forehead_mark(buf.getvalue(), face_region)
+                    print("[segmind] masked swap: illustration's hair kept as drawn", flush=True)
                     return _save_bytes(content, prefix="page")
                 # Keep the template's hair: paste only the AUTHORED face oval from
                 # the full swap back onto the original template. No authored

@@ -147,6 +147,7 @@ export default function AdminSettingsPage() {
   const [savingHair, setSavingHair] = useState(false);
   const [savingRaw, setSavingRaw] = useState(false);
   const [savingChildHair, setSavingChildHair] = useState(false);
+  const [savingHairMask, setSavingHairMask] = useState(false);
 
   // WhatsApp number behind the site's chat button
   const [waInput, setWaInput] = useState("");
@@ -212,6 +213,22 @@ export default function AdminSettingsPage() {
       alert("Failed to update setting");
     } finally {
       setSavingRaw(false);
+    }
+  }
+
+  async function toggleHairMask() {
+    if (!s) return;
+    setSavingHairMask(true);
+    try {
+      setS(
+        await adminApi.updateSettings({
+          segmindHairMask: !s.segmindHairMask,
+        }),
+      );
+    } catch {
+      alert("Failed to update setting");
+    } finally {
+      setSavingHairMask(false);
     }
   }
 
@@ -488,6 +505,56 @@ export default function AdminSettingsPage() {
             : "OFF — the child's own hair"}
           . Takes effect on the next render, so re-render a job to see the
           difference.
+        </p>
+      </div>
+
+      {/* Segmind masked swap */}
+      <div className="card mb-6 p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-lilac text-brand-primary">
+              <ScanFace className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="font-bold text-slate-deep">
+                Segmind: keep the illustration&apos;s hair (masked swap)
+              </h2>
+              <p className="mt-1 text-sm text-slate-mutedText">
+                When ON, Segmind is told to repaint <b>only the face</b> — the
+                traced outline minus the illustration&apos;s own hair — so the
+                hair is never redrawn and nothing is pasted back afterwards. No
+                cap-like edge, no patches; pages come back at full resolution.
+              </p>
+              <p className="mt-2 text-xs text-slate-400">
+                Needs a traced (or auto-detected) face outline; trace it cheek
+                to cheek, hairline to chin. Takes priority over &ldquo;Hair
+                above the brows&rdquo;. Ignored while &ldquo;Use Segmind&apos;s
+                output as-is&rdquo; is ON.
+              </p>
+            </div>
+          </div>
+          <button
+            role="switch"
+            aria-checked={s.segmindHairMask}
+            onClick={toggleHairMask}
+            disabled={savingHairMask}
+            className={`relative mt-1 h-7 w-12 shrink-0 rounded-full transition ${
+              s.segmindHairMask ? "bg-brand-primary" : "bg-slate-300"
+            } disabled:opacity-60`}
+          >
+            <span
+              className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                s.segmindHairMask ? "left-6" : "left-1"
+              }`}
+            />
+          </button>
+        </div>
+        <p className="mt-3 text-xs font-semibold text-slate-mutedText">
+          Currently:{" "}
+          {s.segmindHairMask
+            ? "ON — Segmind repaints the face only"
+            : "OFF — Segmind redraws the whole head"}
+          . Takes effect on the next render.
         </p>
       </div>
 

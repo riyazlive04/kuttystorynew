@@ -228,6 +228,8 @@ class SettingsPatch(BaseModel):
     segmindRawOutput: Optional[bool] = None
     # OpenAI provider: repaint the whole head, the child's own hair included.
     openaiChildHair: Optional[bool] = None
+    # Segmind: mask the swap to the face so the illustration's hair is kept.
+    segmindHairMask: Optional[bool] = None
     whatsappNumber: Optional[str] = None
     # "segmind" | "openai" — which service personalizes the child's face.
     imageProvider: Optional[str] = None
@@ -289,6 +291,8 @@ async def admin_update_settings(body: SettingsPatch):
         update_settings({"segmindRawOutput": data["segmindRawOutput"]})
     if data.get("openaiChildHair") is not None:
         update_settings({"openaiChildHair": data["openaiChildHair"]})
+    if data.get("segmindHairMask") is not None:
+        update_settings({"segmindHairMask": data["segmindHairMask"]})
     if data.get("whatsappNumber") is not None:
         from ..app_settings import normalize_whatsapp
 
