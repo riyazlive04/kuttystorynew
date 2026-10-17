@@ -20,6 +20,9 @@ Currently holds:
   step after the call -- the face-oval composite, the hair guards, the skin
   retouches and the re-seat into the full-resolution plate. The story text is
   still set on top. Off by default: the post-processing is the current pipeline.
+- openaiChildHair: with the OpenAI provider, repaint the child's whole head --
+  their own hairstyle included -- instead of only the face inside the traced
+  outline. Off keeps the illustration's hair, as before.
 """
 from __future__ import annotations
 
@@ -43,6 +46,7 @@ DEFAULTS: dict = {
     # Env sets the starting position; the admin toggle overrides it at runtime.
     "keepTemplateAboveBrows": settings.keep_template_above_brows,
     "segmindRawOutput": False,
+    "openaiChildHair": False,
 }
 
 IMAGE_PROVIDERS = ("segmind", "openai")
@@ -85,6 +89,10 @@ def keep_template_above_brows() -> bool:
 
 def segmind_raw_output() -> bool:
     return bool(get_settings().get("segmindRawOutput", False))
+
+
+def openai_child_hair() -> bool:
+    return bool(get_settings().get("openaiChildHair", False))
 
 
 def image_provider() -> str:

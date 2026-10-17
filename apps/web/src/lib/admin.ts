@@ -102,6 +102,8 @@ export interface AdminSettings {
   keepTemplateAboveBrows: boolean;
   /** Use Segmind's swap exactly as returned, with no post-processing. */
   segmindRawOutput: boolean;
+  /** OpenAI provider: repaint the whole head, the child's own hair included. */
+  openaiChildHair: boolean;
   whatsappNumber: string;
   imageProvider: ImageProvider;
   segmind: ProviderKeyStatus;
@@ -328,6 +330,7 @@ export const adminApi = {
     faceOutlineEnabled?: boolean;
     keepTemplateAboveBrows?: boolean;
     segmindRawOutput?: boolean;
+    openaiChildHair?: boolean;
     imageProvider?: ImageProvider;
     segmindApiKey?: string;
     openaiApiKey?: string;

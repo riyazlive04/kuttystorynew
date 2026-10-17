@@ -2790,6 +2790,43 @@ def _openai_cache_put(key: str, url: str) -> None:
         print(f"[openai] cache write skipped: {e}", flush=True)
 
 
+def _head_region(face_region: Optional[dict]) -> Optional[dict]:
+    """The traced face grown into the whole head, as a box in PERCENT.
+
+    A face outline runs roughly hairline (or brow) to chin. The child's own hair
+    sits above and around that, so the repaint area reaches up most of a face
+    height and out to the sides; the mask is an ellipse inside this box.
+    """
+    b = _region_bounds_pct(face_region or {})
+    if not b:
+        return None
+    x, y, w, h = b
+    left, top = max(0.0, x - w * 0.5), max(0.0, y - h * 1.05)
+    right, bottom = min(100.0, x + w * 1.5), min(100.0, y + h * 1.15)
+    if right - left <= 0 or bottom - top <= 0:
+        return None
+    return {"x": left, "y": top, "w": right - left, "h": bottom - top}
+
+
+def _openai_head_prompt(style_prompt: Optional[str]) -> str:
+    """Masked edit of the whole head: the child's face AND their own hairstyle."""
+    style = (style_prompt or "").strip()
+    return (
+        "The first image is a crop of a children's storybook illustration, with "
+        "the character's head marked as the editable (transparent) area. The "
+        "second image is a reference photo of a real child. Repaint ONLY the "
+        "masked head so it is recognisably the child from the reference photo - "
+        "their face shape, eyes, eyebrows, nose, mouth, skin tone AND their own "
+        "hairstyle, hair length and hair colour. The illustrated character's "
+        "original face and hair must not survive. Keep any hat, helmet or hair "
+        "accessory the character wears. Everything outside the mask - clothing, "
+        "background, the art style, brushwork, colour palette and lighting - "
+        "must stay exactly as it is in the first image. Paint the new head as an "
+        "illustration in the same style, not a photograph."
+        + (f" Art style: {style}." if style else "")
+    )
+
+
 def _openai_masked_prompt(style_prompt: Optional[str]) -> str:
     """Instruction for the masked edit: plate first, photo second.
 
@@ -2950,6 +2987,15 @@ async def _openai_faceswap(
     quality = (quality or _openai_quality(is_preview)).strip().lower()
     fidelity = (input_fidelity or settings.openai_input_fidelity).strip().lower()
     padding = FACE_CROP_PADDING if crop_padding is None else crop_padding
+    # Admin switch: repaint the whole head so the page shows the child's own
+    # hair. The traced outline still says WHERE the head is; it is grown from
+    # the face to the head for the crop, the mask and the paste-back.
+    from .app_settings import openai_child_hair
+
+    child_hair = bool(face_region) and openai_child_hair()
+    edit_region = _head_region(face_region) if child_hair else face_region
+    if child_hair and not edit_region:
+        child_hair, edit_region = False, face_region
 
     cache_key = _openai_cache_key(
         plate_bytes,
@@ -2963,6 +3009,7 @@ async def _openai_faceswap(
         padding,
         photo_first,
         "masked-v1",
+        "head" if child_hair else "face",
     )
     cached = _openai_cache_get(cache_key)
     if cached:
@@ -2972,7 +3019,7 @@ async def _openai_faceswap(
     from .color import open_srgb
 
     plate = open_srgb(plate_bytes)
-    box = _face_crop_box(face_region, plate.size, padding) if face_region else None
+    box = _face_crop_box(edit_region, plate.size, padding) if edit_region else None
     prompt = _openai_prompt(style_prompt, photo_first)
 
     if box:
@@ -2982,11 +3029,15 @@ async def _openai_faceswap(
         # Mark the face inside the crop as the only editable area. With one, the
         # prompt changes too: the mask is guidance for this model, not a hard
         # boundary, so both have to say the same thing.
-        mask_png = _openai_mask_png(face_region or {}, plate.size, box)
+        mask_png = _openai_mask_png(edit_region or {}, plate.size, box)
+        masked_prompt = (
+            _openai_head_prompt(style_prompt) if child_hair
+            else _openai_masked_prompt(style_prompt)
+        )
         edited = await _openai_edit_call(
             scene_png=buf.getvalue(),
             face_bytes=face_bytes,
-            prompt=_openai_masked_prompt(style_prompt) if mask_png else prompt,
+            prompt=masked_prompt if mask_png else prompt,
             quality=quality,
             input_fidelity=fidelity,
             photo_first=photo_first,
@@ -3021,7 +3072,24 @@ async def _openai_faceswap(
 
     # Same feathered mask as the Segmind path: take only the authored face oval /
     # lasso from the edit, keeping the plate's hair and everything else untouched.
-    if face_region:
+    if child_hair and box:
+        # Not the face-outline composite: its hair guards exist to put the
+        # ILLUSTRATION's hair back, the opposite of this mode. Blend the
+        # repainted head in through a soft oval instead, so the square crop
+        # the model returned leaves no seam on the page.
+        head = Image.new("L", plate.size, 0)
+        x, y, w, h = _region_bounds_pct(edit_region) or (0, 0, 0, 0)
+        cw, ch = plate.size
+        ImageDraw.Draw(head).ellipse(
+            [x / 100 * cw, y / 100 * ch, (x + w) / 100 * cw, (y + h) / 100 * ch], fill=255
+        )
+        head = head.filter(ImageFilter.GaussianBlur(max(3.0, max(cw, ch) / 250)))
+        blended = Image.composite(swapped, plate, head)
+        out = io.BytesIO()
+        blended.save(out, format="JPEG", quality=95)
+        content = out.getvalue()
+        print("[openai] head repainted with the child's own hair", flush=True)
+    elif face_region:
         try:
             content = _composite_face_region(target_src, content, face_region)
         except Exception as ce:  # noqa: BLE001

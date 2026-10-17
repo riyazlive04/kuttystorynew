@@ -146,6 +146,7 @@ export default function AdminSettingsPage() {
   const [savingToggle, setSavingToggle] = useState(false);
   const [savingHair, setSavingHair] = useState(false);
   const [savingRaw, setSavingRaw] = useState(false);
+  const [savingChildHair, setSavingChildHair] = useState(false);
 
   // WhatsApp number behind the site's chat button
   const [waInput, setWaInput] = useState("");
@@ -211,6 +212,22 @@ export default function AdminSettingsPage() {
       alert("Failed to update setting");
     } finally {
       setSavingRaw(false);
+    }
+  }
+
+  async function toggleChildHair() {
+    if (!s) return;
+    setSavingChildHair(true);
+    try {
+      setS(
+        await adminApi.updateSettings({
+          openaiChildHair: !s.openaiChildHair,
+        }),
+      );
+    } catch {
+      alert("Failed to update setting");
+    } finally {
+      setSavingChildHair(false);
     }
   }
 
@@ -522,6 +539,56 @@ export default function AdminSettingsPage() {
           {s.segmindRawOutput
             ? "ON — Segmind's image, untouched"
             : "OFF — post-processed (outline, hair and retouch settings apply)"}
+          . Takes effect on the next render.
+        </p>
+      </div>
+
+      {/* OpenAI: child's own hair */}
+      <div className="card mb-6 p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-lilac text-brand-primary">
+              <Sparkles className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="font-bold text-slate-deep">
+                OpenAI: paint the child&apos;s own hair
+              </h2>
+              <p className="mt-1 text-sm text-slate-mutedText">
+                When ON and the image provider is OpenAI, the{" "}
+                <b>whole head is repainted</b> in the page&apos;s style — the
+                child&apos;s face and their own hairstyle — instead of only the
+                face inside the traced outline. Hats and hair accessories are
+                kept. When OFF, the illustration&apos;s hair stays, as before.
+              </p>
+              <p className="mt-2 text-xs text-slate-400">
+                Needs a traced (or auto-detected) face outline to know where the
+                head is. Long hair that falls well below the shoulders on the
+                illustration may still show past the repainted area.
+              </p>
+            </div>
+          </div>
+          <button
+            role="switch"
+            aria-checked={s.openaiChildHair}
+            onClick={toggleChildHair}
+            disabled={savingChildHair}
+            className={`relative mt-1 h-7 w-12 shrink-0 rounded-full transition ${
+              s.openaiChildHair ? "bg-brand-primary" : "bg-slate-300"
+            } disabled:opacity-60`}
+          >
+            <span
+              className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                s.openaiChildHair ? "left-6" : "left-1"
+              }`}
+            />
+          </button>
+        </div>
+        <p className="mt-3 text-xs font-semibold text-slate-mutedText">
+          Currently:{" "}
+          {s.openaiChildHair
+            ? "ON — the child's own hair (OpenAI provider)"
+            : "OFF — the illustration's hair"}
           . Takes effect on the next render.
         </p>
       </div>
