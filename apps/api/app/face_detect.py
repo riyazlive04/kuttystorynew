@@ -273,7 +273,52 @@ SHARPNESS_SOFT = 3.5
 # back, and there is little detail to swap from however sharp the shot is.
 FACE_FRACTION_SMALL = 0.04
 
+# A fringe that rests on the eyebrows comes back as a stray strand painted on
+# the forehead -- the swapper copies the lock tips it sees. Share of the strip
+# just above the brows that is hair. Measured on seven photos: the two with a
+# fringe on the brows read 100% and 83%, every other one 41% or less.
+FRINGE_ON_BROWS = 0.60
+
 _ANALYSIS_CACHE: dict[str, dict] = {}
+
+
+def _fringe_on_brows(image_bytes: bytes) -> Optional[float]:
+    """Fraction (0-1) of the strip just above the eyebrows that is hair, or
+    None if the face could not be measured. Hair = clearly darker than the
+    child's own cheek; the brows themselves are left out of the strip."""
+    import cv2
+    import numpy as np
+
+    from .face_landmarks import brow_and_eye_outlines
+
+    feats = brow_and_eye_outlines(image_bytes)
+    if not feats:
+        return None
+    img = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        return None
+    lum = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)[..., 0].astype(np.float32)
+    span = feats["span"]
+    brow_top = min(y for poly in feats["brows"] for _, y in poly)
+    eye_bottom = max(y for poly in feats["eyes"] for _, y in poly)
+    xs = [x for poly in feats["brows"] for x, _ in poly]
+    left, right = int(min(xs)), int(max(xs))
+    if right - left < 8:
+        return None
+    cheek = lum[int(eye_bottom + span * 0.1):int(eye_bottom + span * 0.45),
+                int(left + (right - left) * 0.25):int(right - (right - left) * 0.25)]
+    if cheek.size < 50:
+        return None
+    skin = float(np.percentile(cheek, 60))
+    brows = np.zeros(lum.shape, np.uint8)
+    for poly in feats["brows"]:
+        cv2.fillPoly(brows, [cv2.convexHull(np.array(poly, np.int32))], 1)
+    strip = np.zeros(lum.shape, bool)
+    strip[int(max(0, brow_top - span * 0.25)):int(max(0, brow_top)), left:right] = True
+    strip &= brows == 0
+    if strip.sum() < 50:
+        return None
+    return float(((lum < skin * 0.75) & strip).sum()) / float(strip.sum())
 
 
 def _relative_sharpness(face) -> Optional[float]:
@@ -301,7 +346,7 @@ def analyse_photo(image_bytes: bytes) -> dict:
 
         ok            bool   -- usable without a caveat
         score         float  -- 0-1, only for RANKING several photos
-        verdict       str    -- no_face | small | blurry | soft | good
+        verdict       str    -- no_face | small | blurry | soft | fringe | good
         message       str    -- one sentence for the parent, or ""
         sharpness     float | None
         faceFraction  float
@@ -370,15 +415,33 @@ def analyse_photo(image_bytes: bytes) -> dict:
     else:
         verdict, ok, message = "good", True, ""
 
+    # Only once the face itself is fine: no face, too small or blurry are the
+    # bigger problem, and one warning at a time is all a parent needs.
+    fringe = None
+    if verdict in ("good", "soft"):
+        try:
+            fringe = _fringe_on_brows(image_bytes)
+        except Exception as e:  # noqa: BLE001 -- a caveat is not worth a failed upload
+            print(f"[photo-check] fringe check skipped: {e}", flush=True)
+        if fringe is not None and fringe > FRINGE_ON_BROWS:
+            verdict, ok = "fringe", False
+            message = ("Your child's hair falls onto their eyebrows in this photo, "
+                       "so the book may show a stray strand of hair on the "
+                       "forehead. A photo with the hair brushed back off the "
+                       "forehead gives the cleanest result.")
+
     # For ranking only. Both terms saturate: past a point a bigger or sharper
     # face stops adding identity, and without a ceiling one would dominate.
     score = min(fraction / 0.10, 1.0) * min((sharpness or 0.0) / 6.0, 1.0)
+    if verdict == "fringe":
+        score *= 0.6  # of several uploads, prefer one with a clear forehead
 
     return done({
         "ok": ok, "score": round(score, 4), "verdict": verdict,
         "message": message,
         "sharpness": None if sharpness is None else round(sharpness, 2),
         "faceFraction": round(fraction, 4),
+        "fringe": None if fringe is None else round(fringe, 3),
     })
 
 

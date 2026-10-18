@@ -139,7 +139,7 @@ export async function validatePromo(
 export type PhotoQuality = {
   ok: boolean;
   score: number;
-  verdict: "good" | "soft" | "blurry" | "small" | "no_face";
+  verdict: "good" | "soft" | "blurry" | "small" | "no_face" | "fringe";
   message: string;
   sharpness: number | null;
   faceFraction: number;
