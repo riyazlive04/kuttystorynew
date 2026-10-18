@@ -2285,6 +2285,21 @@ def _remove_forehead_mark(data: bytes, region: dict) -> bytes:
         feather = feather * np.clip(edge / float(fk), 0.0, 1.0)
         feather = np.clip(feather, 0.0, 1.0)[:, :, None]
         blended = (healed.astype(np.float32) * feather + spot.astype(np.float32) * (1.0 - feather))
+        # Removing a real mark puts skin where a coloured dot was, which never
+        # darkens the spot. A repair that does is a false alarm: shading
+        # between the brows read as a "mark", and the fill drew the brows'
+        # dark into the gap -- a dark wedge joining them (seen on Siyaansh).
+        # Leave the page as it was.
+        repaired = mark_wide > 0
+        before_l = cv2.cvtColor(spot, cv2.COLOR_RGB2LAB)[..., 0].astype(np.float32)
+        after_l = cv2.cvtColor(blended.astype(np.uint8), cv2.COLOR_RGB2LAB)[..., 0].astype(np.float32)
+        # Measured: a real invented bindi's repair moved the darkest 5% of its
+        # pixels by -4 L; the false alarm between Siyaansh's brows by -23.
+        shift = (after_l - before_l)[repaired] if repaired.any() else None
+        if shift is not None and float(np.percentile(shift, 5)) < -12.0:
+            print("[retouch] forehead mark: repair would darken the spot -- "
+                  "not a mark, left as is", flush=True)
+            return data
         rgb[y0:y1, x0:x1] = blended.astype(np.uint8)
         print(
             f"[retouch] forehead mark: removed {int(keep.sum())}px "
