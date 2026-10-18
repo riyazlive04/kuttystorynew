@@ -2343,6 +2343,22 @@ def _soften_undereye(data: bytes, region: dict, strength: float) -> bytes:
         bx, by, bw, bh = bounds
         eyes = eyes_in_face(data, {"x": bx, "y": by, "w": bw, "h": bh})
         if not eyes:
+            # The cascade misses painted eyes, which left this a no-op on
+            # every illustrated page. The landmark outlines find them; each is
+            # turned into the square, eye-centred box the cascade would give,
+            # since the band below is measured in that box's proportions.
+            from .face_landmarks import brow_and_eye_outlines
+
+            feats = brow_and_eye_outlines(data)
+            if feats:
+                eyes = []
+                for poly in feats["eyes"]:
+                    xs = [x for x, _ in poly]
+                    ys = [y for _, y in poly]
+                    ew = max(xs) - min(xs)
+                    cx, cy = (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2
+                    eyes.append((int(cx - ew / 2), int(cy - ew / 2), int(ew), int(ew)))
+        if not eyes:
             return data  # no eyes located means nothing to be careful around
 
         W, H = img.size
@@ -2759,7 +2775,10 @@ async def _segmind_faceswap(
                             out_img = match_surrounding_skin(tmpl_img, out_img, soft)
                     buf = io.BytesIO()
                     out_img.save(buf, format="JPEG", quality=95)
-                    content = _remove_forehead_mark(buf.getvalue(), face_region)
+                    content = _soften_undereye(
+                        buf.getvalue(), face_region, settings.undereye_softening
+                    )
+                    content = _remove_forehead_mark(content, face_region)
                     print("[segmind] masked swap: illustration's hair kept as drawn", flush=True)
                     return _save_bytes(content, prefix="page")
                 # Keep the template's hair: paste only the AUTHORED face oval from
