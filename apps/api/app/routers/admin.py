@@ -744,6 +744,7 @@ def _page_dict(p) -> dict:
         "warpDistortH": getattr(p, "warpDistortH", 0) or 0,
         "warpDistortV": getattr(p, "warpDistortV", 0) or 0,
         "warpVertical": bool(getattr(p, "warpVertical", False)),
+        "noChild": bool(getattr(p, "noChild", False)),
         "textBlocks": list(getattr(p, "textBlocks", None) or []),
         "textBox": dict(getattr(p, "textBox", None) or {}),
         "variant": getattr(p, "variant", None) or "boy",
@@ -846,6 +847,8 @@ class PageUpsert(BaseModel):
     warpDistortH: float = 0
     warpDistortV: float = 0
     warpVertical: bool = False
+    # No child on this page: it is never sent to the face swapper.
+    noChild: bool = False
     textBlocks: Optional[list] = None
     textBox: Optional[dict] = None
 

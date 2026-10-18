@@ -172,6 +172,8 @@ export interface AdminPage {
   warpDistortH: number;  // -100..100
   warpDistortV: number;  // -100..100
   warpVertical: boolean;
+  /** No child on this page: never sent to the face swapper, printed as drawn. */
+  noChild?: boolean;
   textBlocks?: TextBlock[];
   textBox?: TextBox;
   variant?: Variant; // which gender's artwork this page belongs to

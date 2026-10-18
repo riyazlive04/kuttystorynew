@@ -245,6 +245,15 @@ async def _render_one(
     # customer's book.
     attempts = 1 + max(0, settings.halo_retry_attempts)
     image_url = None
+    if template is not None and getattr(template, "noChild", False) and base_image_url:
+        # An admin marked this page as having no child -- a unicorn, a view of
+        # the castle. Given one anyway, the swapper finds the nearest thing to
+        # a face and puts the child's on it, so it is never asked: the page is
+        # the illustration as drawn, and only the story text goes on below.
+        print(f"[render] page {page_number}: no child on this page, swap skipped",
+              flush=True)
+        image_url = base_image_url
+        attempts = 0
     for attempt in range(attempts):
         image_url = await render_page(
             scene_prompt=scene,

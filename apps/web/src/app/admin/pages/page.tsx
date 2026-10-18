@@ -1107,6 +1107,28 @@ Each page takes 2-5 minutes and costs ${cost}. Pages that already have an outlin
               />
             </Field>
 
+            {/* Asked before the outline: a page with no child has nothing
+                to trace, and the swapper would otherwise put the child's face
+                on whatever looks most like one -- an animal's. */}
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border-2 border-brand-borderAccent bg-white p-3">
+              <input
+                type="checkbox"
+                checked={!!page.noChild}
+                onChange={(e) => patch("noChild", e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-brand-primary"
+              />
+              <span>
+                <span className="block text-sm font-bold text-slate-deep">
+                  No child on this page
+                </span>
+                <span className="block text-xs text-slate-mutedText">
+                  For pages with only an animal, a scene or other characters.
+                  The page is never sent for face personalisation and prints
+                  exactly as drawn; the story text is still added.
+                </span>
+              </span>
+            </label>
+
             {!faceOutlineOn ? (
               <Field label="Face outline">
                 <p className="rounded-xl border-2 border-dashed border-brand-borderAccent bg-slate-50 p-3 text-xs text-slate-mutedText">
