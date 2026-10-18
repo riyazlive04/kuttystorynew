@@ -528,13 +528,18 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                         Used for the book
                       </span>
                     )}
+                    {/* A labelled flag and a frame, not a bare icon: the icon
+                        alone was easy to miss on a busy photo. */}
                     {photo.quality && !photo.quality.ok && (
-                      <span
-                        title={photo.quality.message}
-                        className="absolute left-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-amber-400 text-slate-deep"
-                      >
-                        <AlertTriangle className="h-3.5 w-3.5" />
-                      </span>
+                      <>
+                        <span className="pointer-events-none absolute inset-0 rounded-2xl ring-4 ring-inset ring-amber-400" />
+                        <span
+                          title={photo.quality.message}
+                          className="absolute left-1 top-1 inline-flex items-center gap-1 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-slate-deep shadow"
+                        >
+                          <AlertTriangle className="h-3 w-3" /> Check photo
+                        </span>
+                      </>
                     )}
                     <button
                       type="button"
@@ -565,22 +570,44 @@ export function PersonalizeWizard({ story }: { story: Story }) {
                 away, rather than from a finished book that does not look like
                 their child. Nothing is blocked — they can carry on. */}
             {photos.some((p) => p.quality && !p.quality.ok) && (
-              <ul className="space-y-2 rounded-2xl bg-amber-50 p-4 text-sm text-slate-deep">
-                {photos.map((photo, i) =>
-                  photo.quality && !photo.quality.ok ? (
-                    <li key={photo.id} className="flex gap-2">
-                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-                      <span>
+              <div
+                role="alert"
+                className="rounded-2xl border-2 border-amber-400 bg-amber-50 p-4 text-sm text-slate-deep"
+              >
+                <p className="mb-2 flex items-center gap-2 text-base font-extrabold">
+                  <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
+                  {photos.length > 1
+                    ? "Some photos may not give a good likeness"
+                    : "This photo may not give a good likeness"}
+                </p>
+                <ul className="space-y-1.5">
+                  {photos.map((photo, i) =>
+                    photo.quality && !photo.quality.ok ? (
+                      <li key={photo.id}>
                         <span className="font-semibold">Photo {i + 1}:</span>{" "}
                         {photo.quality.message}
                         {photo.id === primaryId && photos.length > 1 && (
                           <> It is the one being used — tap another to switch.</>
                         )}
-                      </span>
-                    </li>
-                  ) : null,
+                      </li>
+                    ) : null,
+                  )}
+                </ul>
+                <p className="mt-2 text-xs text-slate-mutedText">
+                  Best results: one child, facing the camera, face clearly visible
+                  and filling most of the photo. You can still continue with this
+                  one.
+                </p>
+                {photos.length < MAX_PHOTOS && (
+                  <button
+                    type="button"
+                    onClick={() => openPicker("gallery")}
+                    className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2 text-sm font-bold text-slate-deep transition hover:bg-amber-300"
+                  >
+                    <Upload className="h-4 w-4" /> Upload a different photo
+                  </button>
                 )}
-              </ul>
+              </div>
             )}
             <div className="flex flex-wrap items-center gap-3">
               <button

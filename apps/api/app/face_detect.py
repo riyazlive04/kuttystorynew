@@ -199,6 +199,24 @@ def detect_face_region(image_bytes: bytes) -> Optional[dict]:
         print(f"[face-detect] skipped: {e}", flush=True)
         region = None
 
+    if region is None:
+        # The cascades' size limits were set on storybook pages, where a face
+        # over 45% of the short edge is a false positive. In a close-up PHOTO
+        # it is the best kind of upload -- and rejecting it reported "no clear
+        # face" to the parent and sent the whole photo, bystanders included,
+        # to the swapper uncropped. The landmark mesh has no such limit. Its
+        # box starts at the brows; lifted to the hairline to match this one.
+        try:
+            from .face_landmarks import face_box
+
+            fb = face_box(image_bytes)
+            if fb:
+                top = max(0.0, fb["y"] - fb["h"] * 0.35)
+                region = {"x": fb["x"], "y": round(top, 3), "w": fb["w"],
+                          "h": round(fb["y"] + fb["h"] - top, 3), "auto": True}
+        except Exception as e:  # noqa: BLE001
+            print(f"[face-detect] landmark fallback skipped: {e}", flush=True)
+
     if len(_CACHE) >= _CACHE_MAX:
         _CACHE.clear()
     _CACHE[key] = region
